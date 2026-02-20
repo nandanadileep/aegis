@@ -1,0 +1,5 @@
+# Neo4j runtime data (keep out of version control)
+neo4j_data/
+
+# macOS filesystem noise
+.DS_Store
