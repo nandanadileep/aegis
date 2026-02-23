@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aegis Chat</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #151820;
+      --text: #e6e9f2;
+      --muted: #9aa3b5;
+      --accent: #4ecdc4;
+      --user: #2d72d9;
+      --assistant: #2f9e44;
+      --border: #1f2430;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+    }
+    .sidebar {
+      width: 280px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      overflow-y: auto;
+    }
+    .sidebar h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      letter-spacing: 0.4px;
+      color: var(--muted);
+    }
+    .context {
+      white-space: pre-wrap;
+      line-height: 1.4;
+      color: var(--text);
+    }
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    .header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .messages {
+      flex: 1;
+      padding: 18px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg {
+      max-width: 68%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      line-height: 1.5;
+      border: 1px solid var(--border);
+    }
+    .msg.user {
+      margin-left: auto;
+      background: rgba(45, 114, 217, 0.12);
+      border-color: rgba(45, 114, 217, 0.4);
+    }
+    .msg.assistant {
+      margin-right: auto;
+      background: rgba(47, 158, 68, 0.12);
+      border-color: rgba(47, 158, 68, 0.4);
+    }
+    .input-bar {
+      display: flex;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      background: var(--panel);
+      gap: 10px;
+    }
+    .input-bar input {
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0f121a;
+      color: var(--text);
+      font-size: 15px;
+    }
+    .input-bar button {
+      padding: 12px 16px;
+      background: var(--accent);
+      border: none;
+      border-radius: 10px;
+      color: #0c0f13;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .input-bar button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h2>Aegis Memory</h2>
+    <div id="context" class="context">Loading...</div>
+  </div>
+  <div class="main">
+    <div class="header">Aegis · Memory-Aware Chat</div>
+    <div id="messages" class="messages"></div>
+    <div class="input-bar">
+      <input id="input" type="text" placeholder="Type a message... (/exit to save & close)" autocomplete="off" />
+      <button id="send">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const contextEl = document.getElementById('context');
+    let sending = false;
+    const transcript = [];
+
+    async function fetchContext() {
+      try {
+        const res = await fetch('/context');
+        const data = await res.json();
+        contextEl.textContent = data.context || 'No stored memory yet.';
+      } catch (e) {
+        contextEl.textContent = 'Failed to load context.';
+      }
+    }
+
+    function addMessage(text, role) {
+      const div = document.createElement('div');
+      div.className = `msg ${role}`;
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text || sending) return;
+      if (text === '/exit') {
+        await saveTranscript();
+        window.close();
+        return;
+      }
+      sending = true;
+      sendBtn.disabled = true;
+      addMessage(text, 'user');
+      transcript.push(`You: ${text}`);
+      inputEl.value = '';
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({message: text})
+        });
+        const data = await res.json();
+        const reply = data.reply || 'No response';
+        addMessage(reply, 'assistant');
+        transcript.push(`Assistant: ${reply}`);
+      } catch (e) {
+        addMessage('Error contacting server.', 'assistant');
+      } finally {
+        sending = false;
+        sendBtn.disabled = false;
+        inputEl.focus();
+      }
+    }
+
+    async function saveTranscript() {
+      if (!transcript.length) return;
+      try {
+        await fetch('/save', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({transcript: transcript.join('\\n')})
+        });
+        transcript.length = 0;
+      } catch (e) {
+        console.warn('Save failed', e);
+      }
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    window.addEventListener('beforeunload', (e) => {
+      if (transcript.length) {
+        navigator.sendBeacon('/save', JSON.stringify({transcript: transcript.join('\\n')}));
+      }
+    });
+
+    fetchContext();
+    inputEl.focus();
+  </script>
+</body>
+</html>
