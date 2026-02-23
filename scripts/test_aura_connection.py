@@ -21,6 +21,17 @@ def get_env_var(name: str) -> str:
     return value
 
 
+def add_skill(driver, database: str, person_id: str, skill_name: str) -> None:
+    """Attach a Skill node to the given Person by id."""
+    query = """
+        MATCH (p:Person {id: $person_id})
+        MERGE (s:Skill {name: $skill})
+        MERGE (p)-[:HAS_SKILL]->(s)
+    """
+    with driver.session(database=database) as session:
+        session.run(query, person_id=person_id, skill=skill_name)
+
+
 def main() -> None:
     load_env()
 
@@ -32,6 +43,13 @@ def main() -> None:
     query = "MATCH (n) RETURN n LIMIT 25"
 
     driver = GraphDatabase.driver(uri, auth=(user, password))
+
+    # Optional: add a skill if NEW_SKILL env var is set
+    new_skill = os.getenv("NEW_SKILL")
+    if new_skill:
+        person_id = os.getenv("PERSON_ID", "nandana_dileep")
+        add_skill(driver, database, person_id, new_skill)
+
     with driver.session(database=database) as session:
         records = list(session.run(query))
 
