@@ -23,9 +23,9 @@ except ImportError:  # optional
     load_dotenv = None
 
 try:
-    import anthropic
-except ImportError:  # Anthropic SDK may not be installed in all environments
-    anthropic = None
+    from groq import Groq
+except ImportError:  # Groq SDK may not be installed in all environments
+    Groq = None
 
 
 # ---------- Configuration ----------
@@ -55,7 +55,7 @@ def env_var(name: str) -> str:
 # ---------- LLM extraction ----------
 def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, List[Dict[str, Any]]]:
     """Return extraction dict keyed by category; each item has key/value/status."""
-    if use_mock or not anthropic:
+    if use_mock or not Groq:
         return {
             "identity": [
                 {"key": "name", "value": "Nandana Dileep", "status": "confirmation"},
@@ -75,34 +75,27 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
             ],
         }
 
-    client = anthropic.Anthropic(api_key=env_var("ANTHROPIC_API_KEY"))
+    client = Groq(api_key=env_var("GROQ_API_KEY"))
     prompt = (
         "Extract any new information from the conversation in the five categories. "
         "Return JSON with keys identity, behavior, projects, constraints, values. "
         "Each value is a list of objects with keys: key, value, status "
         "(one of first_mention, confirmation, contradiction, explicit_preference). "
-        "Use null or empty list if nothing new."
+        "Use empty list if nothing new."
     )
-    schema = {
-        "type": "object",
-        "properties": {
-            "identity": {"type": "array", "items": {"type": "object"}},
-            "behavior": {"type": "array", "items": {"type": "object"}},
-            "projects": {"type": "array", "items": {"type": "object"}},
-            "constraints": {"type": "array", "items": {"type": "object"}},
-            "values": {"type": "array", "items": {"type": "object"}},
-        },
-        "required": ["identity", "behavior", "projects", "constraints", "values"],
-    }
-
-    msg = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=512,
+    completion = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
         temperature=0,
-        messages=[{"role": "user", "content": prompt + "\n\nConversation:\n" + conversation}],
-        response_format=schema,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "user", "content": prompt + "\n\nConversation:\n" + conversation}
+        ],
     )
-    return msg.content[0].get("json", {})  # type: ignore
+    content = completion.choices[0].message.content
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {k: [] for k in THRESHOLDS.keys()}
 
 
 # ---------- Staging management ----------
