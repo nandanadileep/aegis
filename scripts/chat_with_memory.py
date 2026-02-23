@@ -25,6 +25,12 @@ try:
 except ImportError:
     Groq = None
 
+# local pipeline import
+try:
+    from memory_pipeline import run_pipeline
+except ImportError:
+    from scripts.memory_pipeline import run_pipeline
+
 
 # ---------- env helpers ----------
 def load_env(path: str = ".env") -> None:
@@ -74,7 +80,7 @@ def format_memory_context(records: List[Dict[str, Any]]) -> str:
 
 
 # ---------- groq chat ----------
-def chat_loop(memory_context: str, person_id: str) -> None:
+def chat_loop(memory_context: str, person_id: str) -> str:
     if Groq is None:
         raise RuntimeError("groq package not installed. pip install groq")
     client = Groq(api_key=env_var("GROQ_API_KEY"))
@@ -95,6 +101,7 @@ Instructions:
 """.strip()
 
     history = [{"role": "system", "content": system_prompt}]
+    transcript: list[str] = []
     print("Chat ready. Type /exit to quit.")
     while True:
         try:
@@ -106,6 +113,7 @@ Instructions:
             print("Bye.")
             break
         history.append({"role": "user", "content": user_input})
+        transcript.append(f"You: {user_input}")
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=history,
@@ -114,6 +122,9 @@ Instructions:
         reply = completion.choices[0].message.content
         print(f"Assistant: {reply}")
         history.append({"role": "assistant", "content": reply})
+        transcript.append(f"Assistant: {reply}")
+
+    return "\n".join(transcript)
 
 
 # ---------- entrypoint ----------
@@ -130,7 +141,11 @@ def main() -> None:
     driver.close()
 
     memory_context = format_memory_context(records)
-    chat_loop(memory_context, person_id)
+    transcript = chat_loop(memory_context, person_id)
+
+    # After chat ends, run the memory pipeline on the full transcript
+    if transcript.strip():
+        run_pipeline(transcript, use_mock_llm=False, person_id=person_id)
 
 
 if __name__ == "__main__":
