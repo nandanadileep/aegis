@@ -1,111 +1,130 @@
 // Person
-MERGE (p:Person {id: 'person_placeholder'})
-SET p.name = 'Placeholder Name',
-    p.ageRange = '25-34',
-    p.gender = 'unspecified',
-    p.country = 'Placeholder Country/Region',
-    p.nativeLanguage = 'English',
-    p.otherLanguages = ['Spanish', 'French'];
+MERGE (p:Person {id: 'nandana_dileep'})
+SET p.name = 'Nandana Dileep',
+    p.ageRange = 'Early 20s',
+    p.gender = 'Woman',
+    p.country = 'India (Bangalore)',
+    p.nativeLanguage = 'Malayalam (likely)',
+    p.otherLanguages = ['English (strong)', 'Hindi (likely)'];
 
 // Cultural & Social Context
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (c:CulturalSocial {id: 'cultural_placeholder'})
-SET c.culturalBackground = 'Placeholder background',
-    c.religion = 'Optional / undisclosed',
-    c.familyStructure = 'Nuclear',
-    c.livingSituation = 'Shared',
-    c.socioeconomicContext = 'Middle income'
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (c:CulturalSocial {id: 'cultural_nandana'})
+SET c.culturalBackground = 'Indian; academically competitive environment',
+    c.religion = 'Not specified',
+    c.familyStructure = 'Close parental involvement',
+    c.livingSituation = 'Lives alone in Bangalore',
+    c.socioeconomicContext = 'Educated, professional, urban middle/upper-middle class'
 MERGE (p)-[:HAS_CULTURAL_CONTEXT]->(c);
 
 // Education & Knowledge Level
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (e:Education {id: 'education_placeholder'})
-SET e.highestEducationLevel = 'Bachelors',
-    e.fieldsOfStudy = ['Computer Science'],
-    e.expertiseAreas = ['Software Engineering'],
-    e.beginnerAreas = ['Hardware Design']
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (e:Education {id: 'education_nandana'})
+SET e.highestEducationLevel = 'BTech, IIT Madras (2024)',
+    e.fieldsOfStudy = ['Engineering'],
+    e.expertiseAreas = [
+        'Machine Learning',
+        'Deep Learning (CNNs, ViT)',
+        'LLM systems',
+        'RAG systems',
+        'Model fine-tuning (LoRA/QLoRA, RL)',
+        'Data Science (Pandas, NumPy, Matplotlib)'
+    ],
+    e.beginnerAreas = [
+        'Startup operations at scale',
+        'Infrastructure at very large production scale',
+        'Legal/financial structuring of companies'
+    ]
 MERGE (p)-[:HAS_EDUCATION]->(e);
 
 // Occupation & Economic Context
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (o:Occupation {id: 'occupation_placeholder'})
-SET o.employmentStatus = 'Employed',
-    o.profession = 'Technology',
-    o.incomeBracket = '50k-100k',
-    o.workSchedule = 'Full-time'
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (o:Occupation {id: 'occupation_nandana'})
+SET o.employmentStatus = 'Full-time employed',
+    o.profession = 'Data Scientist (AI/ML), Automotive',
+    o.incomeBracket = 'Early-career engineer',
+    o.workSchedule = 'Standard corporate schedule'
 MERGE (p)-[:HAS_OCCUPATION]->(o);
 
 // Personality & Cognitive Style
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (ps:Personality {id: 'personality_placeholder'})
-SET ps.introversion = 'Ambivert',
-    ps.riskTolerance = 'Medium',
-    ps.decisionMakingStyle = 'Analytical',
-    ps.opennessToNewIdeas = 'High',
-    ps.conflictStyle = 'Collaborative',
-    ps.attentionToDetail = 'High'
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (ps:Personality {id: 'personality_nandana'})
+SET ps.introversion = 'High-functioning introvert with ambition',
+    ps.riskTolerance = 'Moderately high',
+    ps.decisionMakingStyle = 'Analytical first, emotional second',
+    ps.opennessToNewIdeas = 'Very high',
+    ps.conflictStyle = 'Independent; seeks validation when challenged',
+    ps.attentionToDetail = 'Strong detail focus; research-driven'
 MERGE (p)-[:HAS_PERSONALITY]->(ps);
 
 // Communication Preferences
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (comm:Communication {id: 'communication_placeholder'})
-SET comm.tonePreference = 'Casual',
-    comm.responseLength = 'Concise',
-    comm.structurePreference = 'Bullets',
-    comm.toleranceForDebate = 'Medium',
-    comm.humorPreference = 'Light'
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (comm:Communication {id: 'communication_nandana'})
+SET comm.tonePreference = 'Direct, sharp, structured',
+    comm.responseLength = 'Concise unless depth requested',
+    comm.structurePreference = 'Structured, bullet-based, sometimes code-only',
+    comm.toleranceForDebate = 'High (prefers intellectual friction)',
+    comm.humorPreference = 'Dad jokes; dark humour'
 MERGE (p)-[:HAS_COMMUNICATION_PREFS]->(comm);
 
 // Goals & Motivations
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (g:Goals {id: 'goals_placeholder'})
-SET g.shortTermGoals = ['Launch MVP'],
-    g.longTermAspirations = ['Build sustainable product'],
-    g.coreValues = ['Integrity', 'Growth'],
-    g.definitionOfSuccess = 'User impact',
-    g.primaryFears = ['Failure']
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (g:Goals {id: 'goals_nandana'})
+SET g.shortTermGoals = [
+        'Strengthen AI/ML systems expertise',
+        'Build and ship products (ShipCV, audio app, LLM systems)',
+        'Position for startup or international move'
+    ],
+    g.longTermAspirations = [
+        'Become a CEO',
+        'Build an AI company',
+        'Move abroad (Dubai considered)'
+    ],
+    g.coreValues = ['Independence', 'Competence', 'Discipline', 'Intellectual growth'],
+    g.definitionOfSuccess = 'Authority + autonomy + impact; financial independence; leadership',
+    g.primaryFears = ['Stagnation', 'Being underestimated', 'Wasting potential']
 MERGE (p)-[:HAS_GOALS]->(g);
 
 // Health & Physical Context
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (h:Health {id: 'health_placeholder'})
-SET h.healthCondition = 'Good',
-    h.disabilities = 'None disclosed',
-    h.dietType = 'Mixed',
-    h.sleepSchedule = '23:00-07:00',
-    h.activityLevel = 'Moderate'
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (h:Health {id: 'health_nandana'})
+SET h.healthCondition = 'Healthy',
+    h.disabilities = 'None mentioned',
+    h.dietType = 'Not specified',
+    h.sleepSchedule = 'Not specified',
+    h.activityLevel = '5 days/week workouts (weights + Pilates focus)'
 MERGE (p)-[:HAS_HEALTH]->(h);
 
 // Technology Context
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (t:Technology {id: 'technology_placeholder'})
-SET t.devicesUsed = ['Laptop', 'Phone'],
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (t:Technology {id: 'technology_nandana'})
+SET t.devicesUsed = ['MacBook', 'iPhone', 'AirPods Max', 'Alexa Echo'],
     t.operatingSystems = ['macOS', 'iOS'],
     t.internetLiteracy = 'Advanced',
-    t.aiFamiliarity = 'High'
+    t.aiFamiliarity = 'Professional / advanced'
 MERGE (p)-[:HAS_TECH_CONTEXT]->(t);
 
 // Emotional Context
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (em:Emotional {id: 'emotional_placeholder'})
-SET em.stressLevel = 'Medium',
-    em.currentMood = 'Optimistic',
-    em.majorLifeEvents = ['None disclosed'],
-    em.stabilityPhase = 'Stable'
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (em:Emotional {id: 'emotional_nandana'})
+SET em.stressLevel = 'Ambitious but occasionally pressured',
+    em.currentMood = 'Growth-oriented',
+    em.majorLifeEvents = ['Early career phase', 'Product-building phase'],
+    em.stabilityPhase = 'Transition-building (career evolution)'
 MERGE (p)-[:HAS_EMOTIONAL_STATE]->(em);
 
 // Legal & Geographic Context
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (l:Legal {id: 'legal_placeholder'})
-SET l.legalSystem = 'US',
-    l.visaStatus = 'Citizen',
-    l.taxRegime = 'US Federal/State'
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (l:Legal {id: 'legal_nandana'})
+SET l.legalSystem = 'Indian',
+    l.visaStatus = 'Considering international relocation',
+    l.taxRegime = 'Indian tax system'
 MERGE (p)-[:HAS_LEGAL_CONTEXT]->(l);
 
 // Privacy Boundaries
-MATCH (p:Person {id: 'person_placeholder'})
-MERGE (pr:Privacy {id: 'privacy_placeholder'})
-SET pr.topicsToAvoid = ['Politics'],
-    pr.sensitivityThreshold = 'High',
-    pr.dataRetentionPreference = 'Do not store'
+MATCH (p:Person {id: 'nandana_dileep'})
+MERGE (pr:Privacy {id: 'privacy_nandana'})
+SET pr.topicsToAvoid = ['Not explicitly defined'],
+    pr.sensitivityThreshold = 'High privacy on personal independence issues',
+    pr.dataRetentionPreference = 'Not specified'
 MERGE (p)-[:HAS_PRIVACY_PREFS]->(pr);
