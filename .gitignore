@@ -1,5 +1,6 @@
 # Neo4j runtime data (keep out of version control)
 neo4j_data/
+neo4j_runtime/
 
 # Local environment secrets
 .env
