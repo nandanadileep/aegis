@@ -11,16 +11,16 @@ except ImportError:
     load_dotenv = None
 
 try:
-    from groq import Groq
+from openai import OpenAI
 except ImportError:
-    Groq = None
+    OpenAI = None
 
 try:
     from scripts.memory_pipeline import run_pipeline
 except ImportError:
     from memory_pipeline import run_pipeline
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # configurable via .env
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # configurable via .env
 
 
 # ---------------------------
@@ -94,10 +94,10 @@ Instructions:
 """.strip()
 
 
-def get_groq_client():
-    if Groq is None:
-        raise RuntimeError("groq package not installed. pip install groq")
-    return Groq(api_key=env_var("GROQ_API_KEY"))
+def get_openai_client():
+    if OpenAI is None:
+        raise RuntimeError("openai package not installed. pip install openai")
+    return OpenAI(api_key=env_var("OPENAI_API_KEY"))
 
 
 def history_to_transcript(history: List[Dict[str, str]]) -> str:
@@ -153,9 +153,9 @@ def chat():
     history = [{"role": "system", "content": system_prompt}, *conversation_history]
     history.append({"role": "user", "content": user_message})
 
-    client = get_groq_client()
+    client = get_openai_client()
     completion = client.chat.completions.create(
-        model=GROQ_MODEL,
+        model=OPENAI_MODEL,
         messages=history,
         temperature=0.5,
     )

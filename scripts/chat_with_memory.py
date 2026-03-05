@@ -1,12 +1,12 @@
 """
 Interactive chat loop that injects memory from Neo4j into the system prompt
-and uses Groq (llama-3.3-70b-versatile) to reply as a personalized assistant.
+and uses OpenAI chat completions to reply as a personalized assistant.
 
 Usage:
     python3 scripts/chat_with_memory.py
 
 Requirements:
-    - .env with GROQ_API_KEY, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE
+    - .env with OPENAI_API_KEY, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE
     - Person node id defaults to "nandana_dileep" (override with PERSON_ID env)
 """
 
@@ -21,9 +21,9 @@ except ImportError:  # optional
     load_dotenv = None
 
 try:
-    from groq import Groq
+    from openai import OpenAI
 except ImportError:
-    Groq = None
+    OpenAI = None
 
 # local pipeline import
 try:
@@ -79,11 +79,11 @@ def format_memory_context(records: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-# ---------- groq chat ----------
+# ---------- chat ----------
 def chat_loop(memory_context: str, person_id: str) -> str:
-    if Groq is None:
-        raise RuntimeError("groq package not installed. pip install groq")
-    client = Groq(api_key=env_var("GROQ_API_KEY"))
+    if OpenAI is None:
+        raise RuntimeError("openai package not installed. pip install openai")
+    client = OpenAI(api_key=env_var("OPENAI_API_KEY"))
     system_prompt = f"""
 You are a personalized AI assistant.
 You already know this person well.
@@ -115,7 +115,7 @@ Instructions:
         history.append({"role": "user", "content": user_input})
         transcript.append(f"You: {user_input}")
         completion = client.chat.completions.create(
-            model=GROQ_MODEL,
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             messages=history,
             temperature=0.5,
         )
@@ -150,4 +150,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
