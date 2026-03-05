@@ -150,4 +150,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen-2.5-72b-instruct")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
