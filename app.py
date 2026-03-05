@@ -131,6 +131,11 @@ def context():
     return jsonify({"context": summary})
 
 
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(force=True)
