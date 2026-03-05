@@ -100,6 +100,14 @@ def get_groq_client():
     return Groq(api_key=env_var("GROQ_API_KEY"))
 
 
+def history_to_transcript(history: List[Dict[str, str]]) -> str:
+    lines = []
+    for msg in history:
+        role = msg.get("role", "assistant").capitalize()
+        lines.append(f"{role}: {msg.get('content', '')}")
+    return "\n".join(lines)
+
+
 # ---------------------------
 # Flask app
 # ---------------------------
