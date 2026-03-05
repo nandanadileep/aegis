@@ -139,7 +139,7 @@ def chat():
 
     client = get_groq_client()
     completion = client.chat.completions.create(
-        model="qwen-2.5-72b-instruct",
+        model=GROQ_MODEL,
         messages=history,
         temperature=0.5,
     )
@@ -162,3 +162,4 @@ def save():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen-2.5-72b-instruct")

@@ -68,8 +68,9 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
         "(one of first_mention, confirmation, contradiction, explicit_preference). "
         "Use empty list if nothing new."
     )
+    model_name = os.getenv("GROQ_MODEL", "qwen-2.5-72b-instruct")
     completion = client.chat.completions.create(
-        model="qwen-2.5-72b-instruct",
+        model=model_name,
         temperature=0,
         response_format={"type": "json_object"},
         messages=[

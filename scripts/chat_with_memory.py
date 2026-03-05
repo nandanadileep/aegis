@@ -115,7 +115,7 @@ Instructions:
         history.append({"role": "user", "content": user_input})
         transcript.append(f"You: {user_input}")
         completion = client.chat.completions.create(
-            model="qwen-2.5-72b-instruct",
+            model=GROQ_MODEL,
             messages=history,
             temperature=0.5,
         )
@@ -150,3 +150,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen-2.5-72b-instruct")
