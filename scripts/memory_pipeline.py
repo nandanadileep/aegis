@@ -16,7 +16,8 @@ except ImportError:
     Groq = None
 
 
-STAGING_PATH = Path("staging.json")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+STAGING_PATH = PROJECT_ROOT / "staging.json"
 THRESHOLDS = {
     "identity": 0.6,
     "behavior": 0.75,
