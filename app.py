@@ -20,6 +20,8 @@ try:
 except ImportError:
     from memory_pipeline import run_pipeline
 
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
 
 # ---------------------------
 # Helpers
@@ -139,7 +141,7 @@ def chat():
 
     client = get_groq_client()
     completion = client.chat.completions.create(
-        model=GROQ_MODEL,
+        model='llama-3.1-8b-instant',
         messages=history,
         temperature=0.5,
     )
