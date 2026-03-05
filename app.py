@@ -161,7 +161,12 @@ def chat():
 
 @app.route("/save", methods=["POST"])
 def save():
-    transcript = "\n".join(conversation_history)
+    body = request.get_json(silent=True) or {}
+    client_transcript = body.get("transcript")
+    if client_transcript:
+        transcript = client_transcript
+    else:
+        transcript = history_to_transcript(conversation_history)
     if transcript.strip():
         run_pipeline(transcript, use_mock_llm=False, person_id=PERSON_ID)
         conversation_history.clear()
