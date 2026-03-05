@@ -1,15 +1,3 @@
-"""
-Memory extraction pipeline for AuraDB.
-
-Steps:
-1) LLM extraction (Anthropic) -> structured categories.
-2) Staging layer with belief scores (staging.json).
-3) Threshold check per category.
-4) Write to Neo4j when confidence crosses threshold.
-
-Run the module directly to execute a demo with a mock LLM extraction.
-"""
-
 import json
 import os
 from pathlib import Path
@@ -19,16 +7,15 @@ from neo4j import GraphDatabase
 
 try:
     from dotenv import load_dotenv
-except ImportError:  # optional
+except ImportError:  
     load_dotenv = None
 
 try:
     from groq import Groq
-except ImportError:  # Groq SDK may not be installed in all environments
+except ImportError:  
     Groq = None
 
 
-# ---------- Configuration ----------
 STAGING_PATH = Path("staging.json")
 THRESHOLDS = {
     "identity": 0.6,
@@ -39,7 +26,6 @@ THRESHOLDS = {
 }
 
 
-# ---------- Env helpers ----------
 def load_env(path: str = ".env") -> None:
     if load_dotenv:
         load_dotenv(path)
@@ -52,7 +38,6 @@ def env_var(name: str) -> str:
     return val
 
 
-# ---------- LLM extraction ----------
 def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, List[Dict[str, Any]]]:
     """Return extraction dict keyed by category; each item has key/value/status."""
     if use_mock or not Groq:
@@ -84,7 +69,7 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
         "Use empty list if nothing new."
     )
     completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="qwen-2.5-72b-instruct",
         temperature=0,
         response_format={"type": "json_object"},
         messages=[
@@ -98,7 +83,6 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
         return {k: [] for k in THRESHOLDS.keys()}
 
 
-# ---------- Staging management ----------
 def load_staging(path: Path = STAGING_PATH) -> Dict[str, List[Dict[str, Any]]]:
     if not path.exists():
         return {k: [] for k in THRESHOLDS.keys()}
@@ -149,7 +133,6 @@ def update_staging(staging: Dict[str, List[Dict[str, Any]]], extractions: Dict[s
     return staging
 
 
-# ---------- Threshold check ----------
 def split_ready(staging: Dict[str, List[Dict[str, Any]]]) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, List[Dict[str, Any]]]]:
     ready = {k: [] for k in THRESHOLDS}
     remaining = {k: [] for k in THRESHOLDS}
@@ -163,7 +146,6 @@ def split_ready(staging: Dict[str, List[Dict[str, Any]]]) -> Tuple[Dict[str, Lis
     return ready, remaining
 
 
-# ---------- Neo4j write ----------
 def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dict[str, Any]]]) -> None:
     label_map = {
         "identity": "Identity",
@@ -199,7 +181,6 @@ def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dic
                 )
 
 
-# ---------- Pipeline orchestrator ----------
 def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str = "nandana_dileep") -> Dict[str, Any]:
     load_env()
     uri = env_var("NEO4J_URI")
@@ -224,7 +205,6 @@ def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str =
     }
 
 
-# ---------- Demo / simple test ----------
 if __name__ == "__main__":
     sample_conversation = """
     I'm Nandana, based in Bangalore, building an AI memory app. I love direct, structured replies.
