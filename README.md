@@ -17,6 +17,7 @@ python3 app.py
 ## How it feels
 - Chat naturally; the assistant quietly uses your graph memory.
 - Type `/exit` or just close the tab to save the convo back into memories.
+- `GET /health` returns a simple ok for checks.
 
 ## Where things live
 - `app.py` – Flask API + Groq calls
