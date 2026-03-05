@@ -171,11 +171,14 @@
           body: JSON.stringify({message: text})
         });
         const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Server error');
+        }
         const reply = data.reply || 'No response';
         addMessage(reply, 'assistant');
         transcript.push(`Assistant: ${reply}`);
       } catch (e) {
-        addMessage('Error contacting server.', 'assistant');
+        addMessage(`Error: ${e.message || 'contacting server'}`, 'assistant');
       } finally {
         sending = false;
         sendBtn.disabled = false;
