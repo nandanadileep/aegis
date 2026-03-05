@@ -138,7 +138,10 @@ def chat():
     if not user_message:
         return jsonify({"error": "message required"}), 400
 
-    records = fetch_memory_summary(PERSON_ID, DATABASE)
+    try:
+        records = fetch_memory_summary(PERSON_ID, DATABASE)
+    except Exception as e:
+        return jsonify({"error": "memory unavailable", "detail": str(e)}), 503
     memory_context = format_memory_context(records)
     system_prompt = build_system_prompt(memory_context)
 
