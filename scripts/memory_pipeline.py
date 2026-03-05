@@ -11,9 +11,9 @@ except ImportError:
     load_dotenv = None
 
 try:
-    from groq import Groq
+    from openai import OpenAI
 except ImportError:  
-    Groq = None
+    OpenAI = None
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -41,7 +41,7 @@ def env_var(name: str) -> str:
 
 def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, List[Dict[str, Any]]]:
     """Return extraction dict keyed by category; each item has key/value/status."""
-    if use_mock or not Groq:
+    if use_mock or not OpenAI:
         return {
             "identity": [
                 {"key": "name", "value": "Nandana Dileep", "status": "confirmation"},
@@ -61,7 +61,7 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
             ],
         }
 
-    client = Groq(api_key=env_var("GROQ_API_KEY"))
+    client = OpenAI(api_key=env_var("OPENAI_API_KEY"))
     prompt = (
         "Extract any new information from the conversation in the five categories. "
         "Return JSON with keys identity, behavior, projects, constraints, values. "
@@ -69,7 +69,7 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
         "(one of first_mention, confirmation, contradiction, explicit_preference). "
         "Use empty list if nothing new."
     )
-    model_name = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     completion = client.chat.completions.create(
         model=model_name,
         temperature=0,
