@@ -162,4 +162,4 @@ def save():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen-2.5-72b-instruct")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
