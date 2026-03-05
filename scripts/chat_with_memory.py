@@ -115,7 +115,7 @@ Instructions:
         history.append({"role": "user", "content": user_input})
         transcript.append(f"You: {user_input}")
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="qwen-2.5-72b-instruct",
             messages=history,
             temperature=0.5,
         )
