@@ -20,7 +20,7 @@ try:
 except ImportError:
     from memory_pipeline import run_pipeline
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # configurable via .env
 
 
 # ---------------------------
