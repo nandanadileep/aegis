@@ -9,8 +9,8 @@ python3 app.py
 ```
 
 ## Env you need
-- `GROQ_API_KEY`
-- `GROQ_MODEL` (defaults to `llama-3.3-70b-versatile`)
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL` (defaults to `gpt-4o-mini`)
 - `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`
 - optional: `PERSON_ID` (defaults to `nandana_dileep`)
 
