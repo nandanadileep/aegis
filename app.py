@@ -141,7 +141,7 @@ def chat():
 
     client = get_groq_client()
     completion = client.chat.completions.create(
-        model='llama-3.1-8b-instant',
+        model=GROQ_MODEL,
         messages=history,
         temperature=0.5,
     )
