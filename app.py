@@ -134,10 +134,8 @@ def chat():
     memory_context = format_memory_context(records)
     system_prompt = build_system_prompt(memory_context)
 
-    history = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ]
+    history = [{"role": "system", "content": system_prompt}, *conversation_history]
+    history.append({"role": "user", "content": user_message})
 
     client = get_groq_client()
     completion = client.chat.completions.create(
@@ -147,8 +145,8 @@ def chat():
     )
     reply = completion.choices[0].message.content
 
-    conversation_history.append(f"You: {user_message}")
-    conversation_history.append(f"Assistant: {reply}")
+    conversation_history.append({"role": "user", "content": user_message})
+    conversation_history.append({"role": "assistant", "content": reply})
 
     return jsonify({"reply": reply})
 
