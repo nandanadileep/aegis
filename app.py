@@ -166,10 +166,12 @@ def chat():
 def save():
     body = request.get_json(silent=True) or {}
     client_transcript = body.get("transcript")
+    pieces = []
     if client_transcript:
-        transcript = client_transcript
-    else:
-        transcript = history_to_transcript(conversation_history)
+        pieces.append(client_transcript)
+    if conversation_history:
+        pieces.append(history_to_transcript(conversation_history))
+    transcript = "\n".join(pieces).strip()
     if transcript.strip():
         run_pipeline(transcript, use_mock_llm=False, person_id=PERSON_ID)
         conversation_history.clear()
