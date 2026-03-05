@@ -108,7 +108,7 @@ app = Flask(__name__, static_folder=".", static_url_path="")
 
 PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
 DATABASE = env_var("NEO4J_DATABASE")
-conversation_history: List[str] = []
+conversation_history: List[Dict[str, str]] = []
 
 
 @app.route("/")
