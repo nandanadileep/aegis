@@ -1,5 +1,6 @@
 import os
 import json
+from urllib.parse import urlparse, urlunparse, quote
 from typing import List, Dict, Any, Optional
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -117,10 +118,42 @@ def get_openai_client():
     return OpenAI(api_key=env_var("OPENAI_API_KEY"))
 
 
+def normalize_redis_url(raw_url: str) -> str:
+    parsed = urlparse(raw_url)
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+
+    if not host:
+        return raw_url
+
+    # Upstash Redis requires TLS and usually uses the "default" ACL username.
+    if host.endswith("upstash.io"):
+        if scheme == "redis":
+            scheme = "rediss"
+
+        if not parsed.username and parsed.password:
+            user = quote("default", safe="")
+            password = quote(parsed.password, safe="")
+            port = f":{parsed.port}" if parsed.port else ""
+            netloc = f"{user}:{password}@{parsed.hostname}{port}"
+            return urlunparse((scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+
+    if scheme != parsed.scheme:
+        return urlunparse((scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+
+    return raw_url
+
+
 def get_redis_client():
     if redis is None:
         raise RuntimeError("redis package not installed. pip install redis")
-    return redis.from_url(env_var("REDIS_URL"), decode_responses=True)
+    redis_url = normalize_redis_url(env_var("REDIS_URL"))
+    return redis.from_url(
+        redis_url,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+    )
 
 
 def history_to_transcript(history: List[Dict[str, str]]) -> str:
@@ -252,7 +285,12 @@ def chat():
     memory_context = format_memory_context(records)
     system_prompt = build_system_prompt(memory_context)
 
-    conversation_history = load_conversation_history(person_id)
+    storage_warning = None
+    try:
+        conversation_history = load_conversation_history(person_id)
+    except Exception as e:
+        conversation_history = []
+        storage_warning = f"redis read failed: {e}"
     history = [{"role": "system", "content": system_prompt}, *conversation_history]
     history.append({"role": "user", "content": user_message})
 
@@ -264,10 +302,19 @@ def chat():
     )
     reply = completion.choices[0].message.content or ""
 
-    append_conversation_message(person_id, "user", user_message)
-    append_conversation_message(person_id, "assistant", reply)
+    try:
+        append_conversation_message(person_id, "user", user_message)
+        append_conversation_message(person_id, "assistant", reply)
+    except Exception as e:
+        if storage_warning:
+            storage_warning = f"{storage_warning}; redis write failed: {e}"
+        else:
+            storage_warning = f"redis write failed: {e}"
 
-    return jsonify({"reply": reply})
+    response: Dict[str, Any] = {"reply": reply}
+    if storage_warning:
+        response["warning"] = storage_warning
+    return jsonify(response)
 
 
 @app.route("/save", methods=["POST"])
@@ -275,7 +322,12 @@ def save():
     body = parse_body_json()
     person_id = resolve_person_id(body)
     client_transcript = body.get("transcript")
-    conversation_history = load_conversation_history(person_id)
+    storage_warning = None
+    try:
+        conversation_history = load_conversation_history(person_id)
+    except Exception as e:
+        conversation_history = []
+        storage_warning = f"redis read failed: {e}"
 
     pieces = []
     if isinstance(client_transcript, str) and client_transcript.strip():
@@ -286,9 +338,19 @@ def save():
     transcript = "\n".join(pieces).strip()
     if transcript:
         run_pipeline(transcript, use_mock_llm=False, person_id=person_id)
-        clear_conversation_history(person_id)
+        if conversation_history:
+            try:
+                clear_conversation_history(person_id)
+            except Exception as e:
+                if storage_warning:
+                    storage_warning = f"{storage_warning}; redis clear failed: {e}"
+                else:
+                    storage_warning = f"redis clear failed: {e}"
 
-    return jsonify({"status": "ok"})
+    response: Dict[str, Any] = {"status": "ok"}
+    if storage_warning:
+        response["warning"] = storage_warning
+    return jsonify(response)
 
 
 if __name__ == "__main__":
