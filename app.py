@@ -1,6 +1,6 @@
 import os
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from flask import Flask, request, jsonify, send_from_directory
 from neo4j import GraphDatabase
@@ -11,16 +11,21 @@ except ImportError:
     load_dotenv = None
 
 try:
-from openai import OpenAI
+    from openai import OpenAI
 except ImportError:
     OpenAI = None
+
+try:
+    import redis
+except ImportError:
+    redis = None
 
 try:
     from scripts.memory_pipeline import run_pipeline
 except ImportError:
     from memory_pipeline import run_pipeline
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # configurable via .env
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 # ---------------------------
@@ -49,6 +54,7 @@ def fetch_memory_summary(person_id: str, database: str) -> List[Dict[str, Any]]:
     query = """
     MATCH (p:Person {id: $person_id})-[r]->(n)
     RETURN type(r) AS rel, labels(n) AS labels,
+           properties(n) AS props,
            coalesce(n.key, n.name, '') AS key,
            coalesce(n.value, n.name, '') AS value
     """
@@ -68,9 +74,20 @@ def format_memory_context(records: List[Dict[str, Any]]) -> str:
         labels = rec.get("labels", [])
         key = rec.get("key", "")
         value = rec.get("value", "")
+        props = rec.get("props") or {}
         label_str = labels[0] if labels else ""
         if key and value:
             lines.append(f"- {label_str or rel}: {key} = {value}")
+        elif props:
+            details = []
+            for prop_key in sorted(props.keys()):
+                prop_value = props[prop_key]
+                if isinstance(prop_value, list):
+                    rendered = ", ".join(str(v) for v in prop_value)
+                else:
+                    rendered = str(prop_value)
+                details.append(f"{prop_key} = {rendered}")
+            lines.append(f"- {label_str or rel}: {'; '.join(details)}")
         else:
             lines.append(f"- {label_str or rel}: {value}")
     return "\n".join(lines)
@@ -100,6 +117,12 @@ def get_openai_client():
     return OpenAI(api_key=env_var("OPENAI_API_KEY"))
 
 
+def get_redis_client():
+    if redis is None:
+        raise RuntimeError("redis package not installed. pip install redis")
+    return redis.from_url(env_var("REDIS_URL"), decode_responses=True)
+
+
 def history_to_transcript(history: List[Dict[str, str]]) -> str:
     lines = []
     for msg in history:
@@ -108,15 +131,87 @@ def history_to_transcript(history: List[Dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def resolve_person_id(payload: Optional[Dict[str, Any]] = None) -> str:
+    if payload:
+        payload_person_id = payload.get("person_id")
+        if payload_person_id is not None:
+            candidate = str(payload_person_id).strip()
+            if candidate:
+                return candidate
+
+    header_person_id = request.headers.get("X-Person-Id", "").strip()
+    if header_person_id:
+        return header_person_id
+
+    query_person_id = request.args.get("person_id", "").strip()
+    if query_person_id:
+        return query_person_id
+
+    return DEFAULT_PERSON_ID
+
+
+def history_key(person_id: str) -> str:
+    return f"conversation_history:{person_id}"
+
+
+def load_conversation_history(person_id: str) -> List[Dict[str, str]]:
+    key = history_key(person_id)
+    history: List[Dict[str, str]] = []
+    raw_messages = REDIS_CLIENT.lrange(key, 0, -1)
+
+    for raw in raw_messages:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        role = parsed.get("role")
+        content = parsed.get("content")
+        if role is None or content is None:
+            continue
+        history.append({"role": str(role), "content": str(content)})
+
+    return history
+
+
+def append_conversation_message(person_id: str, role: str, content: str) -> None:
+    REDIS_CLIENT.rpush(
+        history_key(person_id),
+        json.dumps({"role": role, "content": content}),
+    )
+
+
+def clear_conversation_history(person_id: str) -> None:
+    REDIS_CLIENT.delete(history_key(person_id))
+
+
+def parse_body_json() -> Dict[str, Any]:
+    body = request.get_json(silent=True)
+    if isinstance(body, dict):
+        return body
+
+    raw_payload = request.get_data(as_text=True)
+    if not raw_payload:
+        return {}
+
+    try:
+        parsed = json.loads(raw_payload)
+    except json.JSONDecodeError:
+        return {}
+
+    return parsed if isinstance(parsed, dict) else {}
+
+
 # ---------------------------
 # Flask app
 # ---------------------------
 load_env()
 app = Flask(__name__, static_folder=".", static_url_path="")
 
-PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
+DEFAULT_PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
 DATABASE = env_var("NEO4J_DATABASE")
-conversation_history: List[Dict[str, str]] = []
+REDIS_CLIENT = get_redis_client()
 
 
 @app.route("/")
@@ -126,7 +221,8 @@ def index():
 
 @app.route("/context", methods=["GET"])
 def context():
-    records = fetch_memory_summary(PERSON_ID, DATABASE)
+    person_id = resolve_person_id()
+    records = fetch_memory_summary(person_id, DATABASE)
     summary = format_memory_context(records)
     return jsonify({"context": summary})
 
@@ -139,17 +235,24 @@ def health():
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(force=True)
-    user_message = data.get("message", "").strip()
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid payload"}), 400
+
+    user_message = str(data.get("message", "")).strip()
     if not user_message:
         return jsonify({"error": "message required"}), 400
 
+    person_id = resolve_person_id(data)
+
     try:
-        records = fetch_memory_summary(PERSON_ID, DATABASE)
+        records = fetch_memory_summary(person_id, DATABASE)
     except Exception as e:
         return jsonify({"error": "memory unavailable", "detail": str(e)}), 503
+
     memory_context = format_memory_context(records)
     system_prompt = build_system_prompt(memory_context)
 
+    conversation_history = load_conversation_history(person_id)
     history = [{"role": "system", "content": system_prompt}, *conversation_history]
     history.append({"role": "user", "content": user_message})
 
@@ -157,32 +260,36 @@ def chat():
     completion = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=history,
-        temperature=0.5,
+        temperature=1,
     )
-    reply = completion.choices[0].message.content
+    reply = completion.choices[0].message.content or ""
 
-    conversation_history.append({"role": "user", "content": user_message})
-    conversation_history.append({"role": "assistant", "content": reply})
+    append_conversation_message(person_id, "user", user_message)
+    append_conversation_message(person_id, "assistant", reply)
 
     return jsonify({"reply": reply})
 
 
 @app.route("/save", methods=["POST"])
 def save():
-    body = request.get_json(silent=True) or {}
+    body = parse_body_json()
+    person_id = resolve_person_id(body)
     client_transcript = body.get("transcript")
+    conversation_history = load_conversation_history(person_id)
+
     pieces = []
-    if client_transcript:
+    if isinstance(client_transcript, str) and client_transcript.strip():
         pieces.append(client_transcript)
     if conversation_history:
         pieces.append(history_to_transcript(conversation_history))
+
     transcript = "\n".join(pieces).strip()
-    if transcript.strip():
-        run_pipeline(transcript, use_mock_llm=False, person_id=PERSON_ID)
-        conversation_history.clear()
+    if transcript:
+        run_pipeline(transcript, use_mock_llm=False, person_id=person_id)
+        clear_conversation_history(person_id)
+
     return jsonify({"status": "ok"})
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
