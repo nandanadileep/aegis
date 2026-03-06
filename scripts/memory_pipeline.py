@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse, quote
 from typing import Dict, List, Any, Tuple
 
 from neo4j import GraphDatabase
@@ -14,6 +15,11 @@ try:
     from openai import OpenAI
 except ImportError:  
     OpenAI = None
+
+try:
+    import redis
+except ImportError:
+    redis = None
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -37,6 +43,51 @@ def env_var(name: str) -> str:
     if not val:
         raise RuntimeError(f"Missing env var: {name}")
     return val
+
+
+def empty_staging() -> Dict[str, List[Dict[str, Any]]]:
+    return {k: [] for k in THRESHOLDS.keys()}
+
+
+def normalize_redis_url(raw_url: str) -> str:
+    parsed = urlparse(raw_url)
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+
+    if not host:
+        return raw_url
+
+    if host.endswith("upstash.io"):
+        if scheme == "redis":
+            scheme = "rediss"
+
+        if not parsed.username and parsed.password:
+            user = quote("default", safe="")
+            password = quote(parsed.password, safe="")
+            port = f":{parsed.port}" if parsed.port else ""
+            netloc = f"{user}:{password}@{parsed.hostname}{port}"
+            return urlunparse((scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+
+    if scheme != parsed.scheme:
+        return urlunparse((scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+
+    return raw_url
+
+
+def get_redis_client():
+    if redis is None:
+        raise RuntimeError("redis package not installed. pip install redis")
+    redis_url = normalize_redis_url(env_var("REDIS_URL"))
+    return redis.from_url(
+        redis_url,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+    )
+
+
+def staging_key(person_id: str) -> str:
+    return f"staging:{person_id}"
 
 
 def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, List[Dict[str, Any]]]:
