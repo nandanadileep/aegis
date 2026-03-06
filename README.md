@@ -25,4 +25,4 @@ python3 app.py
 ## Where things live
 - `app.py` – Flask API + Groq calls
 - `index.html` – minimal dark UI
-- `scripts/memory_pipeline.py` – extraction + staging + Neo4j writes
+- `scripts/memory_pipeline.py` – extraction + Redis staging (`staging:<person_id>`) + Neo4j writes
