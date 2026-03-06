@@ -68,6 +68,8 @@
       padding: 12px 14px;
       border-radius: 12px;
       line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
       border: 1px solid var(--border);
     }
     .msg.user {
@@ -79,6 +81,30 @@
       margin-right: auto;
       background: rgba(47, 158, 68, 0.12);
       border-color: rgba(47, 158, 68, 0.4);
+    }
+    .msg code {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+    }
+    .msg.thinking {
+      color: var(--muted);
+    }
+    .thinking-dots span {
+      opacity: 0.2;
+      animation: thinking-pulse 1.2s infinite;
+    }
+    .thinking-dots span:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    .thinking-dots span:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+    @keyframes thinking-pulse {
+      0%, 80%, 100% { opacity: 0.2; }
+      40% { opacity: 1; }
     }
     .input-bar {
       display: flex;
@@ -131,11 +157,19 @@
     const sendBtn = document.getElementById('send');
     const contextEl = document.getElementById('context');
     let sending = false;
+    let thinkingEl = null;
     const transcript = [];
+    const personId = new URLSearchParams(window.location.search).get('person_id');
+
+    function withPersonId(payload) {
+      if (!personId) return payload;
+      return { ...payload, person_id: personId };
+    }
 
     async function fetchContext() {
       try {
-        const res = await fetch('/context');
+        const url = personId ? `/context?person_id=${encodeURIComponent(personId)}` : '/context';
+        const res = await fetch(url);
         const data = await res.json();
         contextEl.textContent = data.context || 'No stored memory yet.';
       } catch (e) {
@@ -146,9 +180,41 @@
     function addMessage(text, role) {
       const div = document.createElement('div');
       div.className = `msg ${role}`;
-      div.textContent = text;
+      div.innerHTML = renderMessageMarkdown(text);
       messagesEl.appendChild(div);
       messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderMessageMarkdown(text) {
+      const escaped = escapeHtml(text);
+      return escaped
+        .replace(/\*\*([^*\n][\s\S]*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/__([^_\n][\s\S]*?)__/g, '<strong>$1</strong>')
+        .replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    }
+
+    function showThinking() {
+      if (thinkingEl) return;
+      thinkingEl = document.createElement('div');
+      thinkingEl.className = 'msg assistant thinking';
+      thinkingEl.innerHTML = 'Thinking<span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>';
+      messagesEl.appendChild(thinkingEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function hideThinking() {
+      if (!thinkingEl) return;
+      thinkingEl.remove();
+      thinkingEl = null;
     }
 
     async function sendMessage() {
@@ -164,22 +230,26 @@
       addMessage(text, 'user');
       transcript.push(`You: ${text}`);
       inputEl.value = '';
+      showThinking();
       try {
         const res = await fetch('/chat', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({message: text})
+          body: JSON.stringify(withPersonId({message: text}))
         });
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.error || 'Server error');
         }
         const reply = data.reply || 'No response';
+        hideThinking();
         addMessage(reply, 'assistant');
         transcript.push(`Assistant: ${reply}`);
       } catch (e) {
+        hideThinking();
         addMessage(`Error: ${e.message || 'contacting server'}`, 'assistant');
       } finally {
+        hideThinking();
         sending = false;
         sendBtn.disabled = false;
         inputEl.focus();
@@ -192,7 +262,7 @@
         await fetch('/save', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({transcript: transcript.join('\\n')})
+          body: JSON.stringify(withPersonId({transcript: transcript.join('\\n')}))
         });
         transcript.length = 0;
       } catch (e) {
@@ -207,7 +277,7 @@
 
     window.addEventListener('beforeunload', (e) => {
       if (transcript.length) {
-        navigator.sendBeacon('/save', JSON.stringify({transcript: transcript.join('\\n')}));
+        navigator.sendBeacon('/save', JSON.stringify(withPersonId({transcript: transcript.join('\\n')})));
       }
     });
 
