@@ -136,16 +136,27 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
         return {k: [] for k in THRESHOLDS.keys()}
 
 
-def load_staging(path: Path = STAGING_PATH) -> Dict[str, List[Dict[str, Any]]]:
-    if not path.exists():
-        return {k: [] for k in THRESHOLDS.keys()}
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+def load_staging(redis_client, person_id: str) -> Dict[str, List[Dict[str, Any]]]:
+    raw = redis_client.get(staging_key(person_id))
+    if not raw:
+        return empty_staging()
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return empty_staging()
+    if not isinstance(parsed, dict):
+        return empty_staging()
+
+    normalized = empty_staging()
+    for category, items in parsed.items():
+        if not isinstance(items, list):
+            continue
+        normalized[category] = items
+    return normalized
 
 
-def save_staging(staging: Dict[str, List[Dict[str, Any]]], path: Path = STAGING_PATH) -> None:
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(staging, f, indent=2)
+def save_staging(redis_client, person_id: str, staging: Dict[str, List[Dict[str, Any]]]) -> None:
+    redis_client.set(staging_key(person_id), json.dumps(staging))
 
 
 def score_update(current: float, status: str) -> float:
