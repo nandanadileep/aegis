@@ -12,12 +12,15 @@ python3 app.py
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL` (defaults to `gpt-4o-mini`)
 - `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`
+- `REDIS_URL` (Redis list store for `conversation_history:<person_id>`)
+  - For Upstash, use the TCP URL from "Connect to your database", typically `rediss://default:<password>@<host>:6379`
 - optional: `PERSON_ID` (defaults to `nandana_dileep`)
 
 ## How it feels
 - Chat naturally; the assistant quietly uses your graph memory.
 - Type `/exit` or just close the tab to save the convo back into memories.
 - `GET /health` returns a simple ok for checks.
+- Optional multi-user routing: use `?person_id=<id>` in the URL (or send `person_id`/`X-Person-Id` on API calls).
 
 ## Where things live
 - `app.py` – Flask API + Groq calls
