@@ -1,6 +1,5 @@
 import json
 import os
-from pathlib import Path
 from urllib.parse import urlparse, urlunparse, quote
 from typing import Dict, List, Any, Tuple
 
@@ -22,8 +21,6 @@ except ImportError:
     redis = None
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-STAGING_PATH = PROJECT_ROOT / "staging.json"
 THRESHOLDS = {
     "identity": 0.6,
     "behavior": 0.75,
@@ -251,9 +248,10 @@ def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str =
     user = env_var("NEO4J_USER")
     password = env_var("NEO4J_PASSWORD")
     database = env_var("NEO4J_DATABASE")
+    redis_client = get_redis_client()
 
     extractions = call_llm_extract(conversation, use_mock=use_mock_llm)
-    staging = load_staging()
+    staging = load_staging(redis_client, person_id)
     staging = update_staging(staging, extractions)
     ready, remaining = split_ready(staging)
 
@@ -261,7 +259,7 @@ def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str =
     write_ready(driver, database, person_id, ready)
     driver.close()
 
-    save_staging(remaining)
+    save_staging(redis_client, person_id, remaining)
     return {
         "extractions": extractions,
         "ready": ready,
