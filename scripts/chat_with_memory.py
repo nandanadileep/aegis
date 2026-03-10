@@ -1,15 +1,3 @@
-"""
-Interactive chat loop that injects memory from Neo4j into the system prompt
-and uses OpenAI chat completions to reply as a personalized assistant.
-
-Usage:
-    python3 scripts/chat_with_memory.py
-
-Requirements:
-    - .env with OPENAI_API_KEY, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE
-    - Person node id defaults to "nandana_dileep" (override with PERSON_ID env)
-"""
-
 import os
 from typing import List, Dict, Any
 
@@ -21,15 +9,9 @@ except ImportError:  # optional
     load_dotenv = None
 
 try:
-    from openai import OpenAI
+    from groq import Groq
 except ImportError:
-    OpenAI = None
-
-# local pipeline import
-try:
-    from memory_pipeline import run_pipeline
-except ImportError:
-    from scripts.memory_pipeline import run_pipeline
+    Groq = None
 
 
 # ---------- env helpers ----------
@@ -54,6 +36,7 @@ def fetch_memory(driver, database: str, person_id: str) -> List[Dict[str, Any]]:
     query = """
     MATCH (p:Person {id: $person_id})-[r]->(n)
     RETURN type(r) AS rel, labels(n) AS labels,
+           properties(n) AS props,
            coalesce(n.key, n.name, '') AS key,
            coalesce(n.value, n.name, '') AS value
     """
@@ -71,19 +54,30 @@ def format_memory_context(records: List[Dict[str, Any]]) -> str:
         labels = rec.get("labels", [])
         key = rec.get("key", "")
         value = rec.get("value", "")
+        props = rec.get("props") or {}
         label_str = labels[0] if labels else ""
         if key and value:
             lines.append(f"- {label_str or rel}: {key} = {value}")
+        elif props:
+            details = []
+            for prop_key in sorted(props.keys()):
+                prop_value = props[prop_key]
+                if isinstance(prop_value, list):
+                    rendered = ", ".join(str(v) for v in prop_value)
+                else:
+                    rendered = str(prop_value)
+                details.append(f"{prop_key} = {rendered}")
+            lines.append(f"- {label_str or rel}: {'; '.join(details)}")
         else:
             lines.append(f"- {label_str or rel}: {value}")
     return "\n".join(lines)
 
 
-# ---------- chat ----------
-def chat_loop(memory_context: str, person_id: str) -> str:
-    if OpenAI is None:
-        raise RuntimeError("openai package not installed. pip install openai")
-    client = OpenAI(api_key=env_var("OPENAI_API_KEY"))
+# ---------- groq chat ----------
+def chat_loop(memory_context: str, person_id: str) -> None:
+    if Groq is None:
+        raise RuntimeError("groq package not installed. pip install groq")
+    client = Groq(api_key=env_var("GROQ_API_KEY"))
     system_prompt = f"""
 You are a personalized AI assistant.
 You already know this person well.
@@ -101,7 +95,6 @@ Instructions:
 """.strip()
 
     history = [{"role": "system", "content": system_prompt}]
-    transcript: list[str] = []
     print("Chat ready. Type /exit to quit.")
     while True:
         try:
@@ -113,18 +106,14 @@ Instructions:
             print("Bye.")
             break
         history.append({"role": "user", "content": user_input})
-        transcript.append(f"You: {user_input}")
         completion = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            model="llama-3.3-70b-versatile",
             messages=history,
             temperature=0.5,
         )
         reply = completion.choices[0].message.content
         print(f"Assistant: {reply}")
         history.append({"role": "assistant", "content": reply})
-        transcript.append(f"Assistant: {reply}")
-
-    return "\n".join(transcript)
 
 
 # ---------- entrypoint ----------
@@ -141,11 +130,7 @@ def main() -> None:
     driver.close()
 
     memory_context = format_memory_context(records)
-    transcript = chat_loop(memory_context, person_id)
-
-    # After chat ends, run the memory pipeline on the full transcript
-    if transcript.strip():
-        run_pipeline(transcript, use_mock_llm=False, person_id=person_id)
+    chat_loop(memory_context, person_id)
 
 
 if __name__ == "__main__":
