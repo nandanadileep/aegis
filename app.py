@@ -299,7 +299,7 @@ def chat():
     completion = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=history,
-        temperature=1,
+        temperature=0.5,
     )
     reply = completion.choices[0].message.content or ""
 
