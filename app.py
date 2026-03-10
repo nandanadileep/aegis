@@ -213,6 +213,7 @@ def append_conversation_message(person_id: str, role: str, content: str) -> None
         history_key(person_id),
         json.dumps({"role": role, "content": content}),
     )
+    REDIS_CLIENT.expire(history_key(person_id), 60 * 60 * 24 * 7)
 
 
 def clear_conversation_history(person_id: str) -> None:
