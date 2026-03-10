@@ -26,3 +26,6 @@ python3 app.py
 - `app.py` – Flask API + Groq calls
 - `index.html` – minimal dark UI
 - `scripts/memory_pipeline.py` – extraction + Redis staging (`staging:<person_id>`) + Neo4j writes
+
+## Performance notes
+- `run_pipeline()` accepts optional `redis_client` and `neo4j_driver` parameters to avoid connection overhead on frequent calls
