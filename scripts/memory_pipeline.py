@@ -242,29 +242,40 @@ def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dic
                 )
 
 
-def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str = "nandana_dileep") -> Dict[str, Any]:
+def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str = "nandana_dileep", redis_client=None, neo4j_driver=None) -> Dict[str, Any]:
     load_env()
-    uri = env_var("NEO4J_URI")
-    user = env_var("NEO4J_USER")
-    password = env_var("NEO4J_PASSWORD")
-    database = env_var("NEO4J_DATABASE")
-    redis_client = get_redis_client()
+    
+    # Use provided clients/drivers or create new ones
+    if redis_client is None:
+        redis_client = get_redis_client()
+    
+    if neo4j_driver is None:
+        uri = env_var("NEO4J_URI")
+        user = env_var("NEO4J_USER")
+        password = env_var("NEO4J_PASSWORD")
+        neo4j_driver = GraphDatabase.driver(uri, auth=(user, password))
+        close_driver = True
+    else:
+        close_driver = False
 
-    extractions = call_llm_extract(conversation, use_mock=use_mock_llm)
-    staging = load_staging(redis_client, person_id)
-    staging = update_staging(staging, extractions)
-    ready, remaining = split_ready(staging)
+    try:
+        database = env_var("NEO4J_DATABASE")
+        extractions = call_llm_extract(conversation, use_mock=use_mock_llm)
+        staging = load_staging(redis_client, person_id)
+        staging = update_staging(staging, extractions)
+        ready, remaining = split_ready(staging)
 
-    driver = GraphDatabase.driver(uri, auth=(user, password))
-    write_ready(driver, database, person_id, ready)
-    driver.close()
-
-    save_staging(redis_client, person_id, remaining)
-    return {
-        "extractions": extractions,
-        "ready": ready,
-        "staging": remaining,
-    }
+        write_ready(neo4j_driver, database, person_id, ready)
+        save_staging(redis_client, person_id, remaining)
+        
+        return {
+            "extractions": extractions,
+            "ready": ready,
+            "staging": remaining,
+        }
+    finally:
+        if close_driver:
+            neo4j_driver.close()
 
 
 if __name__ == "__main__":
