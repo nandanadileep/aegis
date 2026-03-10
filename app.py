@@ -44,6 +44,8 @@ def env_var(name: str) -> str:
     return val
 
 
+
+
 def get_neo4j_driver():
     uri = env_var("NEO4J_URI")
     user = env_var("NEO4J_USER")
@@ -59,10 +61,8 @@ def fetch_memory_summary(person_id: str, database: str) -> List[Dict[str, Any]]:
            coalesce(n.key, n.name, '') AS key,
            coalesce(n.value, n.name, '') AS value
     """
-    driver = get_neo4j_driver()
-    with driver.session(database=database) as session:
+    with NEO4J_DRIVER.session(database=database) as session:
         data = session.run(query, person_id=person_id).data()
-    driver.close()
     return data
 
 
@@ -245,6 +245,7 @@ app = Flask(__name__, static_folder=".", static_url_path="")
 DEFAULT_PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
 DATABASE = env_var("NEO4J_DATABASE")
 REDIS_CLIENT = get_redis_client()
+NEO4J_DRIVER = get_neo4j_driver()
 
 
 @app.route("/")
