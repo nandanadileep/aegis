@@ -338,7 +338,7 @@ def save():
 
     transcript = "\n".join(pieces).strip()
     if transcript:
-        run_pipeline(transcript, use_mock_llm=False, person_id=person_id)
+        run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=REDIS_CLIENT)
         if conversation_history:
             try:
                 clear_conversation_history(person_id)
