@@ -3,6 +3,7 @@ import json
 from urllib.parse import urlparse, urlunparse, quote
 from typing import List, Dict, Any, Optional
 
+import litellm
 from flask import Flask, request, jsonify, send_from_directory
 from neo4j import GraphDatabase
 
@@ -10,11 +11,6 @@ try:
     from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None
-
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
 
 try:
     import redis
@@ -26,7 +22,7 @@ try:
 except ImportError:
     from memory_pipeline import run_pipeline
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
 
 
 # ---------------------------
@@ -111,11 +107,6 @@ Instructions:
 - Respond like a brilliant friend who knows them well, not like a system reading a file
 """.strip()
 
-
-def get_openai_client():
-    if OpenAI is None:
-        raise RuntimeError("openai package not installed. pip install openai")
-    return OpenAI(api_key=env_var("OPENAI_API_KEY"))
 
 
 def normalize_redis_url(raw_url: str) -> str:
@@ -296,9 +287,8 @@ def chat():
     history = [{"role": "system", "content": system_prompt}, *conversation_history]
     history.append({"role": "user", "content": user_message})
 
-    client = get_openai_client()
-    completion = client.chat.completions.create(
-        model=OPENAI_MODEL,
+    completion = litellm.completion(
+        model=LLM_MODEL,
         messages=history,
         temperature=0.5,
     )
@@ -317,6 +307,46 @@ def chat():
     if storage_warning:
         response["warning"] = storage_warning
     return jsonify(response)
+
+
+@app.route("/v1/chat/completions", methods=["POST"])
+def proxy_completions():
+    data = request.get_json(force=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid payload"}), 400
+
+    person_id = resolve_person_id(data)
+    messages = data.get("messages", [])
+    model = data.get("model", LLM_MODEL)
+
+    try:
+        records = fetch_memory_summary(person_id, DATABASE)
+    except Exception as e:
+        return jsonify({"error": "memory unavailable", "detail": str(e)}), 503
+
+    memory_context = format_memory_context(records)
+    system_prompt = build_system_prompt(memory_context)
+
+    non_system = [m for m in messages if m.get("role") != "system"]
+    enriched = [{"role": "system", "content": system_prompt}, *non_system]
+
+    completion = litellm.completion(
+        model=model,
+        messages=enriched,
+        temperature=data.get("temperature", 0.5),
+        stream=False,
+    )
+
+    user_messages = [m["content"] for m in non_system if m.get("role") == "user"]
+    reply = completion.choices[0].message.content or ""
+    try:
+        for content in user_messages:
+            append_conversation_message(person_id, "user", content)
+        append_conversation_message(person_id, "assistant", reply)
+    except Exception:
+        pass
+
+    return jsonify(completion.model_dump())
 
 
 @app.route("/save", methods=["POST"])
