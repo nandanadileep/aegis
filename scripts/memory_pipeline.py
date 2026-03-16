@@ -3,17 +3,13 @@ import os
 from urllib.parse import urlparse, urlunparse, quote
 from typing import Dict, List, Any, Tuple
 
+import litellm
 from neo4j import GraphDatabase
 
 try:
     from dotenv import load_dotenv
-except ImportError:  
+except ImportError:
     load_dotenv = None
-
-try:
-    from openai import OpenAI
-except ImportError:  
-    OpenAI = None
 
 try:
     import redis
@@ -89,7 +85,7 @@ def staging_key(person_id: str) -> str:
 
 def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, List[Dict[str, Any]]]:
     """Return extraction dict keyed by category; each item has key/value/status."""
-    if use_mock or not OpenAI:
+    if use_mock:
         return {
             "identity": [
                 {"key": "name", "value": "Nandana Dileep", "status": "confirmation"},
@@ -109,7 +105,6 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
             ],
         }
 
-    client = OpenAI(api_key=env_var("OPENAI_API_KEY"))
     prompt = (
         "Extract any new information from the conversation in the five categories. "
         "Return JSON with keys identity, behavior, projects, constraints, values. "
@@ -117,8 +112,8 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
         "(one of first_mention, confirmation, contradiction, explicit_preference). "
         "Use empty list if nothing new."
     )
-    model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    completion = client.chat.completions.create(
+    model_name = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
+    completion = litellm.completion(
         model=model_name,
         temperature=0,
         response_format={"type": "json_object"},
@@ -232,7 +227,7 @@ def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dic
             for item in items:
                 session.run(
                     f"""
-                    MATCH (p:Person {{id: $person_id}})
+                    MERGE (p:Person {{id: $person_id}})
                     MERGE (n:{label} {{key: $key, value: $value}})
                     MERGE (p)-[:{rel}]->(n)
                     """,

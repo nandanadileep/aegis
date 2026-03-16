@@ -1,17 +1,13 @@
 import os
 from typing import List, Dict, Any
 
+import litellm
 from neo4j import GraphDatabase
 
 try:
     from dotenv import load_dotenv
-except ImportError:  # optional
-    load_dotenv = None
-
-try:
-    from groq import Groq
 except ImportError:
-    Groq = None
+    load_dotenv = None
 
 
 # ---------- env helpers ----------
@@ -73,11 +69,9 @@ def format_memory_context(records: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-# ---------- groq chat ----------
+# ---------- chat ----------
 def chat_loop(memory_context: str, person_id: str) -> None:
-    if Groq is None:
-        raise RuntimeError("groq package not installed. pip install groq")
-    client = Groq(api_key=env_var("GROQ_API_KEY"))
+    model = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
     system_prompt = f"""
 You are a personalized AI assistant.
 You already know this person well.
@@ -106,8 +100,8 @@ Instructions:
             print("Bye.")
             break
         history.append({"role": "user", "content": user_input})
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+        completion = litellm.completion(
+            model=model,
             messages=history,
             temperature=0.5,
         )
