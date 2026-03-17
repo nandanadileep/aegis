@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aegis — Build Your Twin</title>
+  <style>
+    :root {
+      --bg: #000;
+      --surface: rgba(255,255,255,0.05);
+      --surface-hover: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.1);
+      --border-focus: rgba(41,151,255,0.6);
+      --text: #f5f5f7;
+      --secondary: #86868b;
+      --tertiary: #3a3a3c;
+      --accent: #2997ff;
+      --accent-dim: rgba(41,151,255,0.15);
+      --success: #30d158;
+      --error: #ff453a;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      --mono: "SF Mono", "Fira Code", "Menlo", monospace;
+      --r: 16px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px 20px;
+    }
+
+    /* ── Screens ── */
+    .screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 620px;
+      animation: rise 0.45s cubic-bezier(0.22,1,0.36,1) both;
+    }
+    .screen.active { display: flex; }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Type ── */
+    .eyebrow {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--secondary);
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-size: clamp(42px, 8vw, 72px);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.0;
+      text-align: center;
+      margin-bottom: 18px;
+    }
+
+    h2 {
+      font-size: clamp(24px, 4vw, 34px);
+      font-weight: 600;
+      letter-spacing: -0.025em;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .lead {
+      font-size: 17px;
+      color: var(--secondary);
+      text-align: center;
+      line-height: 1.55;
+      margin-bottom: 48px;
+      max-width: 460px;
+    }
+
+    .lead.tight { margin-bottom: 24px; }
+
+    /* ── Path cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      width: 100%;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 28px 24px;
+      cursor: pointer;
+      transition: background 0.18s, border-color 0.18s, transform 0.18s;
+      text-align: left;
+      user-select: none;
+    }
+
+    .card:hover {
+      background: var(--surface-hover);
+      border-color: rgba(255,255,255,0.18);
+      transform: translateY(-3px);
+    }
+
+    .card-icon {
+      font-size: 26px;
+      margin-bottom: 16px;
+      line-height: 1;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: var(--secondary);
+      line-height: 1.5;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 13px 26px;
+      border-radius: 980px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-family: var(--font);
+      transition: all 0.18s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: #0a84ff; }
+    .btn-primary:disabled { background: var(--tertiary); cursor: not-allowed; }
+
+    .btn-ghost {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--surface-hover); }
+
+    .btn-copy {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid rgba(41,151,255,0.25);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .btn-copy:hover { background: rgba(41,151,255,0.25); }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 28px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Back ── */
+    .back-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 15px;
+      font-family: var(--font);
+      cursor: pointer;
+      padding: 0;
+      margin-bottom: 36px;
+      align-self: flex-start;
+    }
+
+    /* ── Prompt box ── */
+    .prompt-box {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: #c8c8d0;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      width: 100%;
+      margin-bottom: 16px;
+      word-break: break-word;
+    }
+
+    /* ── Form ── */
+    .field { width: 100%; margin-bottom: 16px; }
+
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--secondary);
+      margin-bottom: 8px;
+    }
+
+    input, textarea {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 15px;
+      padding: 14px 18px;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--border-focus);
+      background: rgba(41,151,255,0.05);
+    }
+
+    input::placeholder, textarea::placeholder { color: var(--tertiary); }
+
+    textarea {
+      resize: none;
+      line-height: 1.5;
+      font-family: var(--mono);
+      font-size: 12.5px;
+    }
+
+    /* ── Question flow ── */
+    .progress-wrap {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 40px;
+    }
+
+    .dot {
+      height: 4px;
+      width: 24px;
+      border-radius: 2px;
+      background: var(--tertiary);
+      transition: all 0.3s cubic-bezier(0.22,1,0.36,1);
+    }
+    .dot.active  { background: var(--accent); width: 40px; }
+    .dot.done    { background: var(--secondary); }
+
+    .q-counter {
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      color: var(--tertiary);
+      margin-bottom: 28px;
+    }
+
+    .q-text {
+      font-size: clamp(22px, 4vw, 30px);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      text-align: center;
+      line-height: 1.25;
+      margin-bottom: 36px;
+      white-space: pre-line;
+    }
+
+    .q-input {
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .q-input input, .q-input textarea {
+      font-family: var(--font);
+      font-size: 17px;
+      padding: 16px 20px;
+    }
+
+    /* ── Success ── */
+    .success-ring {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: rgba(48,209,88,0.12);
+      border: 1px solid rgba(48,209,88,0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 34px;
+      margin-bottom: 28px;
+    }
+
+    /* ── Error ── */
+    .error-msg {
+      color: var(--error);
+      font-size: 13px;
+      text-align: center;
+      margin-top: 14px;
+      min-height: 20px;
+    }
+
+    /* ── Step label ── */
+    .step-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 14px;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: var(--border);
+      margin: 32px 0;
+    }
+
+    @media (max-width: 560px) {
+      .cards { grid-template-columns: 1fr; }
+      h1 { font-size: 38px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ══ Welcome ══ -->
+  <div class="screen active" id="s-welcome">
+    <div class="eyebrow">Aegis</div>
+    <h1>Who do you<br>want to be?</h1>
+    <p class="lead">Build your digital twin — a profile that tells any AI exactly who you are, or who you're becoming.</p>
+    <div class="cards">
+      <div class="card" onclick="goTo('s-import-1')">
+        <div class="card-icon">↗</div>
+        <div class="card-title">Import from AI</div>
+        <div class="card-desc">Already talked to ChatGPT or Claude about yourself? Bring that over and turn it into your graph.</div>
+      </div>
+      <div class="card" onclick="startBuild()">
+        <div class="card-icon">✦</div>
+        <div class="card-title">Build your ideal self</div>
+        <div class="card-desc">Answer a few questions here. We'll build a profile of the person you're becoming.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Import — Step 1: Copy the prompt ══ -->
+  <div class="screen" id="s-import-1">
+    <button class="back-btn" onclick="goTo('s-welcome')">← Back</button>
+    <div class="step-label">Step 1 of 2</div>
+    <h2>Have the conversation first</h2>
+    <p class="lead tight">Copy this prompt. Paste it into ChatGPT, Claude, or Gemini. Have a real conversation. Come back with the JSON it generates.</p>
+    <div class="prompt-box" id="starterPrompt">I want to create a profile of who I really am — my skills, values, personality, how I think, how I talk, what I'm working on, what I believe.
+
+Interview me. Ask me questions one or two at a time, naturally — have a real conversation. When you feel you have a complete picture, output a JSON in this exact format:
+
+{
+  "name": "",
+  "twin_description": "one sentence — who this person is",
+  "values": [],
+  "skills": [],
+  "personality": [],
+  "goals": [],
+  "beliefs": [],
+  "speaking_style": "",
+  "currently_working_on": [],
+  "known_for": []
+}
+
+Only fill in what you actually learned from me. If I didn't mention it, leave it out. Don't guess or fill with generic answers.</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+      <button class="btn btn-copy" id="copyBtn" onclick="copyPrompt()">Copy prompt</button>
+      <button class="btn btn-primary" onclick="goTo('s-import-2')">I have the JSON →</button>
+    </div>
+  </div>
+
+  <!-- ══ Import — Step 2: Paste JSON ══ -->
+  <div class="screen" id="s-import-2">
+    <button class="back-btn" onclick="goTo('s-import-1')">← Back</button>
+    <div class="step-label">Step 2 of 2</div>
+    <h2>Paste your JSON</h2>
+    <p class="lead tight">Drop the JSON your AI generated below.</p>
+    <div class="field">
+      <label>Your ID — no spaces</label>
+      <input type="text" id="importId" placeholder="e.g. nandana" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label>JSON from your AI</label>
+      <textarea id="importJson" rows="10" placeholder='{ "name": "...", "values": [...] }'></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="importBtn" onclick="importTwin()">Import twin</button>
+    </div>
+    <div class="error-msg" id="importError"></div>
+  </div>
+
+  <!-- ══ Build — Question flow ══ -->
+  <div class="screen" id="s-build">
+    <button class="back-btn" id="buildBack" onclick="buildBack()">← Back</button>
+    <div class="progress-wrap" id="progressDots"></div>
+    <div class="q-counter" id="qCounter"></div>
+    <div class="q-text" id="qText"></div>
+    <div class="q-input">
+      <input type="text" id="qInputSingle" style="display:none" />
+      <textarea id="qInputMulti" style="display:none" rows="3"></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="continueBtn" onclick="nextQ()">Continue →</button>
+    </div>
+  </div>
+
+  <!-- ══ Success ══ -->
+  <div class="screen" id="s-success">
+    <div class="success-ring">✓</div>
+    <h2>Your twin is built.</h2>
+    <p class="lead">Your profile is live in the graph. Download your Twin Card and paste it into any AI — it'll know exactly who you are.</p>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="window.location='/memory'">View graph</button>
+      <button class="btn btn-primary" onclick="downloadCard()">Download Twin Card</button>
+    </div>
+  </div>
+
+  <script>
+    const QUESTIONS = [
+      {
+        id: 'name',
+        text: "What's your name?",
+        placeholder: "Your name",
+        single: true,
+      },
+      {
+        id: 'description',
+        text: "Describe the person\nyou want to become.\nNot what they'll do — who they are.",
+        placeholder: "Someone who never settles, who moves with intention...",
+        single: false,
+      },
+      {
+        id: 'values',
+        text: "What do they\nnever compromise on?",
+        placeholder: "Honesty, craft, showing up fully...",
+        single: false,
+      },
+      {
+        id: 'known_for',
+        text: "What are they\nknown for?",
+        placeholder: "Building things that last, clear thinking...",
+        single: false,
+      },
+      {
+        id: 'skills',
+        text: "What are they\nexceptional at?",
+        placeholder: "Product design, writing, systems thinking...",
+        single: false,
+      },
+      {
+        id: 'working_on',
+        text: "What are they building\nor working toward right now?",
+        placeholder: "A company, a craft, a new way of being...",
+        single: false,
+      },
+    ];
+
+    let currentQ = 0;
+    let answers  = {};
+    let twinPersonId = null;
+
+    // ── Navigation ──
+    function goTo(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      void document.getElementById(id).offsetWidth; // force reflow for animation replay
+      document.getElementById(id).classList.add('active');
+    }
+
+    function startBuild() {
+      currentQ = 0;
+      answers  = {};
+      renderQ();
+      goTo('s-build');
+    }
+
+    function buildBack() {
+      if (currentQ === 0) {
+        goTo('s-welcome');
+      } else {
+        currentQ--;
+        renderQ();
+      }
+    }
+
+    // ── Question flow ──
+    function renderQ() {
+      const q   = QUESTIONS[currentQ];
+      const btn = document.getElementById('buildBack');
+      btn.textContent = currentQ === 0 ? '← Back' : '← Back';
+
+      document.getElementById('qCounter').textContent =
+        `${currentQ + 1} of ${QUESTIONS.length}`;
+      document.getElementById('qText').textContent = q.text;
+
+      const single = document.getElementById('qInputSingle');
+      const multi  = document.getElementById('qInputMulti');
+
+      if (q.single) {
+        single.style.display = '';
+        multi.style.display  = 'none';
+        single.placeholder   = q.placeholder;
+        single.value         = answers[q.id] || '';
+        setTimeout(() => single.focus(), 80);
+      } else {
+        single.style.display = 'none';
+        multi.style.display  = '';
+        multi.placeholder    = q.placeholder;
+        multi.rows           = 3;
+        multi.value          = answers[q.id] || '';
+        setTimeout(() => multi.focus(), 80);
+      }
+
+      renderDots();
+    }
+
+    function renderDots() {
+      const wrap = document.getElementById('progressDots');
+      wrap.innerHTML = QUESTIONS.map((_, i) => {
+        let c = 'dot';
+        if (i === currentQ) c += ' active';
+        else if (i < currentQ) c += ' done';
+        return `<div class="${c}"></div>`;
+      }).join('');
+    }
+
+    async function nextQ() {
+      const q   = QUESTIONS[currentQ];
+      const el  = q.single
+        ? document.getElementById('qInputSingle')
+        : document.getElementById('qInputMulti');
+      const val = el.value.trim();
+
+      if (!val) {
+        el.style.borderColor = 'var(--error)';
+        setTimeout(() => el.style.borderColor = '', 800);
+        return;
+      }
+
+      answers[q.id] = val;
+
+      if (currentQ < QUESTIONS.length - 1) {
+        currentQ++;
+        renderQ();
+      } else {
+        await submitBuild();
+      }
+    }
+
+    async function submitBuild() {
+      const pid = (answers.name || 'user')
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-z0-9_]/g, '');
+      twinPersonId = pid;
+
+      document.getElementById('continueBtn').textContent = 'Building…';
+      document.getElementById('continueBtn').disabled    = true;
+
+      try {
+        const resp = await fetch('/api/onboard', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ person_id: pid, answers }),
+        });
+        if (!resp.ok) throw new Error();
+        goTo('s-success');
+      } catch {
+        document.getElementById('continueBtn').textContent = 'Continue →';
+        document.getElementById('continueBtn').disabled    = false;
+        alert('Something went wrong. Please try again.');
+      }
+    }
+
+    // ── Import flow ──
+    async function importTwin() {
+      const pid     = document.getElementById('importId').value.trim().replace(/\s+/g, '_');
+      const jsonStr = document.getElementById('importJson').value.trim();
+      const errEl   = document.getElementById('importError');
+      errEl.textContent = '';
+
+      if (!pid)     { errEl.textContent = 'Please enter your ID.'; return; }
+      if (!jsonStr) { errEl.textContent = 'Please paste your JSON.'; return; }
+
+      let twin;
+      try { twin = JSON.parse(jsonStr); }
+      catch { errEl.textContent = 'Invalid JSON — double-check the format.'; return; }
+
+      const btn = document.getElementById('importBtn');
+      btn.textContent = 'Importing…';
+      btn.disabled    = true;
+
+      try {
+        const resp = await fetch('/api/import', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ person_id: pid, twin }),
+        });
+        if (!resp.ok) throw new Error();
+        twinPersonId = pid;
+        goTo('s-success');
+      } catch {
+        errEl.textContent = 'Import failed. Please try again.';
+        btn.textContent = 'Import twin';
+        btn.disabled    = false;
+      }
+    }
+
+    // ── Copy starter prompt ──
+    function copyPrompt() {
+      const text = document.getElementById('starterPrompt').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = 'Copied ✓';
+        setTimeout(() => btn.textContent = 'Copy prompt', 2200);
+      });
+    }
+
+    // ── Download Twin Card ──
+    async function downloadCard() {
+      const pid = twinPersonId;
+      const url = pid ? `/api/wallet?person_id=${encodeURIComponent(pid)}` : '/api/wallet';
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const a    = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = `twin_${pid || 'card'}.md`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // ── Enter key support in question flow ──
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.shiftKey) return;
+      if (!document.getElementById('s-build').classList.contains('active')) return;
+      const q = QUESTIONS[currentQ];
+      if (q.single) { e.preventDefault(); nextQ(); }
+    });
+  </script>
+</body>
+</html>
