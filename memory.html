@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aegis Memory Management</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #151820;
+      --text: #e6e9f2;
+      --muted: #9aa3b5;
+      --accent: #4ecdc4;
+      --success: #2f9e44;
+      --error: #e74c3c;
+      --border: #1f2430;
+      --highlight: #2d72d9;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+    }
+
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 100;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .header-controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .search-bar {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .search-bar input {
+      width: 200px;
+      padding: 7px 12px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .search-bar input:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: rgba(78,205,196,0.08);
+    }
+
+    .search-bar button {
+      padding: 7px 14px;
+      background: var(--highlight);
+      color: white;
+    }
+
+    .search-bar button:hover {
+      background: #1e5fb3;
+    }
+
+    .search-results {
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .search-result-item {
+      padding: 8px 10px;
+      margin: 4px 0;
+      background: rgba(45,114,217,0.12);
+      border-left: 2px solid var(--highlight);
+      border-radius: 3px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .search-result-item:hover {
+      background: rgba(45,114,217,0.25);
+    }
+
+    .search-result-item .result-type {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .search-no-results {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 16px 0;
+    }
+
+    .pending-badge {
+      background: var(--highlight);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .pending-badge.has-changes {
+      background: var(--accent);
+    }
+
+    button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: #45b8ae;
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      background: var(--muted);
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      gap: 0;
+    }
+
+    .graph-panel {
+      flex: 1;
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      position: relative;
+    }
+
+    #network {
+      width: 100%;
+      height: 100%;
+    }
+
+    .sidebar {
+      width: 340px;
+      background: var(--panel);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      padding: 20px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-section h3 {
+      margin: 0 0 12px 0;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .sidebar-info {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .sidebar-info .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 4px;
+    }
+
+    .sidebar-info .label {
+      color: var(--muted);
+    }
+
+    .sidebar-info .value {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: rgba(78, 205, 196, 0.1);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .button-row button {
+      flex: 1;
+    }
+
+    .button-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .button-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .button-danger {
+      background: var(--error);
+      color: white;
+    }
+
+    .button-danger:hover {
+      background: #c0392b;
+    }
+
+    .button-success {
+      background: var(--success);
+      color: white;
+    }
+
+    .button-success:hover {
+      background: #27a038;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 40px 20px;
+      font-size: 13px;
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 12px;
+      opacity: 0.5;
+    }
+
+    .changes-list {
+      max-height: 200px;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 4px;
+      padding: 8px;
+    }
+
+    .change-item {
+      padding: 8px;
+      margin: 4px 0;
+      background: rgba(78, 205, 196, 0.1);
+      border-left: 2px solid var(--accent);
+      border-radius: 3px;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .change-item.delete {
+      background: rgba(231, 76, 60, 0.1);
+      border-left-color: var(--error);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal h2 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+    }
+
+    @media (max-width: 1200px) {
+      .sidebar {
+        width: 280px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📚 Memory Graph</h1>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="Search nodes & relationships…" onkeydown="if(event.key==='Enter') runSearch()" />
+      <button onclick="runSearch()">Search</button>
+      <button class="button-secondary" onclick="clearSearch()" id="clearSearchBtn" style="display:none">✕</button>
+    </div>
+    <div class="header-controls">
+      <span class="pending-badge" id="pendingBadge">0 pending</span>
+      <button id="walletBtn" class="button-secondary" onclick="downloadWallet()">⬇ Wallet</button>
+      <button id="resetBtn" onclick="resetPendingChanges()">Reset</button>
+      <button id="commitBtn" class="button-success" onclick="showCommitModal()" disabled>Commit</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="graph-panel">
+      <div id="network"></div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-section" id="searchResultsSection" style="display:none">
+        <h3>Search Results</h3>
+        <div class="search-results" id="searchResultsList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <h3>Graph Stats</h3>
+        <div class="sidebar-info">
+          <div class="info-row">
+            <span class="label">Nodes</span>
+            <span class="value" id="nodeCount">0</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Relationships</span>
+            <span class="value" id="edgeCount">0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section" id="selectedNodeSection" style="display: none;">
+        <h3>Selected Node</h3>
+        <div id="nodeDetails"></div>
+        <div class="button-row" style="margin-top: 12px;">
+          <button class="button-danger" onclick="deleteSelectedNode()">Delete Node</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section" id="selectedEdgeSection" style="display: none;">
+        <h3>Selected Relationship</h3>
+        <div id="edgeDetails"></div>
+        <div class="button-row" style="margin-top: 12px;">
+          <button class="button-danger" onclick="deleteSelectedEdge()">Delete Relationship</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <button style="width: 100%; margin-bottom: 12px;" onclick="showAddNodeModal()">+ Add Node</button>
+        <button style="width: 100%;" onclick="showAddEdgeModal()">+ Add Relationship</button>
+      </div>
+
+      <div class="sidebar-section" id="changesSection" style="display: none;">
+        <h3>Pending Changes</h3>
+        <div class="changes-list" id="changesList"></div>
+      </div>
+
+      <div class="sidebar-section" style="display: none;" id="emptyState">
+        <div class="empty-state">
+          <p>Select a node or relationship to view details.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <div class="modal-overlay" id="addNodeModal">
+    <div class="modal">
+      <h2>Add Node</h2>
+      <div class="form-group">
+        <label>Label (e.g., Person, Project, Skill)</label>
+        <input type="text" id="nodeLabel" placeholder="e.g., Project" />
+      </div>
+      <div class="form-group">
+        <label>Name/Title</label>
+        <input type="text" id="nodeName" placeholder="e.g., AI Memory App" />
+      </div>
+      <div class="form-group">
+        <label>Properties (JSON)</label>
+        <textarea id="nodeProperties" placeholder='{"status": "active", "priority": "high"}'></textarea>
+      </div>
+      <div class="button-row">
+        <button class="button-secondary" onclick="closeModal('addNodeModal')">Cancel</button>
+        <button class="button-success" onclick="addNode()">Add Node</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="addEdgeModal">
+    <div class="modal">
+      <h2>Add Relationship</h2>
+      <div class="form-group">
+        <label>From Node (ID)</label>
+        <input type="text" id="edgeFromId" placeholder="Source node ID" />
+      </div>
+      <div class="form-group">
+        <label>Relationship Type</label>
+        <input type="text" id="edgeType" placeholder="e.g., OWNS, WORKS_ON, KNOWS" />
+      </div>
+      <div class="form-group">
+        <label>To Node (ID)</label>
+        <input type="text" id="edgeToId" placeholder="Target node ID" />
+      </div>
+      <div class="button-row">
+        <button class="button-secondary" onclick="closeModal('addEdgeModal')">Cancel</button>
+        <button class="button-success" onclick="addEdge()">Add Relationship</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="commitModal">
+    <div class="modal">
+      <h2>Review & Commit Changes</h2>
+      <p style="color: var(--muted); font-size: 13px;">This will apply all pending changes to your memory graph.</p>
+      <div class="changes-list" id="commitChangesList"></div>
+      <div class="button-row" style="margin-top: 16px;">
+        <button class="button-secondary" onclick="closeModal('commitModal')">Cancel</button>
+        <button class="button-success" onclick="commitChanges()">Confirm & Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const personId = new URLSearchParams(window.location.search).get('person_id') || null;
+    const graphData = { nodes: new vis.DataSet([]), edges: new vis.DataSet([]) };
+    let network = null;
+    let pendingChanges = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
+    let selectedNode = null;
+    let selectedEdge = null;
+    let originalNodes = [];
+    let originalEdges = [];
+
+    // Initialize network visualization
+    function initNetwork() {
+      const container = document.getElementById('network');
+      const options = {
+        physics: { enabled: true, stabilization: { iterations: 200 } },
+        nodes: {
+          shape: 'dot',
+          scaling: { label: { enabled: true, drawThreshold: 14, maxVisible: 30 } },
+          margin: { top: 10, bottom: 10, left: 10, right: 10 },
+          color: { 
+            background: '#2d72d9', 
+            border: '#4ecdc4', 
+            highlight: { background: '#4ecdc4' } 
+          },
+          font: { size: 13, color: 'white' },
+        },
+        edges: {
+          color: { color: 'rgba(78, 205, 196, 0.3)', highlight: '#4ecdc4' },
+          font: { size: 12, color: '#9aa3b5' },
+          smooth: { type: 'continuous' },
+          arrows: 'to',
+        },
+        interaction: { navigationButtons: true, keyboard: true },
+      };
+      network = new vis.Network(container, graphData, options);
+
+      network.on('selectNode', (params) => {
+        selectedNode = params.nodes[0];
+        selectedEdge = null;
+        updateSidebar();
+      });
+
+      network.on('selectEdge', (params) => {
+        selectedEdge = params.edges[0];
+        selectedNode = null;
+        updateSidebar();
+      });
+
+      network.on('deselectNode', () => {
+        selectedNode = null;
+        updateSidebar();
+      });
+
+      network.on('deselectEdge', () => {
+        selectedEdge = null;
+        updateSidebar();
+      });
+    }
+
+    // Load graph data from server
+    async function loadGraph() {
+      try {
+        const headers = personId ? { 'X-Person-Id': personId } : {};
+        const resp = await fetch('/api/graph', { headers });
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.detail || err.error || 'Failed to load graph');
+        }
+        const data = await resp.json();
+
+        originalNodes = data.nodes.map(n => ({ ...n }));
+        originalEdges = data.edges.map(e => ({ ...e }));
+
+        graphData.nodes.clear();
+        graphData.edges.clear();
+        graphData.nodes.add(data.nodes);
+        graphData.edges.add(data.edges);
+
+        console.log('Loaded graph:', { nodes: data.nodes.length, edges: data.edges.length });
+        updateStats();
+      } catch (err) {
+        console.error('Error loading graph:', err);
+        alert('Failed to load memory graph: ' + err.message);
+      }
+    }
+
+    // Update sidebar
+    function updateSidebar() {
+      document.getElementById('selectedNodeSection').style.display = selectedNode ? 'block' : 'none';
+      document.getElementById('selectedEdgeSection').style.display = selectedEdge ? 'block' : 'none';
+      document.getElementById('emptyState').style.display = selectedNode || selectedEdge ? 'none' : 'block';
+
+      if (selectedNode) {
+        const node = graphData.nodes.get(selectedNode);
+        document.getElementById('nodeDetails').innerHTML = `
+          <div class="sidebar-info">
+            <div class="info-row">
+              <span class="label">ID</span>
+              <span class="value">${node.id}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Label</span>
+              <span class="value">${node.label || 'N/A'}</span>
+            </div>
+            ${node.title ? `<div class="info-row"><span class="label">Title</span><span class="value">${node.title}</span></div>` : ''}
+          </div>
+        `;
+      }
+
+      if (selectedEdge) {
+        const edge = graphData.edges.get(selectedEdge);
+        const fromNode = graphData.nodes.get(edge.from);
+        const toNode = graphData.nodes.get(edge.to);
+        document.getElementById('edgeDetails').innerHTML = `
+          <div class="sidebar-info">
+            <div class="info-row">
+              <span class="label">Type</span>
+              <span class="value">${edge.label || 'N/A'}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">From</span>
+              <span class="value" style="font-size: 11px;">${fromNode?.label || edge.from}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">To</span>
+              <span class="value" style="font-size: 11px;">${toNode?.label || edge.to}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      updateChangesList();
+    }
+
+    // Update stats
+    function updateStats() {
+      document.getElementById('nodeCount').textContent = graphData.nodes.length;
+      document.getElementById('edgeCount').textContent = graphData.edges.length;
+    }
+
+    // Modal helpers
+    function showModal(id) {
+      document.getElementById(id).classList.add('show');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('show');
+    }
+
+    // Add node
+    function showAddNodeModal() {
+      document.getElementById('nodeLabel').value = '';
+      document.getElementById('nodeName').value = '';
+      document.getElementById('nodeProperties').value = '';
+      showModal('addNodeModal');
+    }
+
+    async function addNode() {
+      const label = document.getElementById('nodeLabel').value.trim();
+      const name = document.getElementById('nodeName').value.trim();
+      const propsStr = document.getElementById('nodeProperties').value.trim();
+
+      if (!label || !name) {
+        alert('Label and Name are required');
+        return;
+      }
+
+      let props = {};
+      if (propsStr) {
+        try {
+          props = JSON.parse(propsStr);
+        } catch {
+          alert('Invalid JSON properties');
+          return;
+        }
+      }
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (personId) headers['X-Person-Id'] = personId;
+
+        const resp = await fetch('/api/nodes', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ label, name, properties: props }),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.detail || err.error || 'Failed to add node');
+        }
+        const data = await resp.json();
+        console.log('Node created:', data);
+
+        // Add to vis network
+        const nodeId = String(data.id);
+        graphData.nodes.add({
+          id: nodeId,
+          label: name,
+          title: `${label}`,
+          color: { background: '#4ecdc4', border: '#2d72d9' },
+        });
+
+        // Track change
+        pendingChanges.nodes[nodeId] = { type: 'add', label, name, properties: props };
+        updatePendingBadge();
+        updateStats();
+        updateSidebar();
+        closeModal('addNodeModal');
+        alert(`Node "${name}" added successfully!`);
+      } catch (err) {
+        console.error('Error adding node:', err);
+        alert('Error: ' + err.message);
+      }
+    }
+
+    // Add edge
+    function showAddEdgeModal() {
+      document.getElementById('edgeFromId').value = selectedNode || '';
+      document.getElementById('edgeType').value = '';
+      document.getElementById('edgeToId').value = '';
+      showModal('addEdgeModal');
+    }
+
+    async function addEdge() {
+      const fromId = document.getElementById('edgeFromId').value.trim();
+      const relType = document.getElementById('edgeType').value.trim();
+      const toId = document.getElementById('edgeToId').value.trim();
+
+      if (!fromId || !relType || !toId) {
+        alert('All fields are required');
+        return;
+      }
+
+      if (!graphData.nodes.get(fromId) || !graphData.nodes.get(toId)) {
+        alert('Invalid node IDs. Make sure both nodes exist in the graph.');
+        return;
+      }
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (personId) headers['X-Person-Id'] = personId;
+
+        const resp = await fetch('/api/relationships', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ from: fromId, type: relType, to: toId }),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          throw new Error(err.detail || err.error || 'Failed to add relationship');
+        }
+        const data = await resp.json();
+        console.log('Relationship created:', data);
+
+        // Add to vis network
+        graphData.edges.add({
+          id: String(data.id),
+          from: fromId,
+          to: toId,
+          label: relType,
+        });
+
+        // Track change
+        pendingChanges.edges[String(data.id)] = { type: 'add', from: fromId, type: relType, to: toId };
+        updatePendingBadge();
+        updateSidebar();
+        closeModal('addEdgeModal');
+        alert(`Relationship "${relType}" added successfully!`);
+      } catch (err) {
+        console.error('Error adding edge:', err);
+        alert('Error: ' + err.message);
+      }
+    }
+
+    // Delete operations
+    function deleteSelectedNode() {
+      if (!selectedNode) return;
+      const node = graphData.nodes.get(selectedNode);
+      if (!confirm(`Delete node "${node.label}"? This will also delete all its relationships.`)) return;
+
+      // Get all connected edges
+      const connectedEdges = graphData.edges.get({
+        filter: (e) => e.from === selectedNode || e.to === selectedNode
+      });
+
+      // Remove edges first
+      connectedEdges.forEach(e => {
+        graphData.edges.remove(e.id);
+        pendingChanges.deletedEdges.push(e.id);
+      });
+
+      // Remove node
+      graphData.nodes.remove(selectedNode);
+      pendingChanges.deletedNodes.push(selectedNode);
+      selectedNode = null;
+      console.log('Marked for deletion:', { nodeId: selectedNode, edgesCount: connectedEdges.length });
+      updatePendingBadge();
+      updateStats();
+      updateSidebar();
+    }
+
+    function deleteSelectedEdge() {
+      if (!selectedEdge) return;
+      const edge = graphData.edges.get(selectedEdge);
+      if (!confirm(`Delete relationship "${edge.label}"?`)) return;
+
+      graphData.edges.remove(selectedEdge);
+      pendingChanges.deletedEdges.push(selectedEdge);
+      selectedEdge = null;
+      console.log('Marked for deletion:', { edgeId: selectedEdge });
+      updatePendingBadge();
+      updateSidebar();
+    }
+
+    // Pending changes tracking
+    function updatePendingBadge() {
+      const count =
+        Object.keys(pendingChanges.nodes).length +
+        Object.keys(pendingChanges.edges).length +
+        pendingChanges.deletedNodes.length +
+        pendingChanges.deletedEdges.length;
+
+      const badge = document.getElementById('pendingBadge');
+      badge.textContent = count + ' pending';
+      badge.classList.toggle('has-changes', count > 0);
+      document.getElementById('commitBtn').disabled = count === 0;
+      document.getElementById('resetBtn').disabled = count === 0;
+    }
+
+    function updateChangesList() {
+      const list = document.getElementById('changesList');
+      const changes = [];
+
+      Object.entries(pendingChanges.nodes).forEach(([id, change]) => {
+        changes.push(`<div class="change-item">➕ Node: ${change.name} (${id})</div>`);
+      });
+
+      Object.entries(pendingChanges.edges).forEach(([id, change]) => {
+        changes.push(`<div class="change-item">➕ Relationship: ${change.type}</div>`);
+      });
+
+      pendingChanges.deletedNodes.forEach((id) => {
+        changes.push(`<div class="change-item delete">❌ Deleted node: ${id}</div>`);
+      });
+
+      pendingChanges.deletedEdges.forEach((id) => {
+        changes.push(`<div class="change-item delete">❌ Deleted relationship: ${id}</div>`);
+      });
+
+      if (changes.length > 0) {
+        document.getElementById('changesSection').style.display = 'block';
+        list.innerHTML = changes.join('');
+      } else {
+        document.getElementById('changesSection').style.display = 'none';
+      }
+    }
+
+    function resetPendingChanges() {
+      if (!confirm('Discard all pending changes?')) return;
+      pendingChanges = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
+      loadGraph(); // Reload from server
+      updatePendingBadge();
+      updateSidebar();
+    }
+
+    // Commit
+    function showCommitModal() {
+      const list = document.getElementById('commitChangesList');
+      const changes = [];
+
+      Object.entries(pendingChanges.nodes).forEach(([id, change]) => {
+        changes.push(`<div class="change-item">➕ Add node: <strong>${change.name}</strong></div>`);
+      });
+
+      Object.entries(pendingChanges.edges).forEach(([id, change]) => {
+        changes.push(`<div class="change-item">➕ Add relationship: <strong>${change.type}</strong></div>`);
+      });
+
+      pendingChanges.deletedNodes.forEach((id) => {
+        changes.push(`<div class="change-item delete">❌ Remove node</div>`);
+      });
+
+      pendingChanges.deletedEdges.forEach((id) => {
+        changes.push(`<div class="change-item delete">❌ Remove relationship</div>`);
+      });
+
+      list.innerHTML = changes.join('');
+      showModal('commitModal');
+    }
+
+    async function commitChanges() {
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (personId) headers['X-Person-Id'] = personId;
+
+        console.log('Committing changes:', pendingChanges);
+
+        const resp = await fetch('/api/commit', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(pendingChanges),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          console.error('Commit error:', err);
+          throw new Error(err.detail || err.error || 'Commit failed');
+        }
+
+        alert('✓ Changes saved to memory!');
+        pendingChanges = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
+        await loadGraph();
+        updatePendingBadge();
+        updateSidebar();
+        closeModal('commitModal');
+      } catch (err) {
+        console.error('Error:', err);
+        alert('Error: ' + err.message);
+      }
+    }
+
+    // Search nodes and relationships
+    function runSearch() {
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      const section = document.getElementById('searchResultsSection');
+      const list = document.getElementById('searchResultsList');
+
+      if (!query) { clearSearch(); return; }
+
+      document.getElementById('clearSearchBtn').style.display = '';
+
+      const matchedNodes = graphData.nodes.get().filter(n =>
+        (n.label || '').toLowerCase().includes(query) ||
+        (n.title || '').toLowerCase().includes(query)
+      );
+
+      const matchedEdges = graphData.edges.get().filter(e =>
+        (e.label || '').toLowerCase().includes(query)
+      );
+
+      if (matchedNodes.length === 0 && matchedEdges.length === 0) {
+        list.innerHTML = '<div class="search-no-results">No results found</div>';
+        section.style.display = 'block';
+        network.unselectAll();
+        return;
+      }
+
+      const items = [];
+
+      matchedNodes.forEach(n => {
+        items.push(`
+          <div class="search-result-item" onclick="focusNode('${n.id}')">
+            <span>${n.label}</span>
+            <span class="result-type">${n.title || 'node'}</span>
+          </div>`);
+      });
+
+      matchedEdges.forEach(e => {
+        const fromNode = graphData.nodes.get(e.from);
+        const toNode = graphData.nodes.get(e.to);
+        const fromLabel = fromNode ? fromNode.label : e.from;
+        const toLabel = toNode ? toNode.label : e.to;
+        items.push(`
+          <div class="search-result-item" onclick="focusEdge('${e.id}')">
+            <span>${fromLabel} → ${toLabel}</span>
+            <span class="result-type">${e.label}</span>
+          </div>`);
+      });
+
+      list.innerHTML = items.join('');
+      section.style.display = 'block';
+
+      // Highlight matched nodes on graph
+      const allNodeIds = graphData.nodes.getIds();
+      const matchedNodeIds = matchedNodes.map(n => n.id);
+      graphData.nodes.update(
+        allNodeIds.map(id => ({
+          id,
+          color: matchedNodeIds.includes(id)
+            ? { background: '#4ecdc4', border: '#2d72d9' }
+            : { background: 'rgba(45,114,217,0.2)', border: 'rgba(78,205,196,0.2)' },
+        }))
+      );
+
+      if (matchedNodeIds.length > 0) {
+        network.selectNodes(matchedNodeIds);
+        network.fit({ nodes: matchedNodeIds, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+      }
+    }
+
+    function focusNode(id) {
+      network.selectNodes([id]);
+      network.focus(id, { scale: 1.4, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+      selectedNode = id;
+      selectedEdge = null;
+      updateSidebar();
+    }
+
+    function focusEdge(id) {
+      network.selectEdges([id]);
+      selectedEdge = id;
+      selectedNode = null;
+      updateSidebar();
+    }
+
+    function clearSearch() {
+      document.getElementById('searchInput').value = '';
+      document.getElementById('clearSearchBtn').style.display = 'none';
+      document.getElementById('searchResultsSection').style.display = 'none';
+      // Restore original node colors
+      graphData.nodes.update(
+        graphData.nodes.getIds().map(id => ({
+          id,
+          color: { background: '#2d72d9', border: '#4ecdc4', highlight: { background: '#4ecdc4' } },
+        }))
+      );
+      network.unselectAll();
+    }
+
+    // Download wallet markdown
+    async function downloadWallet() {
+      try {
+        const headers = personId ? { 'X-Person-Id': personId } : {};
+        const url = personId ? `/api/wallet?person_id=${encodeURIComponent(personId)}` : '/api/wallet';
+        const resp = await fetch(url, { headers });
+        if (!resp.ok) throw new Error('Failed to generate wallet');
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="([^"]+)"/);
+        const filename = match ? match[1] : 'aegis_wallet.md';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (err) {
+        alert('Error downloading wallet: ' + err.message);
+      }
+    }
+
+    // Initialize on load
+    window.addEventListener('load', () => {
+      console.log('Page loaded, initializing...');
+      initNetwork();
+      loadGraph();
+      
+      // Add click-outside-to-close for modals
+      document.querySelectorAll('.modal-overlay').forEach(overlay => {
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) {
+            overlay.classList.remove('show');
+          }
+        });
+      });
+      
+      console.log('Initialization complete');
+    });
+  </script>
+</body>
+</html>
