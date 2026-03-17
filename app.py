@@ -489,6 +489,101 @@ def memory_page():
     return send_from_directory(app.static_folder, "memory.html")
 
 
+@app.route("/onboarding")
+def onboarding_page():
+    return send_from_directory(app.static_folder, "onboarding.html")
+
+
+@app.route("/api/import", methods=["POST"])
+def import_twin():
+    data = parse_body_json()
+    person_id = resolve_person_id(data)
+    twin = data.get("twin", {})
+    if not isinstance(twin, dict):
+        return jsonify({"error": "twin must be a JSON object"}), 400
+
+    name = str(twin.get("name") or person_id)
+    description = str(twin.get("twin_description") or "")
+    speaking_style = str(twin.get("speaking_style") or "")
+
+    field_map = {
+        "values":              ("Value",    "HAS_VALUE"),
+        "skills":              ("Skill",    "HAS_SKILL"),
+        "personality":         ("Trait",    "HAS_TRAIT"),
+        "goals":               ("Goal",     "HAS_GOAL"),
+        "beliefs":             ("Belief",   "HAS_BELIEF"),
+        "currently_working_on":("Project",  "WORKING_ON"),
+        "known_for":           ("Identity", "KNOWN_FOR"),
+    }
+
+    try:
+        with NEO4J_DRIVER.session(database=DATABASE) as session:
+            session.run(
+                """
+                MERGE (p:Person {id: $pid})
+                SET p.name = $name,
+                    p.description = $desc,
+                    p.speaking_style = $style
+                """,
+                pid=person_id, name=name, desc=description, style=speaking_style,
+            )
+            for field, (label, rel) in field_map.items():
+                items = twin.get(field) or []
+                if isinstance(items, str):
+                    items = [items]
+                for item in items:
+                    item = str(item).strip()
+                    if not item:
+                        continue
+                    session.run(
+                        f"""
+                        MATCH (p:Person {{id: $pid}})
+                        MERGE (n:{label} {{name: $name}})
+                        MERGE (p)-[:{rel}]->(n)
+                        """,
+                        pid=person_id, name=item,
+                    )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"status": "ok", "person_id": person_id})
+
+
+@app.route("/api/onboard", methods=["POST"])
+def onboard():
+    data = parse_body_json()
+    person_id = resolve_person_id(data)
+    answers = data.get("answers", {})
+    if not isinstance(answers, dict):
+        return jsonify({"error": "answers must be an object"}), 400
+
+    label_map = {
+        "name":        "My name is",
+        "description": "The person I want to become:",
+        "values":      "Things I never compromise on:",
+        "known_for":   "I want to be known for:",
+        "skills":      "I am exceptional at:",
+        "working_on":  "Right now I am building or working toward:",
+    }
+
+    lines = []
+    for key, prefix in label_map.items():
+        val = str(answers.get(key, "")).strip()
+        if val:
+            lines.append(f"User: {prefix} {val}")
+
+    transcript = "\n".join(lines)
+    if not transcript:
+        return jsonify({"error": "no answers provided"}), 400
+
+    try:
+        run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=REDIS_CLIENT)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"status": "ok", "person_id": person_id})
+
+
 # ---------------------------
 # Memory Graph API
 # ---------------------------
