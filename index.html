@@ -3,200 +3,321 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aegis Chat</title>
+  <title>Aegis</title>
   <style>
     :root {
-      --bg: #0f1115;
-      --panel: #151820;
-      --text: #e6e9f2;
-      --muted: #9aa3b5;
-      --accent: #4ecdc4;
-      --user: #2d72d9;
-      --assistant: #2f9e44;
-      --border: #1f2430;
+      --bg: #000;
+      --surface: rgba(255,255,255,0.05);
+      --surface-hover: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.1);
+      --text: #f5f5f7;
+      --secondary: #86868b;
+      --tertiary: #3a3a3c;
+      --accent: #2997ff;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      --mono: "SF Mono", "Fira Code", "Menlo", monospace;
     }
-    * { box-sizing: border-box; }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
     body {
-      margin: 0;
-      height: 100vh;
-      display: flex;
       background: var(--bg);
       color: var(--text);
-      font-family: "Inter", system-ui, -apple-system, sans-serif;
-    }
-    .sidebar {
-      width: 280px;
-      background: var(--panel);
-      border-right: 1px solid var(--border);
-      padding: 16px;
-      overflow-y: auto;
-    }
-    .sidebar h2 {
-      margin: 0 0 12px;
-      font-size: 16px;
-      letter-spacing: 0.4px;
-      color: var(--muted);
-    }
-    .context {
-      white-space: pre-wrap;
-      line-height: 1.4;
-      color: var(--text);
-    }
-    .main {
-      flex: 1;
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
       display: flex;
       flex-direction: column;
       height: 100vh;
+      overflow: hidden;
     }
-    .header {
-      padding: 14px 18px;
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      height: 52px;
       border-bottom: 1px solid var(--border);
-      background: var(--panel);
-      font-weight: 600;
-      letter-spacing: 0.3px;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      flex-shrink: 0;
+      z-index: 50;
     }
+
+    .brand {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    nav { display: flex; gap: 2px; }
+
+    .nav-link {
+      padding: 5px 13px;
+      border-radius: 980px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--secondary);
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .nav-link:hover { background: var(--surface); color: var(--text); }
+    .nav-link.active { background: var(--surface); color: var(--text); }
+
+    .header-right { display: flex; gap: 8px; }
+
+    .btn-sm {
+      padding: 5px 14px;
+      border-radius: 980px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--font);
+      transition: all 0.15s;
+    }
+
+    .btn-sm:hover { background: var(--surface-hover); }
+
+    /* ── Messages ── */
     .messages {
       flex: 1;
-      padding: 18px;
       overflow-y: auto;
+      padding: 40px 0 20px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 2px;
+      scroll-behavior: smooth;
     }
-    .msg {
-      max-width: 68%;
-      padding: 12px 14px;
-      border-radius: 12px;
-      line-height: 1.5;
+
+    .messages::-webkit-scrollbar { width: 3px; }
+    .messages::-webkit-scrollbar-thumb { background: var(--tertiary); border-radius: 2px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+
+    .msg-row {
+      display: flex;
+      padding: 3px 0;
+      width: 100%;
+      max-width: 720px;
+      margin: 0 auto;
+      padding-left: 24px;
+      padding-right: 24px;
+    }
+
+    .msg-row.user     { justify-content: flex-end; }
+    .msg-row.assistant { justify-content: flex-start; }
+
+    .bubble {
+      max-width: 75%;
+      padding: 11px 16px;
+      font-size: 15px;
+      line-height: 1.55;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+    }
+
+    .bubble.user {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 20px 20px 6px 20px;
+    }
+
+    .bubble.assistant {
+      background: var(--surface);
+      color: var(--text);
       border: 1px solid var(--border);
+      border-radius: 20px 20px 20px 6px;
     }
-    .msg.user {
-      margin-left: auto;
-      background: rgba(45, 114, 217, 0.12);
-      border-color: rgba(45, 114, 217, 0.4);
+
+    .bubble.thinking {
+      background: transparent;
+      border: none;
+      color: var(--secondary);
+      font-size: 14px;
+      padding-left: 4px;
     }
-    .msg.assistant {
-      margin-right: auto;
-      background: rgba(47, 158, 68, 0.12);
-      border-color: rgba(47, 158, 68, 0.4);
-    }
-    .msg code {
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 6px;
+
+    .bubble code {
+      font-family: var(--mono);
+      font-size: 0.88em;
+      background: rgba(255,255,255,0.1);
       padding: 1px 6px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.9em;
+      border-radius: 4px;
     }
-    .msg.thinking {
-      color: var(--muted);
-    }
+
+    .bubble.user code { background: rgba(255,255,255,0.2); }
+
     .thinking-dots span {
-      opacity: 0.2;
-      animation: thinking-pulse 1.2s infinite;
+      opacity: 0.25;
+      animation: blink 1.4s infinite;
     }
-    .thinking-dots span:nth-child(2) {
-      animation-delay: 0.2s;
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.25; }
+      40%  { opacity: 1; }
     }
-    .thinking-dots span:nth-child(3) {
-      animation-delay: 0.4s;
+
+    /* ── Empty state ── */
+    .empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding-bottom: 80px;
+      pointer-events: none;
     }
-    @keyframes thinking-pulse {
-      0%, 80%, 100% { opacity: 0.2; }
-      40% { opacity: 1; }
+
+    .empty h2 {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
     }
+
+    .empty p {
+      font-size: 15px;
+      color: var(--secondary);
+      text-align: center;
+      max-width: 280px;
+      line-height: 1.5;
+    }
+
+    /* ── Input ── */
+    .input-wrap {
+      flex-shrink: 0;
+      padding: 12px 24px 28px;
+      max-width: 720px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
     .input-bar {
       display: flex;
-      padding: 12px;
-      border-top: 1px solid var(--border);
-      background: var(--panel);
+      align-items: center;
       gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      padding: 8px 8px 8px 20px;
+      transition: border-color 0.2s;
     }
+
+    .input-bar:focus-within { border-color: rgba(255,255,255,0.22); }
+
     .input-bar input {
       flex: 1;
-      padding: 12px 14px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: #0f121a;
+      background: none;
+      border: none;
+      outline: none;
       color: var(--text);
+      font-family: var(--font);
       font-size: 15px;
+      padding: 4px 0;
+      min-width: 0;
     }
-    .input-bar button {
-      padding: 12px 16px;
+
+    .input-bar input::placeholder { color: var(--tertiary); }
+
+    .send-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
       background: var(--accent);
       border: none;
-      border-radius: 10px;
-      color: #0c0f13;
-      font-weight: 700;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s, transform 0.15s;
+      font-size: 15px;
+      color: #fff;
+      font-weight: 700;
     }
-    .input-bar button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+
+    .send-btn:hover  { background: #0a84ff; transform: scale(1.06); }
+    .send-btn:disabled { background: var(--tertiary); cursor: not-allowed; transform: none; }
+
+    .hint {
+      text-align: center;
+      font-size: 11px;
+      color: var(--tertiary);
+      margin-top: 10px;
+      letter-spacing: 0.02em;
     }
   </style>
 </head>
 <body>
-  <div class="sidebar">
-    <h2>Aegis Memory</h2>
-    <div id="context" class="context">Loading...</div>
-  </div>
-  <div class="main" style="width:100%">
-    <div class="header">Aegis · Pick Up Where You Left Off</div>
-    <div id="messages" class="messages"></div>
-    <div class="input-bar">
-      <input id="input" type="text" placeholder="Type a message... (/exit to save & close)" autocomplete="off" />
-      <button id="send">Send</button>
+  <header>
+    <span class="brand">Aegis</span>
+    <nav>
+      <a href="/" class="nav-link active">Chat</a>
+      <a href="/memory" class="nav-link">Graph</a>
+      <a href="/onboarding" class="nav-link">Twin</a>
+    </nav>
+    <div class="header-right">
+      <button class="btn-sm" onclick="saveTranscript()">Save</button>
     </div>
+  </header>
+
+  <div class="messages" id="messages">
+    <div class="empty" id="emptyState">
+      <h2>Your twin is listening.</h2>
+      <p>Start talking. Every conversation makes the graph richer.</p>
+    </div>
+  </div>
+
+  <div class="input-wrap">
+    <div class="input-bar">
+      <input id="input" type="text" placeholder="Message your twin…" autocomplete="off" />
+      <button class="send-btn" id="send" title="Send">↑</button>
+    </div>
+    <p class="hint">Type /exit to save &amp; close</p>
   </div>
 
   <script>
     const messagesEl = document.getElementById('messages');
-    const inputEl = document.getElementById('input');
-    const sendBtn = document.getElementById('send');
-    const contextEl = document.getElementById('context');
-    let sending = false;
+    const inputEl    = document.getElementById('input');
+    const sendBtn    = document.getElementById('send');
+    const emptyState = document.getElementById('emptyState');
+    let sending    = false;
     let thinkingEl = null;
     const transcript = [];
-    const personId = new URLSearchParams(window.location.search).get('person_id');
+    const personId   = new URLSearchParams(window.location.search).get('person_id');
 
     function withPersonId(payload) {
-      if (!personId) return payload;
-      return { ...payload, person_id: personId };
-    }
-
-    async function fetchContext() {
-      try {
-        const url = personId ? `/context?person_id=${encodeURIComponent(personId)}` : '/context';
-        const res = await fetch(url);
-        const data = await res.json();
-        contextEl.textContent = data.context || 'No stored memory yet.';
-      } catch (e) {
-        contextEl.textContent = 'Failed to load context.';
-      }
+      return personId ? { ...payload, person_id: personId } : payload;
     }
 
     function addMessage(text, role) {
-      const div = document.createElement('div');
-      div.className = `msg ${role}`;
-      div.innerHTML = renderMessageMarkdown(text);
-      messagesEl.appendChild(div);
+      if (emptyState) emptyState.style.display = 'none';
+      const row    = document.createElement('div');
+      row.className = `msg-row ${role}`;
+      const bubble = document.createElement('div');
+      bubble.className = `bubble ${role}`;
+      bubble.innerHTML = renderMarkdown(text);
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    function escapeHtml(text) {
-      return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    function escapeHtml(t) {
+      return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+               .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
-    function renderMessageMarkdown(text) {
-      const escaped = escapeHtml(text);
-      return escaped
+    function renderMarkdown(text) {
+      return escapeHtml(text)
         .replace(/\*\*([^*\n][\s\S]*?)\*\*/g, '<strong>$1</strong>')
         .replace(/__([^_\n][\s\S]*?)__/g, '<strong>$1</strong>')
         .replace(/`([^`\n]+)`/g, '<code>$1</code>');
@@ -204,50 +325,53 @@
 
     function showThinking() {
       if (thinkingEl) return;
+      const row    = document.createElement('div');
+      row.className = 'msg-row assistant';
       thinkingEl = document.createElement('div');
-      thinkingEl.className = 'msg assistant thinking';
-      thinkingEl.innerHTML = 'Thinking<span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>';
-      messagesEl.appendChild(thinkingEl);
+      thinkingEl.className = 'bubble thinking';
+      thinkingEl.innerHTML = '<span class="thinking-dots"><span>●</span><span>●</span><span>●</span></span>';
+      row.appendChild(thinkingEl);
+      messagesEl.appendChild(row);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
     function hideThinking() {
       if (!thinkingEl) return;
-      thinkingEl.remove();
+      thinkingEl.parentElement?.remove();
       thinkingEl = null;
     }
 
     async function sendMessage() {
       const text = inputEl.value.trim();
       if (!text || sending) return;
+
       if (text === '/exit') {
         await saveTranscript();
         window.close();
         return;
       }
+
       sending = true;
       sendBtn.disabled = true;
       addMessage(text, 'user');
       transcript.push(`You: ${text}`);
       inputEl.value = '';
       showThinking();
+
       try {
-        const res = await fetch('/chat', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(withPersonId({message: text}))
+        const res  = await fetch('/chat', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(withPersonId({ message: text })),
         });
         const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || 'Server error');
-        }
-        const reply = data.reply || 'No response';
+        if (!res.ok) throw new Error(data.error || 'Server error');
         hideThinking();
-        addMessage(reply, 'assistant');
-        transcript.push(`Assistant: ${reply}`);
+        addMessage(data.reply || 'No response', 'assistant');
+        transcript.push(`Assistant: ${data.reply}`);
       } catch (e) {
         hideThinking();
-        addMessage(`Error: ${e.message || 'contacting server'}`, 'assistant');
+        addMessage(`Error: ${e.message}`, 'assistant');
       } finally {
         hideThinking();
         sending = false;
@@ -260,28 +384,23 @@
       if (!transcript.length) return;
       try {
         await fetch('/save', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(withPersonId({transcript: transcript.join('\\n')}))
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(withPersonId({ transcript: transcript.join('\n') })),
         });
         transcript.length = 0;
-      } catch (e) {
-        console.warn('Save failed', e);
-      }
+      } catch (e) { console.warn('Save failed', e); }
     }
 
     sendBtn.addEventListener('click', sendMessage);
-    inputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') sendMessage();
-    });
+    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
 
-    window.addEventListener('beforeunload', (e) => {
+    window.addEventListener('beforeunload', () => {
       if (transcript.length) {
-        navigator.sendBeacon('/save', JSON.stringify(withPersonId({transcript: transcript.join('\\n')})));
+        navigator.sendBeacon('/save', JSON.stringify(withPersonId({ transcript: transcript.join('\n') })));
       }
     });
 
-    fetchContext();
     inputEl.focus();
   </script>
 </body>
