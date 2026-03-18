@@ -511,22 +511,65 @@
     function initNetwork() {
       const container = document.getElementById('network');
       network = new vis.Network(container, graphData, {
-        physics: { enabled: true, stabilization: { iterations: 200 } },
+        physics: {
+          enabled: true,
+          barnesHut: { gravitationalConstant: -8000, springLength: 140, springConstant: 0.04, damping: 0.18 },
+          stabilization: { iterations: 300 },
+        },
         nodes: {
           shape: 'dot',
-          size: 12,
-          color: { background: '#1a5aad', border: '#2997ff', highlight: { background: '#2997ff', border: '#fff' } },
-          font: { size: 12, color: '#f5f5f7', face: '-apple-system, BlinkMacSystemFont, sans-serif' },
+          size: 10,
+          color: {
+            background: '#0d2a4a',
+            border: '#2997ff',
+            highlight: { background: '#2997ff', border: '#ffffff' },
+            hover: { background: '#1a4a80', border: '#60b8ff' },
+          },
+          font: {
+            size: 12,
+            color: '#f5f5f7',
+            face: '-apple-system, BlinkMacSystemFont, sans-serif',
+            vadjust: -22,
+          },
           borderWidth: 1.5,
+          borderWidthSelected: 2.5,
+          shadow: { enabled: true, color: 'rgba(41,151,255,0.35)', size: 14, x: 0, y: 0 },
+          scaling: { label: { enabled: false } },
         },
         edges: {
-          color: { color: 'rgba(41,151,255,0.25)', highlight: '#2997ff' },
-          font: { size: 10, color: '#86868b', face: '-apple-system, BlinkMacSystemFont, sans-serif' },
-          smooth: { type: 'continuous' },
-          arrows: 'to',
-          width: 1,
+          color: { color: 'rgba(41,151,255,0.45)', highlight: '#60b8ff', hover: 'rgba(41,151,255,0.8)' },
+          font: { size: 0, color: 'transparent' },
+          smooth: { type: 'curvedCW', roundness: 0.15 },
+          arrows: { to: { enabled: true, scaleFactor: 0.45 } },
+          width: 1.2,
+          hoverWidth: 2.5,
+          selectionWidth: 2.5,
+          shadow: { enabled: true, color: 'rgba(41,151,255,0.2)', size: 6, x: 0, y: 0 },
         },
-        interaction: { navigationButtons: false, keyboard: true, tooltipDelay: 200 },
+        interaction: {
+          navigationButtons: false,
+          keyboard: true,
+          tooltipDelay: 100,
+          hover: true,
+          hoverConnectedEdges: true,
+        },
+      });
+
+      // Show label only on hover
+      network.on('hoverNode', p => {
+        const n = graphData.nodes.get(p.node);
+        graphData.nodes.update({ id: p.node, label: n._label || n.label });
+      });
+      network.on('blurNode', p => {
+        const n = graphData.nodes.get(p.node);
+        if (n) graphData.nodes.update({ id: p.node, label: ' ' });
+      });
+      network.on('hoverEdge', p => {
+        const e = graphData.edges.get(p.edge);
+        graphData.edges.update({ id: p.edge, font: { size: 11, color: '#86868b', face: '-apple-system, sans-serif', strokeWidth: 0 } });
+      });
+      network.on('blurEdge', p => {
+        graphData.edges.update({ id: p.edge, font: { size: 0, color: 'transparent' } });
       });
 
       network.on('selectNode', p => { selectedNode = p.nodes[0]; selectedEdge = null; updateSidebar(); });
@@ -542,7 +585,8 @@
       const data = await resp.json();
       graphData.nodes.clear();
       graphData.edges.clear();
-      graphData.nodes.add(data.nodes);
+      // Store real label in _label, default display is blank (shown on hover)
+      graphData.nodes.add(data.nodes.map(n => ({ ...n, _label: n.label, label: ' ' })));
       graphData.edges.add(data.edges);
       updateStats();
     }
@@ -556,7 +600,7 @@
         const n = graphData.nodes.get(selectedNode);
         document.getElementById('nodeDetails').innerHTML = `
           <div class="detail-row"><span class="k">ID</span><span class="v">${n.id}</span></div>
-          <div class="detail-row"><span class="k">Name</span><span class="v">${n.label || '—'}</span></div>
+          <div class="detail-row"><span class="k">Name</span><span class="v">${n._label || n.label || '—'}</span></div>
           ${n.title ? `<div class="detail-row"><span class="k">Type</span><span class="v">${n.title}</span></div>` : ''}
         `;
       }
@@ -645,7 +689,7 @@
       if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Failed'); return; }
       const data = await resp.json();
 
-      graphData.nodes.add({ id: String(data.id), label: name, title: label,
+      graphData.nodes.add({ id: String(data.id), _label: name, label: ' ', title: label,
         color: { background: '#0d3d80', border: '#2997ff' } });
       pending.nodes[String(data.id)] = { type: 'add', label, name };
       updatePendingBadge(); updateStats(); updateSidebar();
@@ -747,7 +791,7 @@
       if (!q) { clearSearch(); return; }
 
       const matchedNodes = graphData.nodes.get().filter(n =>
-        (n.label||'').toLowerCase().includes(q) || (n.title||'').toLowerCase().includes(q));
+        (n._label||n.label||'').toLowerCase().includes(q) || (n.title||'').toLowerCase().includes(q));
       const matchedEdges = graphData.edges.get().filter(e =>
         (e.label||'').toLowerCase().includes(q));
 
@@ -769,7 +813,7 @@
       const items = [];
       matchedNodes.forEach(n =>
         items.push(`<div class="result-item" onclick="focusNode('${n.id}')">
-          <span class="r-name">${n.label}</span>
+          <span class="r-name">${n._label || n.label}</span>
           <span class="r-type">${n.title || 'node'}</span>
         </div>`));
       matchedEdges.forEach(e => {
