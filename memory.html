@@ -3,1063 +3,835 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aegis Memory Management</title>
+  <title>Aegis — Twin Graph</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0f1115;
-      --panel: #151820;
-      --text: #e6e9f2;
-      --muted: #9aa3b5;
-      --accent: #4ecdc4;
-      --success: #2f9e44;
-      --error: #e74c3c;
-      --border: #1f2430;
-      --highlight: #2d72d9;
+      --bg: #000;
+      --surface: rgba(255,255,255,0.05);
+      --surface-hover: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.1);
+      --text: #f5f5f7;
+      --secondary: #86868b;
+      --tertiary: #3a3a3c;
+      --accent: #2997ff;
+      --accent-dim: rgba(41,151,255,0.15);
+      --success: #30d158;
+      --error: #ff453a;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
     }
 
-    * { box-sizing: border-box; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
 
     body {
-      margin: 0;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
       background: var(--bg);
       color: var(--text);
-      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
     }
 
+    /* ── Header ── */
     header {
-      background: var(--panel);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      height: 52px;
       border-bottom: 1px solid var(--border);
-      padding: 16px 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 100;
-    }
-
-    header h1 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 600;
-    }
-
-    .header-controls {
-      display: flex;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      flex-shrink: 0;
       gap: 12px;
-      align-items: center;
+      z-index: 50;
     }
 
-    .search-bar {
+    .brand {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      flex-shrink: 0;
+    }
+
+    nav { display: flex; gap: 2px; flex-shrink: 0; }
+
+    .nav-link {
+      padding: 5px 13px;
+      border-radius: 980px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--secondary);
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .nav-link:hover { background: var(--surface); color: var(--text); }
+    .nav-link.active { background: var(--surface); color: var(--text); }
+
+    /* Search */
+    .search-wrap {
+      flex: 1;
+      max-width: 280px;
       display: flex;
+      align-items: center;
       gap: 6px;
-      align-items: center;
     }
 
-    .search-bar input {
-      width: 200px;
-      padding: 7px 12px;
-      background: rgba(255,255,255,0.06);
+    .search-wrap input {
+      flex: 1;
+      background: var(--surface);
       border: 1px solid var(--border);
+      border-radius: 980px;
       color: var(--text);
-      border-radius: 6px;
+      font-family: var(--font);
       font-size: 13px;
-    }
-
-    .search-bar input:focus {
+      padding: 6px 14px;
       outline: none;
-      border-color: var(--accent);
-      background: rgba(78,205,196,0.08);
+      transition: all 0.18s;
+      min-width: 0;
     }
 
-    .search-bar button {
-      padding: 7px 14px;
-      background: var(--highlight);
-      color: white;
+    .search-wrap input:focus {
+      border-color: rgba(41,151,255,0.5);
+      background: rgba(41,151,255,0.07);
     }
 
-    .search-bar button:hover {
-      background: #1e5fb3;
-    }
+    .search-wrap input::placeholder { color: var(--tertiary); }
 
-    .search-results {
-      max-height: 220px;
-      overflow-y: auto;
-    }
+    .header-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
-    .search-result-item {
-      padding: 8px 10px;
-      margin: 4px 0;
-      background: rgba(45,114,217,0.12);
-      border-left: 2px solid var(--highlight);
-      border-radius: 3px;
-      font-size: 12px;
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
+    /* Buttons */
+    .btn {
+      display: inline-flex;
       align-items: center;
-    }
-
-    .search-result-item:hover {
-      background: rgba(45,114,217,0.25);
-    }
-
-    .search-result-item .result-type {
-      font-size: 10px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .search-no-results {
-      font-size: 12px;
-      color: var(--muted);
-      text-align: center;
-      padding: 16px 0;
-    }
-
-    .pending-badge {
-      background: var(--highlight);
-      color: white;
-      padding: 4px 12px;
-      border-radius: 16px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .pending-badge.has-changes {
-      background: var(--accent);
-    }
-
-    button {
-      background: var(--accent);
-      color: #000;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 6px;
+      gap: 5px;
+      padding: 5px 14px;
+      border-radius: 980px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--font);
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn:hover { background: var(--surface-hover); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: #0a84ff; border-color: #0a84ff; }
+
+    .btn-success {
+      background: rgba(48,209,88,0.15);
+      border-color: rgba(48,209,88,0.3);
+      color: var(--success);
+    }
+
+    .btn-success:hover { background: rgba(48,209,88,0.25); }
+    .btn-success:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .btn-danger {
+      background: rgba(255,69,58,0.12);
+      border-color: rgba(255,69,58,0.25);
+      color: var(--error);
+    }
+
+    .btn-danger:hover { background: rgba(255,69,58,0.22); }
+
+    .pending-pill {
+      padding: 3px 10px;
+      border-radius: 980px;
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--secondary);
       transition: all 0.2s;
     }
 
-    button:hover {
-      background: #45b8ae;
-      transform: translateY(-1px);
+    .pending-pill.active {
+      background: var(--accent-dim);
+      border-color: rgba(41,151,255,0.3);
+      color: var(--accent);
     }
 
-    button:disabled {
-      background: var(--muted);
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .container {
+    /* ── Layout ── */
+    .layout {
       display: flex;
       flex: 1;
       overflow: hidden;
-      gap: 0;
     }
 
-    .graph-panel {
+    .graph-area {
       flex: 1;
-      background: var(--bg);
-      border-right: 1px solid var(--border);
       position: relative;
+      background: #000;
     }
 
-    #network {
-      width: 100%;
-      height: 100%;
-    }
+    #network { width: 100%; height: 100%; }
 
+    /* ── Sidebar ── */
     .sidebar {
-      width: 340px;
-      background: var(--panel);
+      width: 300px;
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.02);
       border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       overflow-y: auto;
     }
 
-    .sidebar-section {
-      padding: 20px 16px;
+    .sidebar::-webkit-scrollbar { width: 3px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--tertiary); border-radius: 2px; }
+
+    .s-section {
+      padding: 18px 16px;
       border-bottom: 1px solid var(--border);
     }
 
-    .sidebar-section h3 {
-      margin: 0 0 12px 0;
-      font-size: 13px;
+    .s-label {
+      font-size: 10px;
       font-weight: 700;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: var(--muted);
+      color: var(--tertiary);
+      margin-bottom: 12px;
     }
 
-    .sidebar-info {
-      font-size: 13px;
-      line-height: 1.6;
-    }
-
-    .sidebar-info .info-row {
+    .stat-row {
       display: flex;
       justify-content: space-between;
-      margin: 8px 0;
-      padding: 8px;
-      background: rgba(255, 255, 255, 0.02);
-      border-radius: 4px;
-    }
-
-    .sidebar-info .label {
-      color: var(--muted);
-    }
-
-    .sidebar-info .value {
-      color: var(--text);
-      font-weight: 500;
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .form-group label {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
+      align-items: center;
+      padding: 7px 10px;
+      background: var(--surface);
+      border-radius: 8px;
       margin-bottom: 6px;
-      color: var(--muted);
-      text-transform: uppercase;
     }
 
-    input, textarea, select {
-      width: 100%;
-      padding: 8px 12px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 4px;
-      font-family: inherit;
-      font-size: 13px;
-    }
+    .stat-row .k { font-size: 13px; color: var(--secondary); }
+    .stat-row .v { font-size: 13px; font-weight: 600; color: var(--text); }
 
-    input:focus, textarea:focus, select:focus {
-      outline: none;
-      border-color: var(--accent);
-      background: rgba(78, 205, 196, 0.1);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 80px;
-    }
-
-    .button-row {
+    .detail-row {
       display: flex;
-      gap: 8px;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
     }
 
-    .button-row button {
-      flex: 1;
+    .detail-row:last-child { border-bottom: none; }
+    .detail-row .k { font-size: 12px; color: var(--secondary); }
+    .detail-row .v { font-size: 12px; font-weight: 500; color: var(--text); text-align: right; max-width: 60%; word-break: break-word; }
+
+    /* Search results */
+    .result-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-bottom: 4px;
     }
 
-    .button-secondary {
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
+    .result-item:hover { background: var(--surface); }
+    .result-item .r-name { font-size: 13px; color: var(--text); }
+    .result-item .r-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--tertiary); }
 
-    .button-secondary:hover {
-      background: rgba(255, 255, 255, 0.15);
-    }
+    .no-results { font-size: 13px; color: var(--secondary); text-align: center; padding: 20px 0; }
 
-    .button-danger {
-      background: var(--error);
-      color: white;
-    }
-
-    .button-danger:hover {
-      background: #c0392b;
-    }
-
-    .button-success {
-      background: var(--success);
-      color: white;
-    }
-
-    .button-success:hover {
-      background: #27a038;
-    }
-
-    .empty-state {
-      text-align: center;
-      color: var(--muted);
-      padding: 40px 20px;
-      font-size: 13px;
-    }
-
-    .empty-state svg {
-      width: 48px;
-      height: 48px;
-      margin-bottom: 12px;
-      opacity: 0.5;
-    }
-
-    .changes-list {
-      max-height: 200px;
-      overflow-y: auto;
-      background: rgba(0, 0, 0, 0.2);
-      border-radius: 4px;
-      padding: 8px;
-    }
-
+    /* Changes list */
     .change-item {
-      padding: 8px;
-      margin: 4px 0;
-      background: rgba(78, 205, 196, 0.1);
-      border-left: 2px solid var(--accent);
-      border-radius: 3px;
+      padding: 8px 10px;
+      border-radius: 8px;
       font-size: 12px;
       color: var(--text);
+      background: var(--accent-dim);
+      border: 1px solid rgba(41,151,255,0.15);
+      margin-bottom: 5px;
     }
 
-    .change-item.delete {
-      background: rgba(231, 76, 60, 0.1);
-      border-left-color: var(--error);
+    .change-item.del {
+      background: rgba(255,69,58,0.08);
+      border-color: rgba(255,69,58,0.2);
     }
 
-    .modal-overlay {
+    /* Sidebar actions */
+    .s-btn-row { display: flex; flex-direction: column; gap: 6px; }
+
+    /* ── Modal ── */
+    .overlay {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.6);
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(8px);
       display: none;
       align-items: center;
       justify-content: center;
-      z-index: 1000;
+      z-index: 200;
     }
 
-    .modal-overlay.show {
-      display: flex;
-    }
+    .overlay.show { display: flex; }
 
     .modal {
-      background: var(--panel);
+      background: #111;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 24px;
-      max-width: 500px;
+      border-radius: 20px;
+      padding: 28px;
       width: 90%;
+      max-width: 460px;
       max-height: 80vh;
       overflow-y: auto;
     }
 
-    .modal h2 {
-      margin: 0 0 16px 0;
+    .modal h3 {
       font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
     }
 
-    @media (max-width: 1200px) {
-      .sidebar {
-        width: 280px;
-      }
+    .modal p {
+      font-size: 13px;
+      color: var(--secondary);
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .modal-actions .btn { flex: 1; justify-content: center; }
+
+    /* Form fields inside modal */
+    .field { margin-bottom: 14px; }
+
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--secondary);
+      margin-bottom: 6px;
+    }
+
+    .field input, .field textarea {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.18s;
+    }
+
+    .field input:focus, .field textarea:focus {
+      border-color: rgba(41,151,255,0.5);
+    }
+
+    .field input::placeholder, .field textarea::placeholder { color: var(--tertiary); }
+    .field textarea { resize: vertical; min-height: 80px; }
+
+    .changes-scroll { max-height: 200px; overflow-y: auto; }
+
+    @media (max-width: 900px) {
+      .sidebar { width: 240px; }
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>📚 Memory Graph</h1>
-    <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="Search nodes & relationships…" onkeydown="if(event.key==='Enter') runSearch()" />
-      <button onclick="runSearch()">Search</button>
-      <button class="button-secondary" onclick="clearSearch()" id="clearSearchBtn" style="display:none">✕</button>
+    <span class="brand">Aegis</span>
+    <nav>
+      <a href="/" class="nav-link">Chat</a>
+      <a href="/memory" class="nav-link active">Graph</a>
+      <a href="/onboarding" class="nav-link">Twin</a>
+    </nav>
+
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="Search nodes & relationships…"
+        onkeydown="if(event.key==='Enter') runSearch()"
+        oninput="if(this.value==='') clearSearch()" />
     </div>
-    <div class="header-controls">
-      <span class="pending-badge" id="pendingBadge">0 pending</span>
-      <button id="walletBtn" class="button-secondary" onclick="downloadWallet()">⬇ Wallet</button>
-      <button id="resetBtn" onclick="resetPendingChanges()">Reset</button>
-      <button id="commitBtn" class="button-success" onclick="showCommitModal()" disabled>Commit</button>
+
+    <div class="header-actions">
+      <span class="pending-pill" id="pendingBadge">0 pending</span>
+      <button class="btn" onclick="downloadWallet()">⬇ Twin Card</button>
+      <button class="btn" id="resetBtn" onclick="resetPendingChanges()" disabled>Reset</button>
+      <button class="btn btn-success" id="commitBtn" onclick="showCommitModal()" disabled>Commit</button>
     </div>
   </header>
 
-  <div class="container">
-    <div class="graph-panel">
+  <div class="layout">
+    <div class="graph-area">
       <div id="network"></div>
     </div>
 
     <div class="sidebar">
-      <div class="sidebar-section" id="searchResultsSection" style="display:none">
-        <h3>Search Results</h3>
-        <div class="search-results" id="searchResultsList"></div>
+      <!-- Stats -->
+      <div class="s-section">
+        <div class="s-label">Graph</div>
+        <div class="stat-row"><span class="k">Nodes</span><span class="v" id="nodeCount">0</span></div>
+        <div class="stat-row"><span class="k">Relationships</span><span class="v" id="edgeCount">0</span></div>
       </div>
 
-      <div class="sidebar-section">
-        <h3>Graph Stats</h3>
-        <div class="sidebar-info">
-          <div class="info-row">
-            <span class="label">Nodes</span>
-            <span class="value" id="nodeCount">0</span>
-          </div>
-          <div class="info-row">
-            <span class="label">Relationships</span>
-            <span class="value" id="edgeCount">0</span>
-          </div>
-        </div>
+      <!-- Search results -->
+      <div class="s-section" id="searchSection" style="display:none">
+        <div class="s-label">Search Results</div>
+        <div id="searchResults"></div>
       </div>
 
-      <div class="sidebar-section" id="selectedNodeSection" style="display: none;">
-        <h3>Selected Node</h3>
+      <!-- Selected node -->
+      <div class="s-section" id="nodeSection" style="display:none">
+        <div class="s-label">Node</div>
         <div id="nodeDetails"></div>
-        <div class="button-row" style="margin-top: 12px;">
-          <button class="button-danger" onclick="deleteSelectedNode()">Delete Node</button>
+        <div style="margin-top:12px">
+          <button class="btn btn-danger" style="width:100%; justify-content:center" onclick="deleteSelectedNode()">Delete Node</button>
         </div>
       </div>
 
-      <div class="sidebar-section" id="selectedEdgeSection" style="display: none;">
-        <h3>Selected Relationship</h3>
+      <!-- Selected edge -->
+      <div class="s-section" id="edgeSection" style="display:none">
+        <div class="s-label">Relationship</div>
         <div id="edgeDetails"></div>
-        <div class="button-row" style="margin-top: 12px;">
-          <button class="button-danger" onclick="deleteSelectedEdge()">Delete Relationship</button>
+        <div style="margin-top:12px">
+          <button class="btn btn-danger" style="width:100%; justify-content:center" onclick="deleteSelectedEdge()">Delete Relationship</button>
         </div>
       </div>
 
-      <div class="sidebar-section">
-        <button style="width: 100%; margin-bottom: 12px;" onclick="showAddNodeModal()">+ Add Node</button>
-        <button style="width: 100%;" onclick="showAddEdgeModal()">+ Add Relationship</button>
-      </div>
-
-      <div class="sidebar-section" id="changesSection" style="display: none;">
-        <h3>Pending Changes</h3>
-        <div class="changes-list" id="changesList"></div>
-      </div>
-
-      <div class="sidebar-section" style="display: none;" id="emptyState">
-        <div class="empty-state">
-          <p>Select a node or relationship to view details.</p>
+      <!-- Add actions -->
+      <div class="s-section">
+        <div class="s-label">Add</div>
+        <div class="s-btn-row">
+          <button class="btn" style="justify-content:center" onclick="showAddNodeModal()">+ Node</button>
+          <button class="btn" style="justify-content:center" onclick="showAddEdgeModal()">+ Relationship</button>
         </div>
+      </div>
+
+      <!-- Pending changes -->
+      <div class="s-section" id="changesSection" style="display:none">
+        <div class="s-label">Pending</div>
+        <div class="changes-scroll" id="changesList"></div>
       </div>
     </div>
   </div>
 
-  <!-- Modals -->
-  <div class="modal-overlay" id="addNodeModal">
+  <!-- Add Node Modal -->
+  <div class="overlay" id="addNodeModal">
     <div class="modal">
-      <h2>Add Node</h2>
-      <div class="form-group">
-        <label>Label (e.g., Person, Project, Skill)</label>
-        <input type="text" id="nodeLabel" placeholder="e.g., Project" />
+      <h3>Add Node</h3>
+      <p>Create a new node and link it to your profile.</p>
+      <div class="field">
+        <label>Label</label>
+        <input type="text" id="nodeLabel" placeholder="Skill, Value, Goal…" />
       </div>
-      <div class="form-group">
-        <label>Name/Title</label>
-        <input type="text" id="nodeName" placeholder="e.g., AI Memory App" />
+      <div class="field">
+        <label>Name</label>
+        <input type="text" id="nodeName" placeholder="e.g. Python, Discipline…" />
       </div>
-      <div class="form-group">
-        <label>Properties (JSON)</label>
-        <textarea id="nodeProperties" placeholder='{"status": "active", "priority": "high"}'></textarea>
+      <div class="field">
+        <label>Properties (JSON, optional)</label>
+        <textarea id="nodeProps" placeholder='{"level": "expert"}'></textarea>
       </div>
-      <div class="button-row">
-        <button class="button-secondary" onclick="closeModal('addNodeModal')">Cancel</button>
-        <button class="button-success" onclick="addNode()">Add Node</button>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('addNodeModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="addNode()">Add Node</button>
       </div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="addEdgeModal">
+  <!-- Add Edge Modal -->
+  <div class="overlay" id="addEdgeModal">
     <div class="modal">
-      <h2>Add Relationship</h2>
-      <div class="form-group">
-        <label>From Node (ID)</label>
-        <input type="text" id="edgeFromId" placeholder="Source node ID" />
+      <h3>Add Relationship</h3>
+      <p>Connect two existing nodes.</p>
+      <div class="field">
+        <label>From Node ID</label>
+        <input type="text" id="edgeFrom" placeholder="Source node ID" />
       </div>
-      <div class="form-group">
+      <div class="field">
         <label>Relationship Type</label>
-        <input type="text" id="edgeType" placeholder="e.g., OWNS, WORKS_ON, KNOWS" />
+        <input type="text" id="edgeType" placeholder="WORKS_ON, KNOWS, HAS_SKILL…" />
       </div>
-      <div class="form-group">
-        <label>To Node (ID)</label>
-        <input type="text" id="edgeToId" placeholder="Target node ID" />
+      <div class="field">
+        <label>To Node ID</label>
+        <input type="text" id="edgeTo" placeholder="Target node ID" />
       </div>
-      <div class="button-row">
-        <button class="button-secondary" onclick="closeModal('addEdgeModal')">Cancel</button>
-        <button class="button-success" onclick="addEdge()">Add Relationship</button>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('addEdgeModal')">Cancel</button>
+        <button class="btn btn-primary" onclick="addEdge()">Add Relationship</button>
       </div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="commitModal">
+  <!-- Commit Modal -->
+  <div class="overlay" id="commitModal">
     <div class="modal">
-      <h2>Review & Commit Changes</h2>
-      <p style="color: var(--muted); font-size: 13px;">This will apply all pending changes to your memory graph.</p>
-      <div class="changes-list" id="commitChangesList"></div>
-      <div class="button-row" style="margin-top: 16px;">
-        <button class="button-secondary" onclick="closeModal('commitModal')">Cancel</button>
-        <button class="button-success" onclick="commitChanges()">Confirm & Save</button>
+      <h3>Commit Changes</h3>
+      <p>Apply all pending changes to your memory graph.</p>
+      <div class="changes-scroll" id="commitList"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('commitModal')">Cancel</button>
+        <button class="btn btn-success" onclick="commitChanges()">Confirm &amp; Save</button>
       </div>
     </div>
   </div>
 
   <script>
-    const personId = new URLSearchParams(window.location.search).get('person_id') || null;
+    const personId  = new URLSearchParams(window.location.search).get('person_id') || null;
     const graphData = { nodes: new vis.DataSet([]), edges: new vis.DataSet([]) };
     let network = null;
-    let pendingChanges = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
+    let pending = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
     let selectedNode = null;
     let selectedEdge = null;
-    let originalNodes = [];
-    let originalEdges = [];
 
-    // Initialize network visualization
+    // ── Init ──
     function initNetwork() {
       const container = document.getElementById('network');
-      const options = {
+      network = new vis.Network(container, graphData, {
         physics: { enabled: true, stabilization: { iterations: 200 } },
         nodes: {
           shape: 'dot',
-          scaling: { label: { enabled: true, drawThreshold: 14, maxVisible: 30 } },
-          margin: { top: 10, bottom: 10, left: 10, right: 10 },
-          color: { 
-            background: '#2d72d9', 
-            border: '#4ecdc4', 
-            highlight: { background: '#4ecdc4' } 
-          },
-          font: { size: 13, color: 'white' },
+          size: 12,
+          color: { background: '#1a5aad', border: '#2997ff', highlight: { background: '#2997ff', border: '#fff' } },
+          font: { size: 12, color: '#f5f5f7', face: '-apple-system, BlinkMacSystemFont, sans-serif' },
+          borderWidth: 1.5,
         },
         edges: {
-          color: { color: 'rgba(78, 205, 196, 0.3)', highlight: '#4ecdc4' },
-          font: { size: 12, color: '#9aa3b5' },
+          color: { color: 'rgba(41,151,255,0.25)', highlight: '#2997ff' },
+          font: { size: 10, color: '#86868b', face: '-apple-system, BlinkMacSystemFont, sans-serif' },
           smooth: { type: 'continuous' },
           arrows: 'to',
+          width: 1,
         },
-        interaction: { navigationButtons: true, keyboard: true },
-      };
-      network = new vis.Network(container, graphData, options);
-
-      network.on('selectNode', (params) => {
-        selectedNode = params.nodes[0];
-        selectedEdge = null;
-        updateSidebar();
+        interaction: { navigationButtons: false, keyboard: true, tooltipDelay: 200 },
       });
 
-      network.on('selectEdge', (params) => {
-        selectedEdge = params.edges[0];
-        selectedNode = null;
-        updateSidebar();
-      });
-
-      network.on('deselectNode', () => {
-        selectedNode = null;
-        updateSidebar();
-      });
-
-      network.on('deselectEdge', () => {
-        selectedEdge = null;
-        updateSidebar();
-      });
+      network.on('selectNode', p => { selectedNode = p.nodes[0]; selectedEdge = null; updateSidebar(); });
+      network.on('selectEdge', p => { selectedEdge = p.edges[0]; selectedNode = null; updateSidebar(); });
+      network.on('deselectNode', () => { selectedNode = null; updateSidebar(); });
+      network.on('deselectEdge', () => { selectedEdge = null; updateSidebar(); });
     }
 
-    // Load graph data from server
     async function loadGraph() {
-      try {
-        const headers = personId ? { 'X-Person-Id': personId } : {};
-        const resp = await fetch('/api/graph', { headers });
-        if (!resp.ok) {
-          const err = await resp.json();
-          throw new Error(err.detail || err.error || 'Failed to load graph');
-        }
-        const data = await resp.json();
-
-        originalNodes = data.nodes.map(n => ({ ...n }));
-        originalEdges = data.edges.map(e => ({ ...e }));
-
-        graphData.nodes.clear();
-        graphData.edges.clear();
-        graphData.nodes.add(data.nodes);
-        graphData.edges.add(data.edges);
-
-        console.log('Loaded graph:', { nodes: data.nodes.length, edges: data.edges.length });
-        updateStats();
-      } catch (err) {
-        console.error('Error loading graph:', err);
-        alert('Failed to load memory graph: ' + err.message);
-      }
+      const headers = personId ? { 'X-Person-Id': personId } : {};
+      const resp = await fetch('/api/graph', { headers });
+      if (!resp.ok) { alert('Failed to load graph'); return; }
+      const data = await resp.json();
+      graphData.nodes.clear();
+      graphData.edges.clear();
+      graphData.nodes.add(data.nodes);
+      graphData.edges.add(data.edges);
+      updateStats();
     }
 
-    // Update sidebar
+    // ── Sidebar ──
     function updateSidebar() {
-      document.getElementById('selectedNodeSection').style.display = selectedNode ? 'block' : 'none';
-      document.getElementById('selectedEdgeSection').style.display = selectedEdge ? 'block' : 'none';
-      document.getElementById('emptyState').style.display = selectedNode || selectedEdge ? 'none' : 'block';
+      document.getElementById('nodeSection').style.display = selectedNode ? 'block' : 'none';
+      document.getElementById('edgeSection').style.display = selectedEdge ? 'block' : 'none';
 
       if (selectedNode) {
-        const node = graphData.nodes.get(selectedNode);
+        const n = graphData.nodes.get(selectedNode);
         document.getElementById('nodeDetails').innerHTML = `
-          <div class="sidebar-info">
-            <div class="info-row">
-              <span class="label">ID</span>
-              <span class="value">${node.id}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Label</span>
-              <span class="value">${node.label || 'N/A'}</span>
-            </div>
-            ${node.title ? `<div class="info-row"><span class="label">Title</span><span class="value">${node.title}</span></div>` : ''}
-          </div>
+          <div class="detail-row"><span class="k">ID</span><span class="v">${n.id}</span></div>
+          <div class="detail-row"><span class="k">Name</span><span class="v">${n.label || '—'}</span></div>
+          ${n.title ? `<div class="detail-row"><span class="k">Type</span><span class="v">${n.title}</span></div>` : ''}
         `;
       }
 
       if (selectedEdge) {
-        const edge = graphData.edges.get(selectedEdge);
-        const fromNode = graphData.nodes.get(edge.from);
-        const toNode = graphData.nodes.get(edge.to);
+        const e  = graphData.edges.get(selectedEdge);
+        const fn = graphData.nodes.get(e.from);
+        const tn = graphData.nodes.get(e.to);
         document.getElementById('edgeDetails').innerHTML = `
-          <div class="sidebar-info">
-            <div class="info-row">
-              <span class="label">Type</span>
-              <span class="value">${edge.label || 'N/A'}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">From</span>
-              <span class="value" style="font-size: 11px;">${fromNode?.label || edge.from}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">To</span>
-              <span class="value" style="font-size: 11px;">${toNode?.label || edge.to}</span>
-            </div>
-          </div>
+          <div class="detail-row"><span class="k">Type</span><span class="v">${e.label || '—'}</span></div>
+          <div class="detail-row"><span class="k">From</span><span class="v">${fn?.label || e.from}</span></div>
+          <div class="detail-row"><span class="k">To</span><span class="v">${tn?.label || e.to}</span></div>
         `;
       }
 
       updateChangesList();
     }
 
-    // Update stats
     function updateStats() {
       document.getElementById('nodeCount').textContent = graphData.nodes.length;
       document.getElementById('edgeCount').textContent = graphData.edges.length;
     }
 
-    // Modal helpers
-    function showModal(id) {
-      document.getElementById(id).classList.add('show');
+    // ── Pending changes ──
+    function updatePendingBadge() {
+      const n = Object.keys(pending.nodes).length + Object.keys(pending.edges).length
+              + pending.deletedNodes.length + pending.deletedEdges.length;
+      const el = document.getElementById('pendingBadge');
+      el.textContent = n + ' pending';
+      el.classList.toggle('active', n > 0);
+      document.getElementById('commitBtn').disabled = n === 0;
+      document.getElementById('resetBtn').disabled  = n === 0;
     }
 
-    function closeModal(id) {
-      document.getElementById(id).classList.remove('show');
+    function updateChangesList() {
+      const items = [];
+      Object.entries(pending.nodes).forEach(([id, c]) =>
+        items.push(`<div class="change-item">+ Node: ${c.name}</div>`));
+      Object.entries(pending.edges).forEach(([id, c]) =>
+        items.push(`<div class="change-item">+ Rel: ${c.relType}</div>`));
+      pending.deletedNodes.forEach(id =>
+        items.push(`<div class="change-item del">− Node: ${id}</div>`));
+      pending.deletedEdges.forEach(id =>
+        items.push(`<div class="change-item del">− Rel: ${id}</div>`));
+
+      const hasChanges = items.length > 0;
+      document.getElementById('changesSection').style.display = hasChanges ? 'block' : 'none';
+      document.getElementById('changesList').innerHTML = items.join('');
     }
 
-    // Add node
+    function resetPendingChanges() {
+      if (!confirm('Discard all pending changes?')) return;
+      pending = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
+      loadGraph();
+      updatePendingBadge();
+      updateSidebar();
+    }
+
+    // ── Add node ──
     function showAddNodeModal() {
       document.getElementById('nodeLabel').value = '';
-      document.getElementById('nodeName').value = '';
-      document.getElementById('nodeProperties').value = '';
+      document.getElementById('nodeName').value  = '';
+      document.getElementById('nodeProps').value  = '';
       showModal('addNodeModal');
     }
 
     async function addNode() {
       const label = document.getElementById('nodeLabel').value.trim();
-      const name = document.getElementById('nodeName').value.trim();
-      const propsStr = document.getElementById('nodeProperties').value.trim();
-
-      if (!label || !name) {
-        alert('Label and Name are required');
-        return;
-      }
+      const name  = document.getElementById('nodeName').value.trim();
+      const propsStr = document.getElementById('nodeProps').value.trim();
+      if (!label || !name) { alert('Label and Name are required'); return; }
 
       let props = {};
       if (propsStr) {
-        try {
-          props = JSON.parse(propsStr);
-        } catch {
-          alert('Invalid JSON properties');
-          return;
-        }
+        try { props = JSON.parse(propsStr); }
+        catch { alert('Invalid JSON properties'); return; }
       }
 
-      try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (personId) headers['X-Person-Id'] = personId;
+      const headers = { 'Content-Type': 'application/json' };
+      if (personId) headers['X-Person-Id'] = personId;
 
-        const resp = await fetch('/api/nodes', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ label, name, properties: props }),
-        });
+      const resp = await fetch('/api/nodes', {
+        method: 'POST', headers,
+        body: JSON.stringify({ label, name, properties: props }),
+      });
+      if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Failed'); return; }
+      const data = await resp.json();
 
-        if (!resp.ok) {
-          const err = await resp.json();
-          throw new Error(err.detail || err.error || 'Failed to add node');
-        }
-        const data = await resp.json();
-        console.log('Node created:', data);
-
-        // Add to vis network
-        const nodeId = String(data.id);
-        graphData.nodes.add({
-          id: nodeId,
-          label: name,
-          title: `${label}`,
-          color: { background: '#4ecdc4', border: '#2d72d9' },
-        });
-
-        // Track change
-        pendingChanges.nodes[nodeId] = { type: 'add', label, name, properties: props };
-        updatePendingBadge();
-        updateStats();
-        updateSidebar();
-        closeModal('addNodeModal');
-        alert(`Node "${name}" added successfully!`);
-      } catch (err) {
-        console.error('Error adding node:', err);
-        alert('Error: ' + err.message);
-      }
+      graphData.nodes.add({ id: String(data.id), label: name, title: label,
+        color: { background: '#0d3d80', border: '#2997ff' } });
+      pending.nodes[String(data.id)] = { type: 'add', label, name };
+      updatePendingBadge(); updateStats(); updateSidebar();
+      closeModal('addNodeModal');
     }
 
-    // Add edge
+    // ── Add edge ──
     function showAddEdgeModal() {
-      document.getElementById('edgeFromId').value = selectedNode || '';
+      document.getElementById('edgeFrom').value = selectedNode || '';
       document.getElementById('edgeType').value = '';
-      document.getElementById('edgeToId').value = '';
+      document.getElementById('edgeTo').value   = '';
       showModal('addEdgeModal');
     }
 
     async function addEdge() {
-      const fromId = document.getElementById('edgeFromId').value.trim();
-      const relType = document.getElementById('edgeType').value.trim();
-      const toId = document.getElementById('edgeToId').value.trim();
-
-      if (!fromId || !relType || !toId) {
-        alert('All fields are required');
-        return;
-      }
-
+      const fromId   = document.getElementById('edgeFrom').value.trim();
+      const relType  = document.getElementById('edgeType').value.trim();
+      const toId     = document.getElementById('edgeTo').value.trim();
+      if (!fromId || !relType || !toId) { alert('All fields required'); return; }
       if (!graphData.nodes.get(fromId) || !graphData.nodes.get(toId)) {
-        alert('Invalid node IDs. Make sure both nodes exist in the graph.');
-        return;
+        alert('Node IDs not found in graph'); return;
       }
 
-      try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (personId) headers['X-Person-Id'] = personId;
+      const headers = { 'Content-Type': 'application/json' };
+      if (personId) headers['X-Person-Id'] = personId;
 
-        const resp = await fetch('/api/relationships', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ from: fromId, type: relType, to: toId }),
-        });
+      const resp = await fetch('/api/relationships', {
+        method: 'POST', headers,
+        body: JSON.stringify({ from: fromId, type: relType, to: toId }),
+      });
+      if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Failed'); return; }
+      const data = await resp.json();
 
-        if (!resp.ok) {
-          const err = await resp.json();
-          throw new Error(err.detail || err.error || 'Failed to add relationship');
-        }
-        const data = await resp.json();
-        console.log('Relationship created:', data);
-
-        // Add to vis network
-        graphData.edges.add({
-          id: String(data.id),
-          from: fromId,
-          to: toId,
-          label: relType,
-        });
-
-        // Track change
-        pendingChanges.edges[String(data.id)] = { type: 'add', from: fromId, type: relType, to: toId };
-        updatePendingBadge();
-        updateSidebar();
-        closeModal('addEdgeModal');
-        alert(`Relationship "${relType}" added successfully!`);
-      } catch (err) {
-        console.error('Error adding edge:', err);
-        alert('Error: ' + err.message);
-      }
+      graphData.edges.add({ id: String(data.id), from: fromId, to: toId, label: relType });
+      pending.edges[String(data.id)] = { type: 'add', relType };
+      updatePendingBadge(); updateSidebar();
+      closeModal('addEdgeModal');
     }
 
-    // Delete operations
+    // ── Delete ──
     function deleteSelectedNode() {
       if (!selectedNode) return;
-      const node = graphData.nodes.get(selectedNode);
-      if (!confirm(`Delete node "${node.label}"? This will also delete all its relationships.`)) return;
+      const n = graphData.nodes.get(selectedNode);
+      if (!confirm(`Delete "${n.label}"? All its relationships will also be removed.`)) return;
 
-      // Get all connected edges
-      const connectedEdges = graphData.edges.get({
-        filter: (e) => e.from === selectedNode || e.to === selectedNode
-      });
-
-      // Remove edges first
-      connectedEdges.forEach(e => {
-        graphData.edges.remove(e.id);
-        pendingChanges.deletedEdges.push(e.id);
-      });
-
-      // Remove node
+      const connected = graphData.edges.get({ filter: e => e.from === selectedNode || e.to === selectedNode });
+      connected.forEach(e => { graphData.edges.remove(e.id); pending.deletedEdges.push(e.id); });
       graphData.nodes.remove(selectedNode);
-      pendingChanges.deletedNodes.push(selectedNode);
+      pending.deletedNodes.push(selectedNode);
       selectedNode = null;
-      console.log('Marked for deletion:', { nodeId: selectedNode, edgesCount: connectedEdges.length });
-      updatePendingBadge();
-      updateStats();
-      updateSidebar();
+      updatePendingBadge(); updateStats(); updateSidebar();
     }
 
     function deleteSelectedEdge() {
       if (!selectedEdge) return;
-      const edge = graphData.edges.get(selectedEdge);
-      if (!confirm(`Delete relationship "${edge.label}"?`)) return;
-
+      const e = graphData.edges.get(selectedEdge);
+      if (!confirm(`Delete relationship "${e.label}"?`)) return;
       graphData.edges.remove(selectedEdge);
-      pendingChanges.deletedEdges.push(selectedEdge);
+      pending.deletedEdges.push(selectedEdge);
       selectedEdge = null;
-      console.log('Marked for deletion:', { edgeId: selectedEdge });
-      updatePendingBadge();
-      updateSidebar();
+      updatePendingBadge(); updateSidebar();
     }
 
-    // Pending changes tracking
-    function updatePendingBadge() {
-      const count =
-        Object.keys(pendingChanges.nodes).length +
-        Object.keys(pendingChanges.edges).length +
-        pendingChanges.deletedNodes.length +
-        pendingChanges.deletedEdges.length;
-
-      const badge = document.getElementById('pendingBadge');
-      badge.textContent = count + ' pending';
-      badge.classList.toggle('has-changes', count > 0);
-      document.getElementById('commitBtn').disabled = count === 0;
-      document.getElementById('resetBtn').disabled = count === 0;
-    }
-
-    function updateChangesList() {
-      const list = document.getElementById('changesList');
-      const changes = [];
-
-      Object.entries(pendingChanges.nodes).forEach(([id, change]) => {
-        changes.push(`<div class="change-item">➕ Node: ${change.name} (${id})</div>`);
-      });
-
-      Object.entries(pendingChanges.edges).forEach(([id, change]) => {
-        changes.push(`<div class="change-item">➕ Relationship: ${change.type}</div>`);
-      });
-
-      pendingChanges.deletedNodes.forEach((id) => {
-        changes.push(`<div class="change-item delete">❌ Deleted node: ${id}</div>`);
-      });
-
-      pendingChanges.deletedEdges.forEach((id) => {
-        changes.push(`<div class="change-item delete">❌ Deleted relationship: ${id}</div>`);
-      });
-
-      if (changes.length > 0) {
-        document.getElementById('changesSection').style.display = 'block';
-        list.innerHTML = changes.join('');
-      } else {
-        document.getElementById('changesSection').style.display = 'none';
-      }
-    }
-
-    function resetPendingChanges() {
-      if (!confirm('Discard all pending changes?')) return;
-      pendingChanges = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
-      loadGraph(); // Reload from server
-      updatePendingBadge();
-      updateSidebar();
-    }
-
-    // Commit
+    // ── Commit ──
     function showCommitModal() {
-      const list = document.getElementById('commitChangesList');
-      const changes = [];
-
-      Object.entries(pendingChanges.nodes).forEach(([id, change]) => {
-        changes.push(`<div class="change-item">➕ Add node: <strong>${change.name}</strong></div>`);
-      });
-
-      Object.entries(pendingChanges.edges).forEach(([id, change]) => {
-        changes.push(`<div class="change-item">➕ Add relationship: <strong>${change.type}</strong></div>`);
-      });
-
-      pendingChanges.deletedNodes.forEach((id) => {
-        changes.push(`<div class="change-item delete">❌ Remove node</div>`);
-      });
-
-      pendingChanges.deletedEdges.forEach((id) => {
-        changes.push(`<div class="change-item delete">❌ Remove relationship</div>`);
-      });
-
-      list.innerHTML = changes.join('');
+      const items = [];
+      Object.entries(pending.nodes).forEach(([_, c]) =>
+        items.push(`<div class="change-item">+ Add node: <strong>${c.name}</strong></div>`));
+      Object.entries(pending.edges).forEach(([_, c]) =>
+        items.push(`<div class="change-item">+ Add rel: <strong>${c.relType}</strong></div>`));
+      pending.deletedNodes.forEach(() =>
+        items.push(`<div class="change-item del">− Remove node</div>`));
+      pending.deletedEdges.forEach(() =>
+        items.push(`<div class="change-item del">− Remove relationship</div>`));
+      document.getElementById('commitList').innerHTML = items.join('');
       showModal('commitModal');
     }
 
     async function commitChanges() {
-      try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (personId) headers['X-Person-Id'] = personId;
+      const headers = { 'Content-Type': 'application/json' };
+      if (personId) headers['X-Person-Id'] = personId;
 
-        console.log('Committing changes:', pendingChanges);
+      const resp = await fetch('/api/commit', {
+        method: 'POST', headers,
+        body: JSON.stringify(pending),
+      });
+      if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Commit failed'); return; }
 
-        const resp = await fetch('/api/commit', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(pendingChanges),
-        });
-
-        if (!resp.ok) {
-          const err = await resp.json();
-          console.error('Commit error:', err);
-          throw new Error(err.detail || err.error || 'Commit failed');
-        }
-
-        alert('✓ Changes saved to memory!');
-        pendingChanges = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
-        await loadGraph();
-        updatePendingBadge();
-        updateSidebar();
-        closeModal('commitModal');
-      } catch (err) {
-        console.error('Error:', err);
-        alert('Error: ' + err.message);
-      }
+      pending = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
+      await loadGraph();
+      updatePendingBadge(); updateSidebar();
+      closeModal('commitModal');
     }
 
-    // Search nodes and relationships
+    // ── Search ──
     function runSearch() {
-      const query = document.getElementById('searchInput').value.trim().toLowerCase();
-      const section = document.getElementById('searchResultsSection');
-      const list = document.getElementById('searchResultsList');
-
-      if (!query) { clearSearch(); return; }
-
-      document.getElementById('clearSearchBtn').style.display = '';
+      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+      const section = document.getElementById('searchSection');
+      if (!q) { clearSearch(); return; }
 
       const matchedNodes = graphData.nodes.get().filter(n =>
-        (n.label || '').toLowerCase().includes(query) ||
-        (n.title || '').toLowerCase().includes(query)
-      );
-
+        (n.label||'').toLowerCase().includes(q) || (n.title||'').toLowerCase().includes(q));
       const matchedEdges = graphData.edges.get().filter(e =>
-        (e.label || '').toLowerCase().includes(query)
-      );
+        (e.label||'').toLowerCase().includes(q));
 
-      if (matchedNodes.length === 0 && matchedEdges.length === 0) {
-        list.innerHTML = '<div class="search-no-results">No results found</div>';
-        section.style.display = 'block';
-        network.unselectAll();
-        return;
+      const allIds = graphData.nodes.getIds();
+      const matchIds = matchedNodes.map(n => n.id);
+
+      graphData.nodes.update(allIds.map(id => ({
+        id,
+        color: matchIds.includes(id)
+          ? { background: '#1a5aad', border: '#2997ff', highlight: { background: '#2997ff' } }
+          : { background: '#0d0d0d', border: '#1a1a1a' },
+      })));
+
+      if (matchIds.length) {
+        network.selectNodes(matchIds);
+        network.fit({ nodes: matchIds, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
       }
 
       const items = [];
-
-      matchedNodes.forEach(n => {
-        items.push(`
-          <div class="search-result-item" onclick="focusNode('${n.id}')">
-            <span>${n.label}</span>
-            <span class="result-type">${n.title || 'node'}</span>
-          </div>`);
-      });
-
+      matchedNodes.forEach(n =>
+        items.push(`<div class="result-item" onclick="focusNode('${n.id}')">
+          <span class="r-name">${n.label}</span>
+          <span class="r-type">${n.title || 'node'}</span>
+        </div>`));
       matchedEdges.forEach(e => {
-        const fromNode = graphData.nodes.get(e.from);
-        const toNode = graphData.nodes.get(e.to);
-        const fromLabel = fromNode ? fromNode.label : e.from;
-        const toLabel = toNode ? toNode.label : e.to;
-        items.push(`
-          <div class="search-result-item" onclick="focusEdge('${e.id}')">
-            <span>${fromLabel} → ${toLabel}</span>
-            <span class="result-type">${e.label}</span>
-          </div>`);
+        const fn = graphData.nodes.get(e.from);
+        const tn = graphData.nodes.get(e.to);
+        items.push(`<div class="result-item" onclick="focusEdge('${e.id}')">
+          <span class="r-name">${fn?.label || e.from} → ${tn?.label || e.to}</span>
+          <span class="r-type">${e.label}</span>
+        </div>`);
       });
 
-      list.innerHTML = items.join('');
+      document.getElementById('searchResults').innerHTML =
+        items.length ? items.join('') : '<div class="no-results">No results</div>';
       section.style.display = 'block';
-
-      // Highlight matched nodes on graph
-      const allNodeIds = graphData.nodes.getIds();
-      const matchedNodeIds = matchedNodes.map(n => n.id);
-      graphData.nodes.update(
-        allNodeIds.map(id => ({
-          id,
-          color: matchedNodeIds.includes(id)
-            ? { background: '#4ecdc4', border: '#2d72d9' }
-            : { background: 'rgba(45,114,217,0.2)', border: 'rgba(78,205,196,0.2)' },
-        }))
-      );
-
-      if (matchedNodeIds.length > 0) {
-        network.selectNodes(matchedNodeIds);
-        network.fit({ nodes: matchedNodeIds, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
-      }
     }
 
     function focusNode(id) {
       network.selectNodes([id]);
-      network.focus(id, { scale: 1.4, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
-      selectedNode = id;
-      selectedEdge = null;
-      updateSidebar();
+      network.focus(id, { scale: 1.5, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+      selectedNode = id; selectedEdge = null; updateSidebar();
     }
 
     function focusEdge(id) {
       network.selectEdges([id]);
-      selectedEdge = id;
-      selectedNode = null;
-      updateSidebar();
+      selectedEdge = id; selectedNode = null; updateSidebar();
     }
 
     function clearSearch() {
       document.getElementById('searchInput').value = '';
-      document.getElementById('clearSearchBtn').style.display = 'none';
-      document.getElementById('searchResultsSection').style.display = 'none';
-      // Restore original node colors
-      graphData.nodes.update(
-        graphData.nodes.getIds().map(id => ({
-          id,
-          color: { background: '#2d72d9', border: '#4ecdc4', highlight: { background: '#4ecdc4' } },
-        }))
-      );
+      document.getElementById('searchSection').style.display = 'none';
+      graphData.nodes.update(graphData.nodes.getIds().map(id => ({
+        id,
+        color: { background: '#1a5aad', border: '#2997ff', highlight: { background: '#2997ff', border: '#fff' } },
+      })));
       network.unselectAll();
     }
 
-    // Download wallet markdown
+    // ── Wallet ──
     async function downloadWallet() {
-      try {
-        const headers = personId ? { 'X-Person-Id': personId } : {};
-        const url = personId ? `/api/wallet?person_id=${encodeURIComponent(personId)}` : '/api/wallet';
-        const resp = await fetch(url, { headers });
-        if (!resp.ok) throw new Error('Failed to generate wallet');
-        const blob = await resp.blob();
-        const disposition = resp.headers.get('Content-Disposition') || '';
-        const match = disposition.match(/filename="([^"]+)"/);
-        const filename = match ? match[1] : 'aegis_wallet.md';
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      } catch (err) {
-        alert('Error downloading wallet: ' + err.message);
-      }
+      const url = personId ? `/api/wallet?person_id=${encodeURIComponent(personId)}` : '/api/wallet';
+      const resp = await fetch(url, { headers: personId ? { 'X-Person-Id': personId } : {} });
+      const blob = await resp.blob();
+      const cd   = resp.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = match ? match[1] : 'twin_card.md';
+      a.click();
+      URL.revokeObjectURL(a.href);
     }
 
-    // Initialize on load
+    // ── Modal helpers ──
+    function showModal(id) { document.getElementById(id).classList.add('show'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+    document.querySelectorAll('.overlay').forEach(o =>
+      o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); }));
+
+    // ── Boot ──
     window.addEventListener('load', () => {
-      console.log('Page loaded, initializing...');
       initNetwork();
       loadGraph();
-      
-      // Add click-outside-to-close for modals
-      document.querySelectorAll('.modal-overlay').forEach(overlay => {
-        overlay.addEventListener('click', (e) => {
-          if (e.target === overlay) {
-            overlay.classList.remove('show');
-          }
-        });
-      });
-      
-      console.log('Initialization complete');
     });
   </script>
 </body>
