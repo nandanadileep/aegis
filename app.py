@@ -598,17 +598,16 @@ def get_graph():
     
     query = """
     MATCH (p:Person {id: $person_id})
-    MATCH (p)-[*1..10]-(n)
-    WHERE n <> p
+    OPTIONAL MATCH (p)-[*0..5]-(n)
     RETURN DISTINCT id(n) as node_id, n.name as name, n.key as key, labels(n) as labels
     """
-    
+
     query_edges = """
     MATCH (p:Person {id: $person_id})
-    MATCH (p)-[*1..10]-(n)
-    MATCH (n)-[r]-(m)
-    WHERE n <> p AND m <> p
-    RETURN id(r) as rel_id, id(n) as from_id, id(m) as to_id, type(r) as rel_type
+    MATCH (p)-[*0..5]-(a)
+    MATCH (a)-[r]->(b)
+    MATCH (p)-[*0..5]-(b)
+    RETURN DISTINCT id(r) as rel_id, id(a) as from_id, id(b) as to_id, type(r) as rel_type
     """
     
     try:
