@@ -4,8 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Aegis — Twin Graph</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" />
   <style>
     :root {
       --bg: #000;
@@ -52,13 +50,7 @@
       z-index: 50;
     }
 
-    .brand {
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-      flex-shrink: 0;
-    }
-
+    .brand { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; flex-shrink: 0; }
     nav { display: flex; gap: 2px; flex-shrink: 0; }
 
     .nav-link {
@@ -70,19 +62,10 @@
       text-decoration: none;
       transition: all 0.15s;
     }
-
     .nav-link:hover { background: var(--surface); color: var(--text); }
     .nav-link.active { background: var(--surface); color: var(--text); }
 
-    /* Search */
-    .search-wrap {
-      flex: 1;
-      max-width: 280px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
+    .search-wrap { flex: 1; max-width: 280px; display: flex; align-items: center; gap: 6px; }
     .search-wrap input {
       flex: 1;
       background: var(--surface);
@@ -96,17 +79,11 @@
       transition: all 0.18s;
       min-width: 0;
     }
-
-    .search-wrap input:focus {
-      border-color: rgba(41,151,255,0.5);
-      background: rgba(41,151,255,0.07);
-    }
-
+    .search-wrap input:focus { border-color: rgba(41,151,255,0.5); background: rgba(41,151,255,0.07); }
     .search-wrap input::placeholder { color: var(--tertiary); }
 
     .header-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
-    /* Buttons */
     .btn {
       display: inline-flex;
       align-items: center;
@@ -123,33 +100,17 @@
       transition: all 0.15s;
       white-space: nowrap;
     }
-
     .btn:hover { background: var(--surface-hover); }
     .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-    .btn-primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     .btn-primary:hover { background: #0a84ff; border-color: #0a84ff; }
 
-    .btn-success {
-      background: rgba(48,209,88,0.15);
-      border-color: rgba(48,209,88,0.3);
-      color: var(--success);
-    }
-
+    .btn-success { background: rgba(48,209,88,0.15); border-color: rgba(48,209,88,0.3); color: var(--success); }
     .btn-success:hover { background: rgba(48,209,88,0.25); }
     .btn-success:disabled { opacity: 0.3; cursor: not-allowed; }
 
-    .btn-danger {
-      background: rgba(255,69,58,0.12);
-      border-color: rgba(255,69,58,0.25);
-      color: var(--error);
-    }
-
+    .btn-danger { background: rgba(255,69,58,0.12); border-color: rgba(255,69,58,0.25); color: var(--error); }
     .btn-danger:hover { background: rgba(255,69,58,0.22); }
 
     .pending-pill {
@@ -162,27 +123,21 @@
       color: var(--secondary);
       transition: all 0.2s;
     }
-
-    .pending-pill.active {
-      background: var(--accent-dim);
-      border-color: rgba(41,151,255,0.3);
-      color: var(--accent);
-    }
+    .pending-pill.active { background: var(--accent-dim); border-color: rgba(41,151,255,0.3); color: var(--accent); }
 
     /* ── Layout ── */
-    .layout {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
+    .layout { display: flex; flex: 1; overflow: hidden; }
 
-    .graph-area {
-      flex: 1;
-      position: relative;
-      background: #000;
-    }
+    .graph-area { flex: 1; position: relative; background: #000; overflow: hidden; }
 
-    #network { width: 100%; height: 100%; }
+    #network {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+      transition: filter 0.25s ease-out;
+    }
+    #network:active { cursor: grabbing; }
 
     /* ── Sidebar ── */
     .sidebar {
@@ -194,14 +149,10 @@
       flex-direction: column;
       overflow-y: auto;
     }
-
     .sidebar::-webkit-scrollbar { width: 3px; }
     .sidebar::-webkit-scrollbar-thumb { background: var(--tertiary); border-radius: 2px; }
 
-    .s-section {
-      padding: 18px 16px;
-      border-bottom: 1px solid var(--border);
-    }
+    .s-section { padding: 18px 16px; border-bottom: 1px solid var(--border); }
 
     .s-label {
       font-size: 10px;
@@ -221,7 +172,6 @@
       border-radius: 8px;
       margin-bottom: 6px;
     }
-
     .stat-row .k { font-size: 13px; color: var(--secondary); }
     .stat-row .v { font-size: 13px; font-weight: 600; color: var(--text); }
 
@@ -232,12 +182,10 @@
       padding: 6px 0;
       border-bottom: 1px solid rgba(255,255,255,0.04);
     }
-
     .detail-row:last-child { border-bottom: none; }
     .detail-row .k { font-size: 12px; color: var(--secondary); }
     .detail-row .v { font-size: 12px; font-weight: 500; color: var(--text); text-align: right; max-width: 60%; word-break: break-word; }
 
-    /* Search results */
     .result-item {
       display: flex;
       justify-content: space-between;
@@ -248,14 +196,11 @@
       transition: background 0.15s;
       margin-bottom: 4px;
     }
-
     .result-item:hover { background: var(--surface); }
     .result-item .r-name { font-size: 13px; color: var(--text); }
     .result-item .r-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--tertiary); }
-
     .no-results { font-size: 13px; color: var(--secondary); text-align: center; padding: 20px 0; }
 
-    /* Changes list */
     .change-item {
       padding: 8px 10px;
       border-radius: 8px;
@@ -265,13 +210,8 @@
       border: 1px solid rgba(41,151,255,0.15);
       margin-bottom: 5px;
     }
+    .change-item.del { background: rgba(255,69,58,0.08); border-color: rgba(255,69,58,0.2); }
 
-    .change-item.del {
-      background: rgba(255,69,58,0.08);
-      border-color: rgba(255,69,58,0.2);
-    }
-
-    /* Sidebar actions */
     .s-btn-row { display: flex; flex-direction: column; gap: 6px; }
 
     /* ── Modal ── */
@@ -285,7 +225,6 @@
       justify-content: center;
       z-index: 200;
     }
-
     .overlay.show { display: flex; }
 
     .modal {
@@ -298,32 +237,12 @@
       max-height: 80vh;
       overflow-y: auto;
     }
-
-    .modal h3 {
-      font-size: 18px;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      margin-bottom: 6px;
-    }
-
-    .modal p {
-      font-size: 13px;
-      color: var(--secondary);
-      margin-bottom: 20px;
-      line-height: 1.5;
-    }
-
-    .modal-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 20px;
-    }
-
+    .modal h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .modal p { font-size: 13px; color: var(--secondary); margin-bottom: 20px; line-height: 1.5; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
     .modal-actions .btn { flex: 1; justify-content: center; }
 
-    /* Form fields inside modal */
     .field { margin-bottom: 14px; }
-
     .field label {
       display: block;
       font-size: 11px;
@@ -333,7 +252,6 @@
       color: var(--secondary);
       margin-bottom: 6px;
     }
-
     .field input, .field textarea {
       width: 100%;
       background: var(--surface);
@@ -346,19 +264,13 @@
       outline: none;
       transition: border-color 0.18s;
     }
-
-    .field input:focus, .field textarea:focus {
-      border-color: rgba(41,151,255,0.5);
-    }
-
+    .field input:focus, .field textarea:focus { border-color: rgba(41,151,255,0.5); }
     .field input::placeholder, .field textarea::placeholder { color: var(--tertiary); }
     .field textarea { resize: vertical; min-height: 80px; }
 
     .changes-scroll { max-height: 200px; overflow-y: auto; }
 
-    @media (max-width: 900px) {
-      .sidebar { width: 240px; }
-    }
+    @media (max-width: 900px) { .sidebar { width: 240px; } }
   </style>
 </head>
 <body>
@@ -386,24 +298,21 @@
 
   <div class="layout">
     <div class="graph-area">
-      <div id="network"></div>
+      <canvas id="network"></canvas>
     </div>
 
     <div class="sidebar">
-      <!-- Stats -->
       <div class="s-section">
         <div class="s-label">Graph</div>
         <div class="stat-row"><span class="k">Nodes</span><span class="v" id="nodeCount">0</span></div>
         <div class="stat-row"><span class="k">Relationships</span><span class="v" id="edgeCount">0</span></div>
       </div>
 
-      <!-- Search results -->
       <div class="s-section" id="searchSection" style="display:none">
         <div class="s-label">Search Results</div>
         <div id="searchResults"></div>
       </div>
 
-      <!-- Selected node -->
       <div class="s-section" id="nodeSection" style="display:none">
         <div class="s-label">Node</div>
         <div id="nodeDetails"></div>
@@ -412,7 +321,6 @@
         </div>
       </div>
 
-      <!-- Selected edge -->
       <div class="s-section" id="edgeSection" style="display:none">
         <div class="s-label">Relationship</div>
         <div id="edgeDetails"></div>
@@ -421,7 +329,6 @@
         </div>
       </div>
 
-      <!-- Add actions -->
       <div class="s-section">
         <div class="s-label">Add</div>
         <div class="s-btn-row">
@@ -430,7 +337,6 @@
         </div>
       </div>
 
-      <!-- Pending changes -->
       <div class="s-section" id="changesSection" style="display:none">
         <div class="s-label">Pending</div>
         <div class="changes-scroll" id="changesList"></div>
@@ -443,18 +349,9 @@
     <div class="modal">
       <h3>Add Node</h3>
       <p>Create a new node and link it to your profile.</p>
-      <div class="field">
-        <label>Label</label>
-        <input type="text" id="nodeLabel" placeholder="Skill, Value, Goal…" />
-      </div>
-      <div class="field">
-        <label>Name</label>
-        <input type="text" id="nodeName" placeholder="e.g. Python, Discipline…" />
-      </div>
-      <div class="field">
-        <label>Properties (JSON, optional)</label>
-        <textarea id="nodeProps" placeholder='{"level": "expert"}'></textarea>
-      </div>
+      <div class="field"><label>Label</label><input type="text" id="nodeLabel" placeholder="Skill, Value, Goal…" /></div>
+      <div class="field"><label>Name</label><input type="text" id="nodeName" placeholder="e.g. Python, Discipline…" /></div>
+      <div class="field"><label>Properties (JSON, optional)</label><textarea id="nodeProps" placeholder='{"level": "expert"}'></textarea></div>
       <div class="modal-actions">
         <button class="btn" onclick="closeModal('addNodeModal')">Cancel</button>
         <button class="btn btn-primary" onclick="addNode()">Add Node</button>
@@ -467,18 +364,9 @@
     <div class="modal">
       <h3>Add Relationship</h3>
       <p>Connect two existing nodes.</p>
-      <div class="field">
-        <label>From Node ID</label>
-        <input type="text" id="edgeFrom" placeholder="Source node ID" />
-      </div>
-      <div class="field">
-        <label>Relationship Type</label>
-        <input type="text" id="edgeType" placeholder="WORKS_ON, KNOWS, HAS_SKILL…" />
-      </div>
-      <div class="field">
-        <label>To Node ID</label>
-        <input type="text" id="edgeTo" placeholder="Target node ID" />
-      </div>
+      <div class="field"><label>From Node ID</label><input type="text" id="edgeFrom" placeholder="Source node ID" /></div>
+      <div class="field"><label>Relationship Type</label><input type="text" id="edgeType" placeholder="WORKS_ON, KNOWS, HAS_SKILL…" /></div>
+      <div class="field"><label>To Node ID</label><input type="text" id="edgeTo" placeholder="Target node ID" /></div>
       <div class="modal-actions">
         <button class="btn" onclick="closeModal('addEdgeModal')">Cancel</button>
         <button class="btn btn-primary" onclick="addEdge()">Add Relationship</button>
@@ -500,84 +388,409 @@
   </div>
 
   <script>
+    // ── Simple DataSet ──
+    class SimpleDataSet {
+      constructor() { this._data = new Map(); }
+      add(items) {
+        const arr = Array.isArray(items) ? items : [items];
+        arr.forEach(item => { if (item && item.id != null) this._data.set(String(item.id), { ...item }); });
+      }
+      remove(id) { this._data.delete(String(id)); }
+      get(idOrOpts) {
+        if (idOrOpts === undefined) return [...this._data.values()];
+        if (typeof idOrOpts === 'object' && idOrOpts.filter) return [...this._data.values()].filter(idOrOpts.filter);
+        return this._data.get(String(idOrOpts)) || null;
+      }
+      getIds() { return [...this._data.keys()]; }
+      get length() { return this._data.size; }
+      update(items) {
+        const arr = Array.isArray(items) ? items : [items];
+        arr.forEach(item => {
+          const ex = this._data.get(String(item.id));
+          if (ex) this._data.set(String(item.id), { ...ex, ...item });
+        });
+      }
+      clear() { this._data.clear(); }
+    }
+
+    // ── State ──
     const personId  = new URLSearchParams(window.location.search).get('person_id') || null;
-    const graphData = { nodes: new vis.DataSet([]), edges: new vis.DataSet([]) };
-    let network = null;
-    let pending = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
+    const graphData = { nodes: new SimpleDataSet(), edges: new SimpleDataSet() };
+    let pending     = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
     let selectedNode = null;
     let selectedEdge = null;
 
-    // ── Init ──
-    function initNetwork() {
-      const container = document.getElementById('network');
-      network = new vis.Network(container, graphData, {
-        physics: {
-          enabled: true,
-          barnesHut: { gravitationalConstant: -8000, springLength: 140, springConstant: 0.04, damping: 0.18 },
-          stabilization: { iterations: 300 },
-        },
-        nodes: {
-          shape: 'dot',
-          size: 10,
-          color: {
-            background: '#0d2a4a',
-            border: '#2997ff',
-            highlight: { background: '#2997ff', border: '#ffffff' },
-            hover: { background: '#1a4a80', border: '#60b8ff' },
-          },
-          font: {
-            size: 12,
-            color: '#f5f5f7',
-            face: '-apple-system, BlinkMacSystemFont, sans-serif',
-            vadjust: -22,
-          },
-          borderWidth: 1.5,
-          borderWidthSelected: 2.5,
-          shadow: { enabled: true, color: 'rgba(41,151,255,0.35)', size: 14, x: 0, y: 0 },
-          scaling: { label: { enabled: false } },
-        },
-        edges: {
-          color: { color: 'rgba(41,151,255,0.45)', highlight: '#60b8ff', hover: 'rgba(41,151,255,0.8)' },
-          font: { size: 0, color: 'transparent' },
-          smooth: { type: 'curvedCW', roundness: 0.15 },
-          arrows: { to: { enabled: true, scaleFactor: 0.45 } },
-          width: 1.2,
-          hoverWidth: 2.5,
-          selectionWidth: 2.5,
-          shadow: { enabled: true, color: 'rgba(41,151,255,0.2)', size: 6, x: 0, y: 0 },
-        },
-        interaction: {
-          navigationButtons: false,
-          keyboard: true,
-          tooltipDelay: 100,
-          hover: true,
-          hoverConnectedEdges: true,
-        },
-      });
+    // ── Canvas setup ──
+    const canvas = document.getElementById('network');
+    const ctx    = canvas.getContext('2d');
 
-      // Show label only on hover
-      network.on('hoverNode', p => {
-        const n = graphData.nodes.get(p.node);
-        graphData.nodes.update({ id: p.node, label: n._label || n.label });
-      });
-      network.on('blurNode', p => {
-        const n = graphData.nodes.get(p.node);
-        if (n) graphData.nodes.update({ id: p.node, label: ' ' });
-      });
-      network.on('hoverEdge', p => {
-        const e = graphData.edges.get(p.edge);
-        graphData.edges.update({ id: p.edge, font: { size: 11, color: '#86868b', face: '-apple-system, sans-serif', strokeWidth: 0 } });
-      });
-      network.on('blurEdge', p => {
-        graphData.edges.update({ id: p.edge, font: { size: 0, color: 'transparent' } });
-      });
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width  = rect.width;
+      canvas.height = rect.height;
+    }
+    new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
+    resizeCanvas();
 
-      network.on('selectNode', p => { selectedNode = p.nodes[0]; selectedEdge = null; updateSidebar(); });
-      network.on('selectEdge', p => { selectedEdge = p.edges[0]; selectedNode = null; updateSidebar(); });
-      network.on('deselectNode', () => { selectedNode = null; updateSidebar(); });
-      network.on('deselectEdge', () => { selectedEdge = null; updateSidebar(); });
+    // ── Camera ──
+    const cam = { x: 0, y: 0, scale: 1, tx: 0, ty: 0, ts: 1 };
+
+    // ── Mouse ──
+    const mouse = { sx: -9999, sy: -9999, wx: -9999, wy: -9999, radius: 130 };
+
+    // ── Anim nodes ──
+    const animNodes = new Map(); // id -> { x, y, baseX, baseY, angle, av, phase, ar }
+
+    // ── Interaction state ──
+    let dragging = false, dragStartSX = 0, dragStartSY = 0, camStartX = 0, camStartY = 0;
+    let draggedNode = null, dragOffX = 0, dragOffY = 0, didDrag = false;
+    let hoveredNode = null, hoveredEdge = null;
+    let searchHighlight = new Set();
+    let zoomTimer = null;
+    let shiftHeld = false;
+
+    window.addEventListener('keydown', e => { if (e.key === 'Shift') { shiftHeld = true;  canvas.style.cursor = hoveredNode ? 'pointer' : 'crosshair'; } });
+    window.addEventListener('keyup',   e => { if (e.key === 'Shift') { shiftHeld = false; canvas.style.cursor = hoveredNode ? 'pointer' : 'grab'; } });
+
+    // ── Coord helpers ──
+    function screenToWorld(sx, sy) {
+      return { x: (sx - cam.x) / cam.scale, y: (sy - cam.y) / cam.scale };
     }
 
+    function hitNode(wx, wy) {
+      const r = 10 / cam.scale;
+      for (const [id, an] of animNodes) {
+        const dx = an.x - wx, dy = an.y - wy;
+        if (dx * dx + dy * dy < r * r) return id;
+      }
+      return null;
+    }
+
+    function hitEdge(wx, wy) {
+      const thresh = 7 / cam.scale;
+      for (const eid of graphData.edges.getIds()) {
+        const e = graphData.edges.get(eid);
+        const a = animNodes.get(String(e.from)), b = animNodes.get(String(e.to));
+        if (!a || !b) continue;
+        const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+        if (len2 === 0) continue;
+        const t  = Math.max(0, Math.min(1, ((wx - a.x) * dx + (wy - a.y) * dy) / len2));
+        const px = a.x + t * dx - wx, py = a.y + t * dy - wy;
+        if (px * px + py * py < thresh * thresh) return eid;
+      }
+      return null;
+    }
+
+    // ── Force-directed layout (runs synchronously before first frame) ──
+    function computeLayout(nodeList, edgeList) {
+      const W = canvas.width || 800, H = canvas.height || 600;
+      const pos = new Map();
+
+      // Start in a circle
+      nodeList.forEach((n, i) => {
+        const a = (i / nodeList.length) * Math.PI * 2;
+        const r = Math.min(W, H) * 0.3;
+        pos.set(String(n.id), {
+          x: W / 2 + Math.cos(a) * r + (Math.random() - 0.5) * 50,
+          y: H / 2 + Math.sin(a) * r + (Math.random() - 0.5) * 50,
+          vx: 0, vy: 0,
+        });
+      });
+
+      for (let iter = 0; iter < 350; iter++) {
+        const cool = Math.max(0.05, 1 - iter / 250);
+        const ids  = [...pos.keys()];
+
+        // Repulsion
+        for (let i = 0; i < ids.length; i++) {
+          for (let j = i + 1; j < ids.length; j++) {
+            const a = pos.get(ids[i]), b = pos.get(ids[j]);
+            const dx = a.x - b.x, dy = a.y - b.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+            const f = (6000 / (dist * dist)) * cool;
+            a.vx += (dx / dist) * f; a.vy += (dy / dist) * f;
+            b.vx -= (dx / dist) * f; b.vy -= (dy / dist) * f;
+          }
+        }
+
+        // Attraction along edges
+        edgeList.forEach(e => {
+          const a = pos.get(String(e.from)), b = pos.get(String(e.to));
+          if (!a || !b) return;
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+          const ideal = 170, f = (dist - ideal) * 0.006 * cool;
+          a.vx += (dx / dist) * f; a.vy += (dy / dist) * f;
+          b.vx -= (dx / dist) * f; b.vy -= (dy / dist) * f;
+        });
+
+        // Center gravity
+        pos.forEach(p => { p.vx += (W / 2 - p.x) * 0.003; p.vy += (H / 2 - p.y) * 0.003; });
+
+        // Integrate
+        pos.forEach(p => { p.x += p.vx * 0.6; p.y += p.vy * 0.6; p.vx *= 0.82; p.vy *= 0.82; });
+      }
+
+      return pos;
+    }
+
+    function makeAnimNode(id, x, y) {
+      return {
+        id: String(id), x, y, baseX: x, baseY: y,
+        angle: Math.random() * Math.PI * 2,
+        av:    (Math.random() - 0.5) * 0.01,
+        phase: Math.random() * Math.PI * 2,
+        ar:    10 + Math.random() * 8,
+      };
+    }
+
+    function rebuildAnimNodes() {
+      const nodeList = graphData.nodes.getIds().map(id => graphData.nodes.get(id)).filter(Boolean);
+      const edgeList = graphData.edges.getIds().map(id => graphData.edges.get(id)).filter(Boolean);
+      const positions = computeLayout(nodeList, edgeList);
+      animNodes.clear();
+      positions.forEach((p, id) => animNodes.set(id, makeAnimNode(id, p.x, p.y)));
+    }
+
+    // ── Node animation update ──
+    function updateAnimNode(an) {
+      an.angle += an.av;
+      an.phase += 0.011;
+      const ax = Math.cos(an.angle) * an.ar;
+      const ay = Math.sin(an.angle) * an.ar + Math.cos(an.phase) * 5;
+
+      if (!shiftHeld) {
+        const dx = mouse.wx - an.x, dy = mouse.wy - an.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < mouse.radius && mouse.wx > -9000) {
+          const force = (mouse.radius - dist) / mouse.radius;
+          const angle = Math.atan2(dy, dx);
+          an.x -= Math.cos(angle) * force * 12;
+          an.y -= Math.sin(angle) * force * 12;
+          return;
+        }
+      }
+      an.x += (an.baseX + ax - an.x) * 0.05;
+      an.y += (an.baseY + ay - an.y) * 0.05;
+    }
+
+    // ── Render loop ──
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Smooth camera lerp
+      cam.x += (cam.tx - cam.x) * 0.1;
+      cam.y += (cam.ty - cam.y) * 0.1;
+      cam.scale += (cam.ts - cam.scale) * 0.1;
+
+      ctx.save();
+      ctx.translate(cam.x, cam.y);
+      ctx.scale(cam.scale, cam.scale);
+
+      // ── Draw edges ──
+      for (const eid of graphData.edges.getIds()) {
+        const e  = graphData.edges.get(eid);
+        const a  = animNodes.get(String(e.from));
+        const b  = animNodes.get(String(e.to));
+        if (!a || !b) continue;
+
+        const isSel = eid === selectedEdge;
+        const isHov = eid === hoveredEdge;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+
+        if (isSel || isHov) {
+          ctx.shadowBlur  = 10;
+          ctx.shadowColor = 'rgba(41,151,255,0.6)';
+          ctx.strokeStyle = 'rgba(96,184,255,0.9)';
+          ctx.lineWidth   = 2 / cam.scale;
+        } else {
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const op = Math.max(0.04, 0.35 - dist / 1400);
+          ctx.strokeStyle = `rgba(41,151,255,${op})`;
+          ctx.lineWidth   = 1 / cam.scale;
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // Edge label on select/hover
+        if ((isSel || isHov) && e.label) {
+          ctx.font      = `${11 / cam.scale}px -apple-system, sans-serif`;
+          ctx.fillStyle = 'rgba(134,134,139,0.9)';
+          ctx.textAlign = 'center';
+          ctx.fillText(e.label, (a.x + b.x) / 2, (a.y + b.y) / 2 - 7 / cam.scale);
+        }
+      }
+
+      // ── Draw nodes ──
+      for (const [id, an] of animNodes) {
+        if (id !== draggedNode) updateAnimNode(an);
+
+        const node  = graphData.nodes.get(id);
+        if (!node) continue;
+
+        const isSel  = id === selectedNode;
+        const isHov  = id === hoveredNode;
+        const isHigh = searchHighlight.has(id);
+        const r      = (isSel ? 8 : 6) / cam.scale;
+
+        ctx.save();
+        if (isSel || isHov || isHigh) {
+          ctx.shadowBlur  = 20;
+          ctx.shadowColor = isHigh ? 'rgba(255,200,50,0.7)' : 'rgba(41,151,255,0.75)';
+        }
+        ctx.fillStyle   = isSel ? '#2997ff' : isHigh ? '#2a2000' : isHov ? '#1a4a80' : '#0d2a4a';
+        ctx.strokeStyle = isHigh ? '#ffcc33' : '#2997ff';
+        ctx.lineWidth   = (isSel ? 2.5 : 1.5) / cam.scale;
+        ctx.beginPath();
+        ctx.arc(an.x, an.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        // Label on hover/select
+        if (isSel || isHov || isHigh) {
+          const label = node._label || node.label || '';
+          const fs    = Math.max(9, 12 / cam.scale);
+          ctx.font      = `${fs}px -apple-system, BlinkMacSystemFont, sans-serif`;
+          ctx.fillStyle = '#f5f5f7';
+          ctx.textAlign = 'center';
+          ctx.fillText(label, an.x, an.y - r - 6 / cam.scale);
+        }
+      }
+
+      ctx.restore();
+      requestAnimationFrame(render);
+    }
+
+    // ── Mouse events ──
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.sx = e.clientX - rect.left;
+      mouse.sy = e.clientY - rect.top;
+      const w  = screenToWorld(mouse.sx, mouse.sy);
+      mouse.wx = w.x; mouse.wy = w.y;
+
+      if (draggedNode) {
+        const an = animNodes.get(draggedNode);
+        if (an) { an.x = w.x + dragOffX; an.y = w.y + dragOffY; an.baseX = an.x; an.baseY = an.y; }
+        didDrag = true;
+        return;
+      }
+      if (dragging && !shiftHeld) {
+        cam.tx = camStartX + (mouse.sx - dragStartSX);
+        cam.ty = camStartY + (mouse.sy - dragStartSY);
+        didDrag = true;
+        return;
+      }
+
+      hoveredNode = hitNode(w.x, w.y);
+      hoveredEdge = hoveredNode ? null : hitEdge(w.x, w.y);
+      canvas.style.cursor = (hoveredNode || hoveredEdge) ? 'pointer' : 'grab';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      mouse.wx = -9999; mouse.wy = -9999;
+      hoveredNode = null; hoveredEdge = null;
+    });
+
+    canvas.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx   = e.clientX - rect.left, sy = e.clientY - rect.top;
+      const w    = screenToWorld(sx, sy);
+      didDrag    = false;
+
+      if (e.shiftKey) {
+        // Shift held — interact with nodes
+        const hn = hitNode(w.x, w.y);
+        if (hn) {
+          draggedNode = hn;
+          const an = animNodes.get(hn);
+          dragOffX = an.x - w.x; dragOffY = an.y - w.y;
+          return;
+        }
+      }
+
+      // Default — pan
+      dragging    = true;
+      dragStartSX = sx; dragStartSY = sy;
+      camStartX   = cam.tx; camStartY = cam.ty;
+      canvas.style.cursor = 'grabbing';
+    });
+
+    canvas.addEventListener('mouseup', e => {
+      if (e.button !== 0) return;
+      const rect = canvas.getBoundingClientRect();
+      const w    = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+
+      if (!didDrag && e.shiftKey) {
+        const hn = hitNode(w.x, w.y);
+        const he = hn ? null : hitEdge(w.x, w.y);
+        if (hn)      { selectedNode = hn === selectedNode ? null : hn; selectedEdge = null; }
+        else if (he) { selectedEdge = he === selectedEdge ? null : he; selectedNode = null; }
+        else         { selectedNode = null; selectedEdge = null; }
+        updateSidebar();
+      }
+      draggedNode = null; dragging = false;
+      canvas.style.cursor = hoveredNode ? 'pointer' : 'grab';
+    });
+
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const rect   = canvas.getBoundingClientRect();
+      const sx     = e.clientX - rect.left, sy = e.clientY - rect.top;
+      const factor = e.deltaY > 0 ? 0.88 : 1.14;
+      const ns     = Math.max(0.1, Math.min(6, cam.ts * factor));
+      const wx     = (sx - cam.tx) / cam.ts;
+      const wy     = (sy - cam.ty) / cam.ts;
+      cam.tx = sx - wx * ns;
+      cam.ty = sy - wy * ns;
+      cam.ts = ns;
+
+      // Zoom brightness flash
+      clearTimeout(zoomTimer);
+      canvas.style.filter = 'brightness(1.35)';
+      zoomTimer = setTimeout(() => { canvas.style.filter = 'brightness(1)'; }, 220);
+    }, { passive: false });
+
+    // ── Network adapter ──
+    const network = {
+      selectNodes(ids) { selectedNode = ids[0] || null; selectedEdge = null; },
+      unselectAll()    { selectedNode = null; selectedEdge = null; updateSidebar(); },
+      fit({ nodes: nodeIds, animation } = {}) {
+        const targets = nodeIds
+          ? nodeIds.map(id => animNodes.get(String(id))).filter(Boolean)
+          : [...animNodes.values()];
+        if (!targets.length) return;
+        const xs = targets.map(n => n.baseX), ys = targets.map(n => n.baseY);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        const pad  = 80;
+        const ns   = Math.min(
+          (canvas.width  - pad * 2) / (maxX - minX + 1),
+          (canvas.height - pad * 2) / (maxY - minY + 1),
+          2
+        );
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+        cam.ts = ns;
+        cam.tx = canvas.width  / 2 - cx * ns;
+        cam.ty = canvas.height / 2 - cy * ns;
+      },
+      focus(id, { scale = 1.5 } = {}) {
+        const an = animNodes.get(String(id));
+        if (!an) return;
+        cam.ts = scale;
+        cam.tx = canvas.width  / 2 - an.baseX * scale;
+        cam.ty = canvas.height / 2 - an.baseY * scale;
+      },
+    };
+
+    // ── Load graph ──
     async function loadGraph() {
       const headers = personId ? { 'X-Person-Id': personId } : {};
       const resp = await fetch('/api/graph', { headers });
@@ -585,10 +798,12 @@
       const data = await resp.json();
       graphData.nodes.clear();
       graphData.edges.clear();
-      // Store real label in _label, default display is blank (shown on hover)
       graphData.nodes.add(data.nodes.map(n => ({ ...n, _label: n.label, label: ' ' })));
       graphData.edges.add(data.edges);
+      rebuildAnimNodes();
       updateStats();
+      // Fit all nodes into view
+      network.fit();
     }
 
     // ── Sidebar ──
@@ -598,22 +813,22 @@
 
       if (selectedNode) {
         const n = graphData.nodes.get(selectedNode);
-        document.getElementById('nodeDetails').innerHTML = `
+        document.getElementById('nodeDetails').innerHTML = n ? `
           <div class="detail-row"><span class="k">ID</span><span class="v">${n.id}</span></div>
           <div class="detail-row"><span class="k">Name</span><span class="v">${n._label || n.label || '—'}</span></div>
           ${n.title ? `<div class="detail-row"><span class="k">Type</span><span class="v">${n.title}</span></div>` : ''}
-        `;
+        ` : '';
       }
 
       if (selectedEdge) {
         const e  = graphData.edges.get(selectedEdge);
-        const fn = graphData.nodes.get(e.from);
-        const tn = graphData.nodes.get(e.to);
-        document.getElementById('edgeDetails').innerHTML = `
+        const fn = graphData.nodes.get(String(e?.from));
+        const tn = graphData.nodes.get(String(e?.to));
+        document.getElementById('edgeDetails').innerHTML = e ? `
           <div class="detail-row"><span class="k">Type</span><span class="v">${e.label || '—'}</span></div>
-          <div class="detail-row"><span class="k">From</span><span class="v">${fn?.label || e.from}</span></div>
-          <div class="detail-row"><span class="k">To</span><span class="v">${tn?.label || e.to}</span></div>
-        `;
+          <div class="detail-row"><span class="k">From</span><span class="v">${fn?._label || e.from}</span></div>
+          <div class="detail-row"><span class="k">To</span><span class="v">${tn?._label || e.to}</span></div>
+        ` : '';
       }
 
       updateChangesList();
@@ -637,14 +852,10 @@
 
     function updateChangesList() {
       const items = [];
-      Object.entries(pending.nodes).forEach(([id, c]) =>
-        items.push(`<div class="change-item">+ Node: ${c.name}</div>`));
-      Object.entries(pending.edges).forEach(([id, c]) =>
-        items.push(`<div class="change-item">+ Rel: ${c.relType}</div>`));
-      pending.deletedNodes.forEach(id =>
-        items.push(`<div class="change-item del">− Node: ${id}</div>`));
-      pending.deletedEdges.forEach(id =>
-        items.push(`<div class="change-item del">− Rel: ${id}</div>`));
+      Object.entries(pending.nodes).forEach(([, c]) => items.push(`<div class="change-item">+ Node: ${c.name}</div>`));
+      Object.entries(pending.edges).forEach(([, c]) => items.push(`<div class="change-item">+ Rel: ${c.relType}</div>`));
+      pending.deletedNodes.forEach(id => items.push(`<div class="change-item del">− Node: ${id}</div>`));
+      pending.deletedEdges.forEach(id => items.push(`<div class="change-item del">− Rel: ${id}</div>`));
 
       const hasChanges = items.length > 0;
       document.getElementById('changesSection').style.display = hasChanges ? 'block' : 'none';
@@ -668,8 +879,8 @@
     }
 
     async function addNode() {
-      const label = document.getElementById('nodeLabel').value.trim();
-      const name  = document.getElementById('nodeName').value.trim();
+      const label    = document.getElementById('nodeLabel').value.trim();
+      const name     = document.getElementById('nodeName').value.trim();
       const propsStr = document.getElementById('nodeProps').value.trim();
       if (!label || !name) { alert('Label and Name are required'); return; }
 
@@ -686,12 +897,18 @@
         method: 'POST', headers,
         body: JSON.stringify({ label, name, properties: props }),
       });
-      if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Failed'); return; }
+      if (!resp.ok) { const err = await resp.json(); alert(err.error || 'Failed'); return; }
       const data = await resp.json();
 
-      graphData.nodes.add({ id: String(data.id), _label: name, label: ' ', title: label,
-        color: { background: '#0d3d80', border: '#2997ff' } });
-      pending.nodes[String(data.id)] = { type: 'add', label, name };
+      const newId = String(data.id);
+      graphData.nodes.add({ id: newId, _label: name, label: ' ', title: label });
+
+      // Place new node near center with slight offset
+      const cx = canvas.width / 2, cy = canvas.height / 2;
+      const w  = screenToWorld(cx, cy);
+      animNodes.set(newId, makeAnimNode(newId, w.x + (Math.random() - 0.5) * 100, w.y + (Math.random() - 0.5) * 100));
+
+      pending.nodes[newId] = { type: 'add', label, name };
       updatePendingBadge(); updateStats(); updateSidebar();
       closeModal('addNodeModal');
     }
@@ -705,9 +922,9 @@
     }
 
     async function addEdge() {
-      const fromId   = document.getElementById('edgeFrom').value.trim();
-      const relType  = document.getElementById('edgeType').value.trim();
-      const toId     = document.getElementById('edgeTo').value.trim();
+      const fromId  = document.getElementById('edgeFrom').value.trim();
+      const relType = document.getElementById('edgeType').value.trim();
+      const toId    = document.getElementById('edgeTo').value.trim();
       if (!fromId || !relType || !toId) { alert('All fields required'); return; }
       if (!graphData.nodes.get(fromId) || !graphData.nodes.get(toId)) {
         alert('Node IDs not found in graph'); return;
@@ -720,7 +937,7 @@
         method: 'POST', headers,
         body: JSON.stringify({ from: fromId, type: relType, to: toId }),
       });
-      if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Failed'); return; }
+      if (!resp.ok) { const err = await resp.json(); alert(err.error || 'Failed'); return; }
       const data = await resp.json();
 
       graphData.edges.add({ id: String(data.id), from: fromId, to: toId, label: relType });
@@ -733,11 +950,12 @@
     function deleteSelectedNode() {
       if (!selectedNode) return;
       const n = graphData.nodes.get(selectedNode);
-      if (!confirm(`Delete "${n.label}"? All its relationships will also be removed.`)) return;
+      if (!confirm(`Delete "${n?._label || selectedNode}"? All its relationships will also be removed.`)) return;
 
-      const connected = graphData.edges.get({ filter: e => e.from === selectedNode || e.to === selectedNode });
+      const connected = graphData.edges.get({ filter: e => String(e.from) === selectedNode || String(e.to) === selectedNode });
       connected.forEach(e => { graphData.edges.remove(e.id); pending.deletedEdges.push(e.id); });
       graphData.nodes.remove(selectedNode);
+      animNodes.delete(selectedNode);
       pending.deletedNodes.push(selectedNode);
       selectedNode = null;
       updatePendingBadge(); updateStats(); updateSidebar();
@@ -746,7 +964,7 @@
     function deleteSelectedEdge() {
       if (!selectedEdge) return;
       const e = graphData.edges.get(selectedEdge);
-      if (!confirm(`Delete relationship "${e.label}"?`)) return;
+      if (!confirm(`Delete relationship "${e?.label || selectedEdge}"?`)) return;
       graphData.edges.remove(selectedEdge);
       pending.deletedEdges.push(selectedEdge);
       selectedEdge = null;
@@ -756,14 +974,10 @@
     // ── Commit ──
     function showCommitModal() {
       const items = [];
-      Object.entries(pending.nodes).forEach(([_, c]) =>
-        items.push(`<div class="change-item">+ Add node: <strong>${c.name}</strong></div>`));
-      Object.entries(pending.edges).forEach(([_, c]) =>
-        items.push(`<div class="change-item">+ Add rel: <strong>${c.relType}</strong></div>`));
-      pending.deletedNodes.forEach(() =>
-        items.push(`<div class="change-item del">− Remove node</div>`));
-      pending.deletedEdges.forEach(() =>
-        items.push(`<div class="change-item del">− Remove relationship</div>`));
+      Object.entries(pending.nodes).forEach(([, c]) =>  items.push(`<div class="change-item">+ Add node: <strong>${c.name}</strong></div>`));
+      Object.entries(pending.edges).forEach(([, c]) =>  items.push(`<div class="change-item">+ Add rel: <strong>${c.relType}</strong></div>`));
+      pending.deletedNodes.forEach(() => items.push(`<div class="change-item del">− Remove node</div>`));
+      pending.deletedEdges.forEach(() => items.push(`<div class="change-item del">− Remove relationship</div>`));
       document.getElementById('commitList').innerHTML = items.join('');
       showModal('commitModal');
     }
@@ -776,7 +990,7 @@
         method: 'POST', headers,
         body: JSON.stringify(pending),
       });
-      if (!resp.ok) { const e = await resp.json(); alert(e.error || 'Commit failed'); return; }
+      if (!resp.ok) { const err = await resp.json(); alert(err.error || 'Commit failed'); return; }
 
       pending = { nodes: {}, edges: {}, deletedNodes: [], deletedEdges: [] };
       await loadGraph();
@@ -787,27 +1001,19 @@
     // ── Search ──
     function runSearch() {
       const q = document.getElementById('searchInput').value.trim().toLowerCase();
-      const section = document.getElementById('searchSection');
       if (!q) { clearSearch(); return; }
 
       const matchedNodes = graphData.nodes.get().filter(n =>
-        (n._label||n.label||'').toLowerCase().includes(q) || (n.title||'').toLowerCase().includes(q));
+        (n._label || n.label || '').toLowerCase().includes(q) || (n.title || '').toLowerCase().includes(q));
       const matchedEdges = graphData.edges.get().filter(e =>
-        (e.label||'').toLowerCase().includes(q));
+        (e.label || '').toLowerCase().includes(q));
 
-      const allIds = graphData.nodes.getIds();
-      const matchIds = matchedNodes.map(n => n.id);
+      searchHighlight = new Set(matchedNodes.map(n => String(n.id)));
 
-      graphData.nodes.update(allIds.map(id => ({
-        id,
-        color: matchIds.includes(id)
-          ? { background: '#1a5aad', border: '#2997ff', highlight: { background: '#2997ff' } }
-          : { background: '#0d0d0d', border: '#1a1a1a' },
-      })));
-
+      const matchIds = matchedNodes.map(n => String(n.id));
       if (matchIds.length) {
         network.selectNodes(matchIds);
-        network.fit({ nodes: matchIds, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+        network.fit({ nodes: matchIds });
       }
 
       const items = [];
@@ -817,43 +1023,40 @@
           <span class="r-type">${n.title || 'node'}</span>
         </div>`));
       matchedEdges.forEach(e => {
-        const fn = graphData.nodes.get(e.from);
-        const tn = graphData.nodes.get(e.to);
+        const fn = graphData.nodes.get(String(e.from));
+        const tn = graphData.nodes.get(String(e.to));
         items.push(`<div class="result-item" onclick="focusEdge('${e.id}')">
-          <span class="r-name">${fn?.label || e.from} → ${tn?.label || e.to}</span>
+          <span class="r-name">${fn?._label || e.from} → ${tn?._label || e.to}</span>
           <span class="r-type">${e.label}</span>
         </div>`);
       });
 
       document.getElementById('searchResults').innerHTML =
         items.length ? items.join('') : '<div class="no-results">No results</div>';
-      section.style.display = 'block';
+      document.getElementById('searchSection').style.display = 'block';
     }
 
     function focusNode(id) {
-      network.selectNodes([id]);
-      network.focus(id, { scale: 1.5, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
-      selectedNode = id; selectedEdge = null; updateSidebar();
+      selectedNode = id; selectedEdge = null;
+      network.focus(id, { scale: 1.5 });
+      updateSidebar();
     }
 
     function focusEdge(id) {
-      network.selectEdges([id]);
-      selectedEdge = id; selectedNode = null; updateSidebar();
+      selectedEdge = id; selectedNode = null;
+      updateSidebar();
     }
 
     function clearSearch() {
       document.getElementById('searchInput').value = '';
       document.getElementById('searchSection').style.display = 'none';
-      graphData.nodes.update(graphData.nodes.getIds().map(id => ({
-        id,
-        color: { background: '#1a5aad', border: '#2997ff', highlight: { background: '#2997ff', border: '#fff' } },
-      })));
+      searchHighlight = new Set();
       network.unselectAll();
     }
 
     // ── Wallet ──
     async function downloadWallet() {
-      const url = personId ? `/api/wallet?person_id=${encodeURIComponent(personId)}` : '/api/wallet';
+      const url  = personId ? `/api/wallet?person_id=${encodeURIComponent(personId)}` : '/api/wallet';
       const resp = await fetch(url, { headers: personId ? { 'X-Person-Id': personId } : {} });
       const blob = await resp.blob();
       const cd   = resp.headers.get('Content-Disposition') || '';
@@ -868,13 +1071,12 @@
     // ── Modal helpers ──
     function showModal(id) { document.getElementById(id).classList.add('show'); }
     function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-
     document.querySelectorAll('.overlay').forEach(o =>
       o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); }));
 
     // ── Boot ──
     window.addEventListener('load', () => {
-      initNetwork();
+      render();
       loadGraph();
     });
   </script>
