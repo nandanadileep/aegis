@@ -380,16 +380,6 @@ def _spa():
     return send_from_directory(app.static_folder, "index.html")
 
 
-# Catch-all: serve React SPA for any non-API route (handles /callback, etc.)
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def catch_all(path):
-    # Let Flask serve static assets (JS, CSS) normally
-    if path.startswith("assets/") or path in ("favicon.svg", "favicon.ico"):
-        return send_from_directory(app.static_folder, path)
-    # All other paths → SPA
-    return _spa()
-
 
 @app.route("/api/config")
 def public_config():
@@ -915,6 +905,16 @@ def commit_changes():
         return jsonify({"status": "ok", "committed": len(added_nodes) + len(added_edges) + len(deleted_nodes) + len(deleted_edges)})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
+
+
+# Catch-all: serve React SPA for any non-API path (e.g. /callback from OAuth)
+# Must be registered LAST so it doesn't shadow API routes.
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def catch_all(path):
+    if path.startswith("assets/") or path in ("favicon.svg", "favicon.ico"):
+        return send_from_directory(app.static_folder, path)
+    return _spa()
 
 
 if __name__ == "__main__":
