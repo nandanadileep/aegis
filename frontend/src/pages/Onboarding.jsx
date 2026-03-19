@@ -209,7 +209,7 @@ function MsgBubble({ msg }) {
 
 function Import1Screen({ onBack, onNext }) {
   const [copied, setCopied] = useState(false)
-  const prompt = `I want to build a profile of who I am and who I'm becoming. Have a real conversation with me — ask one short question at a time, like a curious friend. No numbered lists, no multiple questions at once. Just talk naturally.\n\nWhen you feel like you have a full picture, output a JSON at the end in this exact format:\n{\n  "name": "",\n  "twin_description": "one sentence — who this person is",\n  "values": [],\n  "skills": [],\n  "personality": [],\n  "goals": [],\n  "speaking_style": "",\n  "known_for": []\n}\n\nOnly fill in what you actually learned. Don't guess.`
+  const prompt = `I want to build a profile of who I am and who I'm becoming. Have a real conversation with me — ask one short question at a time, like a curious friend. No numbered lists, no multiple questions at once. Just talk naturally.\n\nWhen you feel like you have a full picture, output a JSON at the end in this exact format:\n{\n  "name": "",\n  "description": "one sentence — who this person is",\n  "values": [],\n  "skills": [],\n  "personality": [],\n  "goals": [],\n  "speaking_style": "",\n  "known_for": []\n}\n\nOnly fill in what you actually learned. Don't guess.`
   function copy() { navigator.clipboard.writeText(prompt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200) }) }
   return (
     <ImportLayout onBack={onBack} step="Step 1 of 2" title="Have the conversation first" sub="Copy this prompt. Paste it into ChatGPT, Claude, or Gemini. Have a real conversation. Come back with the JSON.">
