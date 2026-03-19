@@ -6,14 +6,55 @@
   <title>Aegis — Build Your Twin</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
+    :root {
+      --bg: #fff;
+      --surface: #f5f5f7;
+      --border: #e8e8ed;
+      --border-strong: #9e9ea6;
+      --text: #1a1a1a;
+      --text-2: #6e6e73;
+      --text-3: #9e9ea6;
+      --user-bubble: #0d0c20;
+      --user-bubble-text: #fff;
+      --asst-bubble: #f5f5f7;
+      --asst-bubble-text: #1a1a1a;
+      --send-bg: #0d0c20;
+      --send-text: #0000ee;
+      --btn-primary-bg: #0d0c20;
+      --btn-primary-text: #0000ee;
+      --input-bar-bg: #f5f5f7;
+      --focus-shadow: rgba(0,0,0,0.06);
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f0f13;
+      --surface: #1c1c1f;
+      --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.22);
+      --text: #f5f5f7;
+      --text-2: #8e8e93;
+      --text-3: #48484a;
+      --user-bubble: #0000ee;
+      --user-bubble-text: #fff;
+      --asst-bubble: #1c1c1f;
+      --asst-bubble-text: #f5f5f7;
+      --send-bg: #0000ee;
+      --send-text: #fff;
+      --btn-primary-bg: #0000ee;
+      --btn-primary-text: #fff;
+      --input-bar-bg: #1c1c1f;
+      --focus-shadow: rgba(0,0,238,0.15);
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
       height: 100%;
-      background: #fff;
-      color: #1a1a1a;
+      background: var(--bg);
+      color: var(--text);
       font-family: 'Inter', sans-serif;
       -webkit-font-smoothing: antialiased;
+      transition: background 0.2s, color 0.2s;
     }
 
     /* ── Screens ── */
@@ -42,7 +83,7 @@
       font-size: 12px;
       font-weight: 700;
       letter-spacing: -0.02em;
-      color: #1a1a1a;
+      color: var(--text);
       margin-bottom: 20px;
     }
 
@@ -52,7 +93,7 @@
       letter-spacing: -0.04em;
       line-height: 1.0;
       text-align: center;
-      color: #1a1a1a;
+      color: var(--text);
       margin-bottom: 18px;
     }
 
@@ -61,13 +102,13 @@
       font-weight: 700;
       letter-spacing: -0.03em;
       text-align: center;
-      color: #1a1a1a;
+      color: var(--text);
       margin-bottom: 12px;
     }
 
     .lead {
       font-size: 15px;
-      color: #6e6e73;
+      color: var(--text-2);
       text-align: center;
       line-height: 1.6;
       margin-bottom: 48px;
@@ -86,8 +127,8 @@
     }
 
     .card {
-      background: #fff;
-      border: 1px solid #e8e8ed;
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 16px;
       padding: 28px 24px;
       cursor: pointer;
@@ -97,14 +138,14 @@
     }
 
     .card:hover {
-      background: #f5f5f7;
-      border-color: #9e9ea6;
+      background: var(--surface);
+      border-color: var(--border-strong);
       transform: translateY(-2px);
     }
 
-    .card-icon { font-size: 22px; margin-bottom: 14px; line-height: 1; color: #1a1a1a; }
-    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; letter-spacing: -0.01em; color: #1a1a1a; }
-    .card-desc { font-size: 13px; color: #6e6e73; line-height: 1.5; }
+    .card-icon { font-size: 22px; margin-bottom: 14px; line-height: 1; color: var(--text); }
+    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; letter-spacing: -0.01em; color: var(--text); }
+    .card-desc { font-size: 13px; color: var(--text-2); line-height: 1.5; }
 
     /* ── Chat screen ── */
     #s-chat {
@@ -118,29 +159,30 @@
       align-items: center;
       padding: 0 32px;
       height: 60px;
-      border-bottom: 1px solid #e8e8ed;
-      background: #fff;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
       flex-shrink: 0;
       gap: 12px;
+      transition: background 0.2s, border-color 0.2s;
     }
 
     .back-btn {
       background: none;
       border: none;
-      color: #6e6e73;
+      color: var(--text-2);
       font-size: 15px;
       font-family: 'Inter', sans-serif;
       cursor: pointer;
       padding: 0;
       transition: color 0.15s;
     }
-    .back-btn:hover { color: #1a1a1a; }
+    .back-btn:hover { color: var(--text); }
 
     .chat-header-title {
       font-size: 15px;
       font-weight: 600;
       letter-spacing: -0.01em;
-      color: #1a1a1a;
+      color: var(--text);
     }
 
     .chat-messages {
@@ -154,7 +196,7 @@
     }
 
     .chat-messages::-webkit-scrollbar { width: 3px; }
-    .chat-messages::-webkit-scrollbar-thumb { background: #e8e8ed; border-radius: 2px; }
+    .chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
     .chat-messages::-webkit-scrollbar-track { background: transparent; }
 
     .msg-row {
@@ -178,20 +220,20 @@
     }
 
     .bubble.user {
-      background: #0d0c20;
-      color: #fff;
+      background: var(--user-bubble);
+      color: var(--user-bubble-text);
       border-radius: 20px 20px 4px 20px;
     }
 
     .bubble.assistant {
-      background: #f5f5f7;
-      color: #1a1a1a;
+      background: var(--asst-bubble);
+      color: var(--asst-bubble-text);
       border-radius: 20px 20px 20px 4px;
     }
 
     .bubble.thinking {
       background: transparent;
-      color: #9e9ea6;
+      color: var(--text-3);
       font-size: 13px;
       padding-left: 4px;
     }
@@ -220,16 +262,16 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #f5f5f7;
-      border: 1px solid #e8e8ed;
+      background: var(--input-bar-bg);
+      border: 1px solid var(--border);
       border-radius: 26px;
       padding: 8px 8px 8px 20px;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
 
     .input-bar:focus-within {
-      border-color: #1a1a1a;
-      box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+      border-color: var(--text);
+      box-shadow: 0 0 0 3px var(--focus-shadow);
     }
 
     .input-bar input {
@@ -237,20 +279,20 @@
       background: none;
       border: none;
       outline: none;
-      color: #1a1a1a;
+      color: var(--text);
       font-family: 'Inter', sans-serif;
       font-size: 14px;
       padding: 4px 0;
       min-width: 0;
     }
 
-    .input-bar input::placeholder { color: #9e9ea6; }
+    .input-bar input::placeholder { color: var(--text-3); }
 
     .send-btn {
       width: 34px;
       height: 34px;
       border-radius: 50%;
-      background: #0d0c20;
+      background: var(--send-bg);
       border: none;
       cursor: pointer;
       display: flex;
@@ -259,12 +301,12 @@
       flex-shrink: 0;
       transition: opacity 0.15s, transform 0.15s;
       font-size: 15px;
-      color: #0000ee;
+      color: var(--send-text);
       font-weight: 700;
     }
 
     .send-btn:hover  { opacity: 0.85; transform: scale(1.06); }
-    .send-btn:disabled { background: #e8e8ed; color: #9e9ea6; cursor: not-allowed; transform: none; }
+    .send-btn:disabled { background: var(--border); color: var(--text-3); cursor: not-allowed; transform: none; }
 
     /* ── Import screens ── */
     #s-import-1, #s-import-2 {
@@ -288,18 +330,18 @@
       font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: #9e9ea6;
+      color: var(--text-3);
       margin-bottom: 14px;
     }
 
     .prompt-box {
-      background: #f5f5f7;
-      border: 1px solid #e8e8ed;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 12px;
       padding: 20px;
       font-family: 'SF Mono', 'Fira Code', monospace;
       font-size: 12.5px;
-      color: #6e6e73;
+      color: var(--text-2);
       line-height: 1.65;
       white-space: pre-wrap;
       width: 100%;
@@ -315,16 +357,16 @@
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: #9e9ea6;
+      color: var(--text-3);
       margin-bottom: 8px;
     }
 
     input, textarea {
       width: 100%;
-      background: #fff;
-      border: 1px solid #e8e8ed;
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 10px;
-      color: #1a1a1a;
+      color: var(--text);
       font-family: 'Inter', sans-serif;
       font-size: 14px;
       padding: 12px 16px;
@@ -333,11 +375,11 @@
     }
 
     input:focus, textarea:focus {
-      border-color: #1a1a1a;
-      box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+      border-color: var(--text);
+      box-shadow: 0 0 0 3px var(--focus-shadow);
     }
 
-    input::placeholder, textarea::placeholder { color: #9e9ea6; }
+    input::placeholder, textarea::placeholder { color: var(--text-3); }
 
     textarea {
       resize: none;
@@ -363,25 +405,25 @@
       letter-spacing: -0.01em;
     }
 
-    .btn-primary { background: #0d0c20; color: #0000ee; }
+    .btn-primary { background: var(--btn-primary-bg); color: var(--btn-primary-text); }
     .btn-primary:hover { opacity: 0.85; }
-    .btn-primary:disabled { background: #e8e8ed; color: #9e9ea6; cursor: not-allowed; }
+    .btn-primary:disabled { background: var(--border); color: var(--text-3); cursor: not-allowed; }
 
     .btn-ghost {
-      background: #fff;
-      color: #1a1a1a;
-      border: 1px solid #9e9ea6;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
     }
-    .btn-ghost:hover { background: #f5f5f7; }
+    .btn-ghost:hover { background: var(--surface); }
 
     .btn-copy {
-      background: #f5f5f7;
-      color: #1a1a1a;
-      border: 1px solid #e8e8ed;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
       padding: 9px 16px;
       font-size: 13px;
     }
-    .btn-copy:hover { background: #e8e8ed; }
+    .btn-copy:hover { background: var(--border); }
 
     .btn-row {
       display: flex;
@@ -395,7 +437,7 @@
     .import-back {
       background: none;
       border: none;
-      color: #6e6e73;
+      color: var(--text-2);
       font-size: 14px;
       font-family: 'Inter', sans-serif;
       cursor: pointer;
@@ -404,7 +446,7 @@
       align-self: flex-start;
       transition: color 0.15s;
     }
-    .import-back:hover { color: #1a1a1a; }
+    .import-back:hover { color: var(--text); }
 
     .error-msg {
       color: #ff3b30;
@@ -427,15 +469,30 @@
       width: 72px;
       height: 72px;
       border-radius: 50%;
-      background: #f5f5f7;
-      border: 1px solid #e8e8ed;
+      background: var(--surface);
+      border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 30px;
       margin-bottom: 24px;
-      color: #1a1a1a;
+      color: var(--text);
     }
+
+    .theme-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: all 0.15s;
+    }
+    .theme-btn:hover { background: var(--border); }
 
     @media (max-width: 560px) {
       .cards { grid-template-columns: 1fr; }
@@ -447,6 +504,9 @@
 
   <!-- ══ Welcome ══ -->
   <div class="screen active" id="s-welcome">
+    <div style="position:absolute;top:20px;right:24px;">
+      <button class="theme-btn" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+    </div>
     <div class="eyebrow">Aegis</div>
     <h1>Who do you<br>want to be?</h1>
     <p class="lead">Build your digital twin — a profile that tells any AI exactly who you are, or who you're becoming.</p>
@@ -540,6 +600,21 @@ Only fill in what you actually learned. Don't guess.</div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    // ── Theme ──
+    const THEME_KEY = 'aegis-theme';
+    function applyTheme(t) {
+      document.documentElement.setAttribute('data-theme', t);
+      const btn = document.getElementById('themeToggle');
+      if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
+    }
+    function toggleTheme() {
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    }
+    applyTheme(localStorage.getItem(THEME_KEY) || 'light');
+
+    // ── Auth ──
     const { createClient } = window.supabase;
     let sb = null;
     let _session = null;

@@ -6,18 +6,63 @@
   <title>Aegis — Chat</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
+    :root {
+      --bg: #fff;
+      --surface: #f5f5f7;
+      --border: #e8e8ed;
+      --border-strong: #9e9ea6;
+      --text: #1a1a1a;
+      --text-2: #6e6e73;
+      --text-3: #9e9ea6;
+      --user-bubble: #0d0c20;
+      --user-bubble-text: #fff;
+      --asst-bubble: #f5f5f7;
+      --asst-bubble-text: #1a1a1a;
+      --send-bg: #0d0c20;
+      --send-text: #0000ee;
+      --btn-primary-bg: #0d0c20;
+      --btn-primary-text: #0000ee;
+      --header-bg: #fff;
+      --input-bar-bg: #f5f5f7;
+      --focus-shadow: rgba(0,0,0,0.06);
+      --code-bg: rgba(0,0,0,0.07);
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f0f13;
+      --surface: #1c1c1f;
+      --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.22);
+      --text: #f5f5f7;
+      --text-2: #8e8e93;
+      --text-3: #48484a;
+      --user-bubble: #0000ee;
+      --user-bubble-text: #fff;
+      --asst-bubble: #1c1c1f;
+      --asst-bubble-text: #f5f5f7;
+      --send-bg: #0000ee;
+      --send-text: #fff;
+      --btn-primary-bg: #0000ee;
+      --btn-primary-text: #fff;
+      --header-bg: #0f0f13;
+      --input-bar-bg: #1c1c1f;
+      --focus-shadow: rgba(0,0,238,0.15);
+      --code-bg: rgba(255,255,255,0.08);
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
 
     body {
       font-family: 'Inter', sans-serif;
-      background: #fff;
-      color: #1a1a1a;
+      background: var(--bg);
+      color: var(--text);
       display: flex;
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
       -webkit-font-smoothing: antialiased;
+      transition: background 0.2s, color 0.2s;
     }
 
     /* ── Header ── */
@@ -27,17 +72,18 @@
       justify-content: space-between;
       padding: 0 32px;
       height: 60px;
-      border-bottom: 1px solid #e8e8ed;
+      border-bottom: 1px solid var(--border);
       flex-shrink: 0;
-      background: #fff;
+      background: var(--header-bg);
       z-index: 50;
+      transition: background 0.2s, border-color 0.2s;
     }
 
     .brand {
       font-size: 15px;
       font-weight: 700;
       letter-spacing: -0.02em;
-      color: #1a1a1a;
+      color: var(--text);
     }
 
     nav { display: flex; gap: 4px; }
@@ -47,14 +93,14 @@
       border-radius: 80px;
       font-size: 13px;
       font-weight: 500;
-      color: #6e6e73;
+      color: var(--text-2);
       text-decoration: none;
       transition: all 0.15s;
       border: 1px solid transparent;
     }
 
-    .nav-link:hover { color: #1a1a1a; background: #f5f5f7; }
-    .nav-link.active { color: #1a1a1a; border-color: #9e9ea6; background: #fff; }
+    .nav-link:hover { color: var(--text); background: var(--surface); }
+    .nav-link.active { color: var(--text); border-color: var(--border-strong); background: var(--bg); }
 
     .header-right { display: flex; gap: 8px; align-items: center; }
 
@@ -70,18 +116,35 @@
     }
 
     .btn-primary {
-      background: #0d0c20;
-      color: #0000ee;
+      background: var(--btn-primary-bg);
+      color: var(--btn-primary-text);
       border: none;
     }
     .btn-primary:hover { opacity: 0.85; }
 
     .btn-ghost {
-      background: #fff;
-      color: #1a1a1a;
-      border: 1px solid #9e9ea6;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
     }
-    .btn-ghost:hover { background: #f5f5f7; }
+    .btn-ghost:hover { background: var(--surface); }
+
+    /* ── Theme toggle ── */
+    .theme-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .theme-btn:hover { background: var(--border); }
 
     /* ── Messages ── */
     .messages {
@@ -95,7 +158,7 @@
     }
 
     .messages::-webkit-scrollbar { width: 3px; }
-    .messages::-webkit-scrollbar-thumb { background: #e8e8ed; border-radius: 2px; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
     .messages::-webkit-scrollbar-track { background: transparent; }
 
     .msg-row {
@@ -119,20 +182,20 @@
     }
 
     .bubble.user {
-      background: #0d0c20;
-      color: #fff;
+      background: var(--user-bubble);
+      color: var(--user-bubble-text);
       border-radius: 20px 20px 4px 20px;
     }
 
     .bubble.assistant {
-      background: #f5f5f7;
-      color: #1a1a1a;
+      background: var(--asst-bubble);
+      color: var(--asst-bubble-text);
       border-radius: 20px 20px 20px 4px;
     }
 
     .bubble.thinking {
       background: transparent;
-      color: #9e9ea6;
+      color: var(--text-3);
       font-size: 13px;
       padding-left: 4px;
     }
@@ -140,7 +203,7 @@
     .bubble code {
       font-family: 'SF Mono', 'Fira Code', monospace;
       font-size: 0.88em;
-      background: rgba(0,0,0,0.07);
+      background: var(--code-bg);
       padding: 1px 6px;
       border-radius: 4px;
     }
@@ -173,12 +236,12 @@
       font-size: 18px;
       font-weight: 600;
       letter-spacing: -0.02em;
-      color: #1a1a1a;
+      color: var(--text);
     }
 
     .empty p {
       font-size: 14px;
-      color: #9e9ea6;
+      color: var(--text-3);
       text-align: center;
       max-width: 260px;
       line-height: 1.6;
@@ -197,16 +260,16 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #f5f5f7;
-      border: 1px solid #e8e8ed;
+      background: var(--input-bar-bg);
+      border: 1px solid var(--border);
       border-radius: 26px;
       padding: 8px 8px 8px 20px;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
 
     .input-bar:focus-within {
-      border-color: #1a1a1a;
-      box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+      border-color: var(--text);
+      box-shadow: 0 0 0 3px var(--focus-shadow);
     }
 
     .input-bar input {
@@ -214,20 +277,20 @@
       background: none;
       border: none;
       outline: none;
-      color: #1a1a1a;
+      color: var(--text);
       font-family: 'Inter', sans-serif;
       font-size: 14px;
       padding: 4px 0;
       min-width: 0;
     }
 
-    .input-bar input::placeholder { color: #9e9ea6; }
+    .input-bar input::placeholder { color: var(--text-3); }
 
     .send-btn {
       width: 34px;
       height: 34px;
       border-radius: 50%;
-      background: #0d0c20;
+      background: var(--send-bg);
       border: none;
       cursor: pointer;
       display: flex;
@@ -236,12 +299,12 @@
       flex-shrink: 0;
       transition: opacity 0.15s, transform 0.15s;
       font-size: 15px;
-      color: #0000ee;
+      color: var(--send-text);
       font-weight: 700;
     }
 
     .send-btn:hover  { opacity: 0.85; transform: scale(1.06); }
-    .send-btn:disabled { background: #e8e8ed; color: #9e9ea6; cursor: not-allowed; transform: none; }
+    .send-btn:disabled { background: var(--border); color: var(--text-3); cursor: not-allowed; transform: none; }
   </style>
 </head>
 <body>
@@ -252,6 +315,7 @@
       <a href="/memory" class="nav-link">Graph</a>
     </nav>
     <div class="header-right">
+      <button class="theme-btn" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
       <button class="btn-sm btn-ghost" onclick="saveTranscript()">Save</button>
       <button class="btn-sm btn-primary" onclick="signOut()">Sign out</button>
     </div>
@@ -273,6 +337,20 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    // ── Theme ──
+    const THEME_KEY = 'aegis-theme';
+    function applyTheme(t) {
+      document.documentElement.setAttribute('data-theme', t);
+      document.getElementById('themeToggle').textContent = t === 'dark' ? '☀️' : '🌙';
+    }
+    function toggleTheme() {
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+    }
+    applyTheme(localStorage.getItem(THEME_KEY) || 'light');
+
+    // ── Auth ──
     const { createClient } = window.supabase;
     let sb = null, _session = null;
 
@@ -290,7 +368,7 @@
     }
 
     async function signOut() {
-      await sb.auth.signOut();
+      try { if (sb) await sb.auth.signOut(); } catch {}
       window.location.href = '/login';
     }
 

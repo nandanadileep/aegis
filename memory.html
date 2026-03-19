@@ -6,18 +6,61 @@
   <title>Aegis — Twin Graph</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
+    :root {
+      --bg: #fff;
+      --surface: #f5f5f7;
+      --surface-2: #fafafa;
+      --border: #e8e8ed;
+      --border-strong: #9e9ea6;
+      --text: #1a1a1a;
+      --text-2: #6e6e73;
+      --text-3: #9e9ea6;
+      --btn-primary-bg: #0d0c20;
+      --btn-primary-text: #0000ee;
+      --modal-bg: #fff;
+      --modal-shadow: rgba(0,0,0,0.12);
+      --overlay-bg: rgba(0,0,0,0.35);
+      --focus-shadow: rgba(0,0,0,0.06);
+      --change-add-bg: #eff6ff;
+      --change-add-border: #bfdbfe;
+      --change-del-bg: #fff1f2;
+      --change-del-border: #fecdd3;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f0f13;
+      --surface: #1c1c1f;
+      --surface-2: #111115;
+      --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.22);
+      --text: #f5f5f7;
+      --text-2: #8e8e93;
+      --text-3: #48484a;
+      --btn-primary-bg: #0000ee;
+      --btn-primary-text: #fff;
+      --modal-bg: #1c1c1f;
+      --modal-shadow: rgba(0,0,0,0.5);
+      --overlay-bg: rgba(0,0,0,0.6);
+      --focus-shadow: rgba(0,0,238,0.15);
+      --change-add-bg: rgba(0,0,238,0.1);
+      --change-add-border: rgba(0,0,238,0.3);
+      --change-del-bg: rgba(225,29,72,0.1);
+      --change-del-border: rgba(225,29,72,0.3);
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
 
     body {
       font-family: 'Inter', sans-serif;
-      background: #fff;
-      color: #1a1a1a;
+      background: var(--bg);
+      color: var(--text);
       -webkit-font-smoothing: antialiased;
       display: flex;
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
+      transition: background 0.2s, color 0.2s;
     }
 
     /* ── Header ── */
@@ -27,14 +70,15 @@
       justify-content: space-between;
       padding: 0 24px;
       height: 60px;
-      border-bottom: 1px solid #e8e8ed;
+      border-bottom: 1px solid var(--border);
       flex-shrink: 0;
-      background: #fff;
+      background: var(--bg);
       gap: 12px;
       z-index: 50;
+      transition: background 0.2s, border-color 0.2s;
     }
 
-    .brand { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0; color: #1a1a1a; }
+    .brand { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0; color: var(--text); }
     nav { display: flex; gap: 4px; flex-shrink: 0; }
 
     .nav-link {
@@ -42,29 +86,29 @@
       border-radius: 80px;
       font-size: 13px;
       font-weight: 500;
-      color: #6e6e73;
+      color: var(--text-2);
       text-decoration: none;
       transition: all 0.15s;
       border: 1px solid transparent;
     }
-    .nav-link:hover { color: #1a1a1a; background: #f5f5f7; }
-    .nav-link.active { color: #1a1a1a; border-color: #9e9ea6; background: #fff; }
+    .nav-link:hover { color: var(--text); background: var(--surface); }
+    .nav-link.active { color: var(--text); border-color: var(--border-strong); background: var(--bg); }
 
     .search-wrap { flex: 1; max-width: 280px; }
     .search-wrap input {
       width: 100%;
-      background: #f5f5f7;
-      border: 1px solid #e8e8ed;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 80px;
-      color: #1a1a1a;
+      color: var(--text);
       font-family: 'Inter', sans-serif;
       font-size: 13px;
       padding: 7px 16px;
       outline: none;
       transition: all 0.18s;
     }
-    .search-wrap input:focus { border-color: #1a1a1a; box-shadow: 0 0 0 3px rgba(0,0,0,0.06); }
-    .search-wrap input::placeholder { color: #9e9ea6; }
+    .search-wrap input:focus { border-color: var(--text); box-shadow: 0 0 0 3px var(--focus-shadow); }
+    .search-wrap input::placeholder { color: var(--text-3); }
 
     .header-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
 
@@ -77,19 +121,19 @@
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      border: 1px solid #9e9ea6;
-      background: #fff;
-      color: #1a1a1a;
+      border: 1px solid var(--border-strong);
+      background: var(--bg);
+      color: var(--text);
       font-family: 'Inter', sans-serif;
       transition: all 0.15s;
       white-space: nowrap;
       letter-spacing: -0.01em;
     }
-    .btn:hover { background: #f5f5f7; }
+    .btn:hover { background: var(--surface); }
     .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-    .btn-primary { background: #0d0c20; border-color: #0d0c20; color: #0000ee; }
-    .btn-primary:hover { opacity: 0.85; background: #0d0c20; }
+    .btn-primary { background: var(--btn-primary-bg); border-color: var(--btn-primary-bg); color: var(--btn-primary-text); }
+    .btn-primary:hover { opacity: 0.85; background: var(--btn-primary-bg); }
 
     .btn-success { background: #f0fdf4; border-color: #86efac; color: #16a34a; }
     .btn-success:hover { background: #dcfce7; }
@@ -98,22 +142,38 @@
     .btn-danger { background: #fff1f2; border-color: #fecdd3; color: #e11d48; }
     .btn-danger:hover { background: #ffe4e6; }
 
+    .theme-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .theme-btn:hover { background: var(--border); }
+
     .pending-pill {
       padding: 4px 12px;
       border-radius: 80px;
       font-size: 11px;
       font-weight: 700;
-      background: #f5f5f7;
-      border: 1px solid #e8e8ed;
-      color: #6e6e73;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-2);
       transition: all 0.2s;
     }
-    .pending-pill.active { background: #eff6ff; border-color: #bfdbfe; color: #0000ee; }
+    .pending-pill.active { background: var(--change-add-bg); border-color: var(--change-add-border); color: #0000ee; }
 
     /* ── Layout ── */
     .layout { display: flex; flex: 1; overflow: hidden; }
 
-    .graph-area { flex: 1; position: relative; background: #fafafa; overflow: hidden; border-right: 1px solid #e8e8ed; }
+    .graph-area { flex: 1; position: relative; background: var(--surface-2); overflow: hidden; border-right: 1px solid var(--border); }
 
     #network {
       width: 100%;
@@ -128,23 +188,24 @@
     .sidebar {
       width: 280px;
       flex-shrink: 0;
-      background: #fff;
-      border-left: 1px solid #e8e8ed;
+      background: var(--bg);
+      border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       overflow-y: auto;
+      transition: background 0.2s;
     }
     .sidebar::-webkit-scrollbar { width: 3px; }
-    .sidebar::-webkit-scrollbar-thumb { background: #e8e8ed; border-radius: 2px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-    .s-section { padding: 20px 18px; border-bottom: 1px solid #e8e8ed; }
+    .s-section { padding: 20px 18px; border-bottom: 1px solid var(--border); }
 
     .s-label {
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: #9e9ea6;
+      color: var(--text-3);
       margin-bottom: 12px;
     }
 
@@ -153,23 +214,23 @@
       justify-content: space-between;
       align-items: center;
       padding: 8px 12px;
-      background: #f5f5f7;
+      background: var(--surface);
       border-radius: 8px;
       margin-bottom: 6px;
     }
-    .stat-row .k { font-size: 13px; color: #6e6e73; }
-    .stat-row .v { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+    .stat-row .k { font-size: 13px; color: var(--text-2); }
+    .stat-row .v { font-size: 13px; font-weight: 600; color: var(--text); }
 
     .detail-row {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
       padding: 7px 0;
-      border-bottom: 1px solid #f5f5f7;
+      border-bottom: 1px solid var(--surface);
     }
     .detail-row:last-child { border-bottom: none; }
-    .detail-row .k { font-size: 12px; color: #9e9ea6; }
-    .detail-row .v { font-size: 12px; font-weight: 500; color: #1a1a1a; text-align: right; max-width: 60%; word-break: break-word; }
+    .detail-row .k { font-size: 12px; color: var(--text-3); }
+    .detail-row .v { font-size: 12px; font-weight: 500; color: var(--text); text-align: right; max-width: 60%; word-break: break-word; }
 
     .result-item {
       display: flex;
@@ -181,21 +242,21 @@
       transition: background 0.15s;
       margin-bottom: 4px;
     }
-    .result-item:hover { background: #f5f5f7; }
-    .result-item .r-name { font-size: 13px; color: #1a1a1a; }
-    .result-item .r-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #9e9ea6; }
-    .no-results { font-size: 13px; color: #9e9ea6; text-align: center; padding: 20px 0; }
+    .result-item:hover { background: var(--surface); }
+    .result-item .r-name { font-size: 13px; color: var(--text); }
+    .result-item .r-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); }
+    .no-results { font-size: 13px; color: var(--text-3); text-align: center; padding: 20px 0; }
 
     .change-item {
       padding: 8px 10px;
       border-radius: 8px;
       font-size: 12px;
-      color: #1a1a1a;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
+      color: var(--text);
+      background: var(--change-add-bg);
+      border: 1px solid var(--change-add-border);
       margin-bottom: 5px;
     }
-    .change-item.del { background: #fff1f2; border-color: #fecdd3; }
+    .change-item.del { background: var(--change-del-bg); border-color: var(--change-del-border); }
 
     .s-btn-row { display: flex; flex-direction: column; gap: 6px; }
 
@@ -203,7 +264,7 @@
     .overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.35);
+      background: var(--overlay-bg);
       backdrop-filter: blur(4px);
       display: none;
       align-items: center;
@@ -213,18 +274,18 @@
     .overlay.show { display: flex; }
 
     .modal {
-      background: #fff;
-      border: 1px solid #e8e8ed;
+      background: var(--modal-bg);
+      border: 1px solid var(--border);
       border-radius: 16px;
       padding: 28px;
       width: 90%;
       max-width: 460px;
       max-height: 80vh;
       overflow-y: auto;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+      box-shadow: 0 20px 60px var(--modal-shadow);
     }
-    .modal h3 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; color: #1a1a1a; }
-    .modal p { font-size: 13px; color: #6e6e73; margin-bottom: 20px; line-height: 1.5; }
+    .modal h3 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; color: var(--text); }
+    .modal p { font-size: 13px; color: var(--text-2); margin-bottom: 20px; line-height: 1.5; }
     .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
     .modal-actions .btn { flex: 1; justify-content: center; }
 
@@ -235,15 +296,15 @@
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #9e9ea6;
+      color: var(--text-3);
       margin-bottom: 6px;
     }
     .field input, .field textarea {
       width: 100%;
-      background: #f5f5f7;
-      border: 1px solid #e8e8ed;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 8px;
-      color: #1a1a1a;
+      color: var(--text);
       font-family: 'Inter', sans-serif;
       font-size: 14px;
       padding: 10px 14px;
@@ -251,11 +312,11 @@
       transition: border-color 0.18s, box-shadow 0.18s;
     }
     .field input:focus, .field textarea:focus {
-      border-color: #1a1a1a;
-      background: #fff;
-      box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+      border-color: var(--text);
+      background: var(--bg);
+      box-shadow: 0 0 0 3px var(--focus-shadow);
     }
-    .field input::placeholder, .field textarea::placeholder { color: #9e9ea6; }
+    .field input::placeholder, .field textarea::placeholder { color: var(--text-3); }
     .field textarea { resize: vertical; min-height: 80px; }
 
     .changes-scroll { max-height: 200px; overflow-y: auto; }
@@ -280,7 +341,8 @@
     <div class="header-actions">
       <span class="pending-pill" id="pendingBadge">0 pending</span>
       <button class="btn" onclick="downloadWallet()">⬇ Twin Card</button>
-      <button class="btn" onclick="sb.auth.signOut().then(() => window.location.href='/login')">Sign out</button>
+      <button class="theme-btn" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+      <button class="btn" onclick="signOut()">Sign out</button>
       <button class="btn" id="resetBtn" onclick="resetPendingChanges()" disabled>Reset</button>
       <button class="btn btn-success" id="commitBtn" onclick="showCommitModal()" disabled>Commit</button>
     </div>
@@ -380,9 +442,30 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    // ── Theme ──
+    const THEME_KEY = 'aegis-theme';
+    function applyTheme(t) {
+      document.documentElement.setAttribute('data-theme', t);
+      const btn = document.getElementById('themeToggle');
+      if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
+    }
+    function toggleTheme() {
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, next);
+      applyTheme(next);
+      if (typeof redrawGraph === 'function') redrawGraph();
+    }
+    applyTheme(localStorage.getItem(THEME_KEY) || 'light');
+
+    // ── Auth ──
     const { createClient } = window.supabase;
     let sb = null;
     let _session = null;
+
+    async function signOut() {
+      try { if (sb) await sb.auth.signOut(); } catch {}
+      window.location.href = '/login';
+    }
 
     async function initAuth() {
       const cfg = await fetch('/api/config').then(r => r.json());
