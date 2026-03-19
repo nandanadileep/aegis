@@ -130,12 +130,11 @@ function WelcomeScreen({ onBuild, onImport }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', position: 'relative', zIndex: 10 }}>
         <style>{`@keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}`}</style>
         <div style={{ animation: 'rise 0.5s cubic-bezier(0.22,1,0.36,1) both', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: 20 }}>Aegis</p>
-          <h1 style={{ fontSize: 'clamp(48px,10vw,88px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, textAlign: 'center', color: 'var(--text)', marginBottom: 20 }}>Who do you<br/>want to be?</h1>
-          <p style={{ fontSize: 16, color: 'var(--text-2)', textAlign: 'center', lineHeight: 1.6, marginBottom: 56, maxWidth: 420 }}>Build your digital twin — a profile that tells any AI exactly who you are, or who you're becoming.</p>
+          <h1 style={{ fontSize: 'clamp(48px,10vw,88px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, textAlign: 'left', color: 'var(--text)', marginBottom: 20, width: '100%' }}>Identiti.</h1>
+          <p style={{ fontSize: 16, color: 'var(--text-2)', textAlign: 'left', lineHeight: 1.6, marginBottom: 56, width: '100%' }}>Your context is with you.</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, width: '100%', maxWidth: 580 }}>
             <Card icon="↗" title="Import from AI" desc="Already talked to ChatGPT or Claude? Bring that over." onClick={onImport} />
-            <Card icon="✦" title="Build your ideal self" desc="Chat with our AI and discover who you want to become." onClick={onBuild} primary />
+            <Card icon="✦" title="Build your memory" desc="Chat with our AI. Your profile builds itself as you talk." onClick={onBuild} primary />
           </div>
         </div>
       </div>
