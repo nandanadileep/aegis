@@ -130,11 +130,11 @@ function WelcomeScreen({ onBuild, onImport }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', position: 'relative', zIndex: 10 }}>
         <style>{`@keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}`}</style>
         <div style={{ animation: 'rise 0.5s cubic-bezier(0.22,1,0.36,1) both', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
-          <h1 style={{ fontSize: 'clamp(48px,10vw,88px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, textAlign: 'left', color: 'var(--text)', marginBottom: 20, width: '100%' }}>Identiti.</h1>
-          <p style={{ fontSize: 16, color: 'var(--text-2)', textAlign: 'left', lineHeight: 1.6, marginBottom: 32, width: '100%' }}>Your context is with you.</p>
+          <h1 style={{ fontSize: 'clamp(48px,10vw,88px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, textAlign: 'left', color: 'var(--text)', marginBottom: 10, width: '100%' }}>Identiti.</h1>
+          <p style={{ fontSize: 16, color: 'var(--text-2)', textAlign: 'left', lineHeight: 1.6, marginBottom: 20, width: '100%' }}>Your context is with you.</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, width: '100%', maxWidth: 580 }}>
             <Card icon="↗" title="Import from AI" desc="Bring that over." onClick={onImport} />
-            <Card icon="✦" title="Build your memory" desc="Chat with our AI. Your profile builds itself as you talk." onClick={onBuild} primary />
+            <Card icon="✦" title="Chat with our AI." desc="Your profile builds itself as you talk." onClick={onBuild} primary />
           </div>
         </div>
       </div>
@@ -150,8 +150,8 @@ function Card({ icon, title, desc, onClick, primary }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        background: primary && hover ? 'rgba(0,0,238,0.12)' : hover ? 'var(--surface-hover)' : 'var(--surface)',
-        border: `1px solid ${primary && hover ? 'rgba(0,0,238,0.4)' : hover ? 'var(--border-strong)' : 'var(--border)'}`,
+        background: hover ? 'var(--surface-hover)' : 'var(--surface)',
+        border: `1px solid ${hover ? 'var(--border-strong)' : 'var(--border)'}`,
         borderRadius: 16, padding: '28px 24px', cursor: 'pointer',
         transition: 'all 0.18s', textAlign: 'left', userSelect: 'none',
         transform: hover ? 'translateY(-3px)' : 'none',
@@ -171,7 +171,7 @@ function ChatScreen({ messages, input, setInput, onSend, sending, inputRef, bott
       <div style={{ position: 'absolute', top: 20, right: 24, zIndex: 20 }}><ThemeToggle /></div>
       <header style={{ display: 'flex', alignItems: 'center', padding: '0 32px', height: 60, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg)', zIndex: 10, gap: 12, position: 'relative' }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--text-2)', fontSize: 15, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>←</button>
-        <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--text)' }}>Build your ideal self</span>
+        <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--text)' }}>Chat</span>
       </header>
       <div style={{ flex: 1, overflowY: 'auto', padding: '40px 0 16px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative', zIndex: 10 }}>
         {messages.map((m, i) => <MsgBubble key={i} msg={m} />)}
@@ -267,7 +267,7 @@ function SuccessScreen({ onGraph, onCard }) {
   )
 }
 
-function Blobs({ opacity = 0.35 }) {
+function Blobs({ opacity = 0.55 }) {
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
       background: `radial-gradient(ellipse 70% 60% at 15% 50%, rgba(255,107,53,${opacity}) 0%, transparent 70%), radial-gradient(ellipse 50% 70% at 85% 25%, rgba(34,211,238,${opacity * 0.85}) 0%, transparent 65%), radial-gradient(ellipse 40% 50% at 50% 85%, rgba(225,29,72,${opacity * 0.7}) 0%, transparent 60%)`,

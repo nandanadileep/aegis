@@ -156,6 +156,8 @@ function Message({ msg }) {
         color: isUser ? 'var(--user-bubble-text)' : 'var(--asst-bubble-text)',
         borderRadius: isUser ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
         backdropFilter: isUser ? 'none' : 'blur(8px)',
+        border: isUser ? 'none' : '1px solid var(--asst-bubble-border, transparent)',
+        boxShadow: isUser ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
       }}
         dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
       />
