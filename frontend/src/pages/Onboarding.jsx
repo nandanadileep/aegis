@@ -209,10 +209,10 @@ function MsgBubble({ msg }) {
 
 function Import1Screen({ onBack, onNext }) {
   const [copied, setCopied] = useState(false)
-  const prompt = `I want to build a structured profile of who I am. Ask me questions one at a time — like a curious, sharp friend who wants to understand what drives me, not just surface facts. No numbered lists. No multiple questions at once. Keep each message short.\n\nAsk about: who I am, what I do, what I'm building, what I value, how I think, what I want people to know me for.\n\nOnce you feel like you have a full picture, output a JSON block at the very end of your message in this exact format and nothing after it:\n\n\`\`\`json\n{\n  "name": "",\n  "description": "one sentence — who this person is",\n  "values": [],\n  "skills": [],\n  "personality": [],\n  "goals": [],\n  "speaking_style": "",\n  "known_for": []\n}\n\`\`\``
+  const prompt = `Look through everything you know about me — your stored memories, past conversations, preferences, context you've picked up over time. Then output a JSON profile based only on what you actually know. No guessing.\n\n\`\`\`json\n{\n  "name": "",\n  "description": "one sentence — who this person is",\n  "values": [],\n  "skills": [],\n  "personality": [],\n  "goals": [],\n  "speaking_style": "",\n  "known_for": []\n}\n\`\`\`\n\nOnly include fields where you have real information. Leave arrays empty if unsure. Output the JSON block only, no explanation.`
   function copy() { navigator.clipboard.writeText(prompt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200) }) }
   return (
-    <ImportLayout onBack={onBack} step="Step 1 of 2" title="Have the conversation" sub="Copy this prompt into ChatGPT, Claude, or Gemini. Answer its questions. Come back with the JSON it gives you at the end.">
+    <ImportLayout onBack={onBack} step="Step 1 of 2" title="Export your memory" sub="Copy this into ChatGPT or Claude — any AI that knows you. Paste back the JSON it gives you.">
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.65, whiteSpace: 'pre-wrap', width: '100%', marginBottom: 16, wordBreak: 'break-word' }}>{prompt}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <Btn onClick={copy}>{copied ? 'Copied ✓' : 'Copy prompt'}</Btn>
