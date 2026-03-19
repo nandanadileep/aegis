@@ -3,33 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aegis</title>
+  <title>Aegis — Chat</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
-    :root {
-      --bg: #000;
-      --surface: rgba(255,255,255,0.05);
-      --surface-hover: rgba(255,255,255,0.08);
-      --border: rgba(255,255,255,0.1);
-      --text: #f5f5f7;
-      --secondary: #86868b;
-      --tertiary: #3a3a3c;
-      --accent: #2997ff;
-      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-      --mono: "SF Mono", "Fira Code", "Menlo", monospace;
-    }
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
 
     body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--font);
-      -webkit-font-smoothing: antialiased;
+      font-family: 'Inter', sans-serif;
+      background: #fff;
+      color: #1a1a1a;
       display: flex;
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
+      -webkit-font-smoothing: antialiased;
     }
 
     /* ── Header ── */
@@ -37,59 +25,69 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 24px;
-      height: 52px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(0,0,0,0.85);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
+      padding: 0 32px;
+      height: 60px;
+      border-bottom: 1px solid #e8e8ed;
       flex-shrink: 0;
+      background: #fff;
       z-index: 50;
     }
 
     .brand {
       font-size: 15px;
       font-weight: 700;
-      letter-spacing: -0.01em;
+      letter-spacing: -0.02em;
+      color: #1a1a1a;
     }
 
-    nav { display: flex; gap: 2px; }
+    nav { display: flex; gap: 4px; }
 
     .nav-link {
-      padding: 5px 13px;
-      border-radius: 980px;
+      padding: 6px 14px;
+      border-radius: 80px;
       font-size: 13px;
       font-weight: 500;
-      color: var(--secondary);
+      color: #6e6e73;
       text-decoration: none;
       transition: all 0.15s;
+      border: 1px solid transparent;
     }
 
-    .nav-link:hover { background: var(--surface); color: var(--text); }
-    .nav-link.active { background: var(--surface); color: var(--text); }
+    .nav-link:hover { color: #1a1a1a; background: #f5f5f7; }
+    .nav-link.active { color: #1a1a1a; border-color: #9e9ea6; background: #fff; }
 
-    .header-right { display: flex; gap: 8px; }
+    .header-right { display: flex; gap: 8px; align-items: center; }
 
     .btn-sm {
-      padding: 5px 14px;
-      border-radius: 980px;
+      padding: 7px 16px;
+      border-radius: 40px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--text);
-      font-family: var(--font);
+      font-family: 'Inter', sans-serif;
       transition: all 0.15s;
+      letter-spacing: -0.01em;
     }
 
-    .btn-sm:hover { background: var(--surface-hover); }
+    .btn-primary {
+      background: #0d0c20;
+      color: #0000ee;
+      border: none;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+
+    .btn-ghost {
+      background: #fff;
+      color: #1a1a1a;
+      border: 1px solid #9e9ea6;
+    }
+    .btn-ghost:hover { background: #f5f5f7; }
 
     /* ── Messages ── */
     .messages {
       flex: 1;
       overflow-y: auto;
-      padding: 40px 0 20px;
+      padding: 48px 0 24px;
       display: flex;
       flex-direction: column;
       gap: 2px;
@@ -97,72 +95,66 @@
     }
 
     .messages::-webkit-scrollbar { width: 3px; }
-    .messages::-webkit-scrollbar-thumb { background: var(--tertiary); border-radius: 2px; }
+    .messages::-webkit-scrollbar-thumb { background: #e8e8ed; border-radius: 2px; }
     .messages::-webkit-scrollbar-track { background: transparent; }
 
     .msg-row {
       display: flex;
-      padding: 3px 0;
       width: 100%;
-      max-width: 720px;
+      max-width: 680px;
       margin: 0 auto;
-      padding-left: 24px;
-      padding-right: 24px;
+      padding: 3px 24px;
     }
 
-    .msg-row.user     { justify-content: flex-end; }
+    .msg-row.user      { justify-content: flex-end; }
     .msg-row.assistant { justify-content: flex-start; }
 
     .bubble {
-      max-width: 75%;
+      max-width: 72%;
       padding: 11px 16px;
-      font-size: 15px;
-      line-height: 1.55;
+      font-size: 14px;
+      line-height: 1.6;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
 
     .bubble.user {
-      background: var(--accent);
+      background: #0d0c20;
       color: #fff;
-      border-radius: 20px 20px 6px 20px;
+      border-radius: 20px 20px 4px 20px;
     }
 
     .bubble.assistant {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 20px 20px 20px 6px;
+      background: #f5f5f7;
+      color: #1a1a1a;
+      border-radius: 20px 20px 20px 4px;
     }
 
     .bubble.thinking {
       background: transparent;
-      border: none;
-      color: var(--secondary);
-      font-size: 14px;
+      color: #9e9ea6;
+      font-size: 13px;
       padding-left: 4px;
     }
 
     .bubble code {
-      font-family: var(--mono);
+      font-family: 'SF Mono', 'Fira Code', monospace;
       font-size: 0.88em;
-      background: rgba(255,255,255,0.1);
+      background: rgba(0,0,0,0.07);
       padding: 1px 6px;
       border-radius: 4px;
     }
 
-    .bubble.user code { background: rgba(255,255,255,0.2); }
-
     .thinking-dots span {
-      opacity: 0.25;
+      opacity: 0.3;
       animation: blink 1.4s infinite;
     }
     .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
     .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
 
     @keyframes blink {
-      0%, 80%, 100% { opacity: 0.25; }
-      40%  { opacity: 1; }
+      0%, 80%, 100% { opacity: 0.3; }
+      40% { opacity: 1; }
     }
 
     /* ── Empty state ── */
@@ -172,31 +164,31 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 8px;
       padding-bottom: 80px;
       pointer-events: none;
     }
 
     .empty h2 {
-      font-size: 22px;
+      font-size: 18px;
       font-weight: 600;
       letter-spacing: -0.02em;
-      color: var(--text);
+      color: #1a1a1a;
     }
 
     .empty p {
-      font-size: 15px;
-      color: var(--secondary);
+      font-size: 14px;
+      color: #9e9ea6;
       text-align: center;
-      max-width: 280px;
-      line-height: 1.5;
+      max-width: 260px;
+      line-height: 1.6;
     }
 
     /* ── Input ── */
     .input-wrap {
       flex-shrink: 0;
-      padding: 12px 24px 28px;
-      max-width: 720px;
+      padding: 12px 24px 32px;
+      max-width: 680px;
       margin: 0 auto;
       width: 100%;
     }
@@ -204,77 +196,71 @@
     .input-bar {
       display: flex;
       align-items: center;
-      gap: 10px;
-      background: var(--surface);
-      border: 1px solid var(--border);
+      gap: 8px;
+      background: #f5f5f7;
+      border: 1px solid #e8e8ed;
       border-radius: 26px;
       padding: 8px 8px 8px 20px;
-      transition: border-color 0.2s;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
 
-    .input-bar:focus-within { border-color: rgba(255,255,255,0.22); }
+    .input-bar:focus-within {
+      border-color: #1a1a1a;
+      box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+    }
 
     .input-bar input {
       flex: 1;
       background: none;
       border: none;
       outline: none;
-      color: var(--text);
-      font-family: var(--font);
-      font-size: 15px;
+      color: #1a1a1a;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
       padding: 4px 0;
       min-width: 0;
     }
 
-    .input-bar input::placeholder { color: var(--tertiary); }
+    .input-bar input::placeholder { color: #9e9ea6; }
 
     .send-btn {
       width: 34px;
       height: 34px;
       border-radius: 50%;
-      background: var(--accent);
+      background: #0d0c20;
       border: none;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: background 0.15s, transform 0.15s;
+      transition: opacity 0.15s, transform 0.15s;
       font-size: 15px;
-      color: #fff;
+      color: #0000ee;
       font-weight: 700;
     }
 
-    .send-btn:hover  { background: #0a84ff; transform: scale(1.06); }
-    .send-btn:disabled { background: var(--tertiary); cursor: not-allowed; transform: none; }
-
-    .hint {
-      text-align: center;
-      font-size: 11px;
-      color: var(--tertiary);
-      margin-top: 10px;
-      letter-spacing: 0.02em;
-    }
+    .send-btn:hover  { opacity: 0.85; transform: scale(1.06); }
+    .send-btn:disabled { background: #e8e8ed; color: #9e9ea6; cursor: not-allowed; transform: none; }
   </style>
 </head>
 <body>
   <header>
     <span class="brand">Aegis</span>
     <nav>
-      <a href="/" class="nav-link active">Chat</a>
+      <a href="/chat" class="nav-link active">Chat</a>
       <a href="/memory" class="nav-link">Graph</a>
-      <a href="/onboarding" class="nav-link">Twin</a>
     </nav>
     <div class="header-right">
-      <button class="btn-sm" onclick="saveTranscript()">Save</button>
-      <button class="btn-sm" onclick="signOut()">Sign out</button>
+      <button class="btn-sm btn-ghost" onclick="saveTranscript()">Save</button>
+      <button class="btn-sm btn-primary" onclick="signOut()">Sign out</button>
     </div>
   </header>
 
   <div class="messages" id="messages">
     <div class="empty" id="emptyState">
       <h2>Start talking.</h2>
-      <p>As you chat, your twin profile builds itself.</p>
+      <p>Your twin is listening. As you chat, your profile builds itself.</p>
     </div>
   </div>
 
@@ -283,14 +269,12 @@
       <input id="input" type="text" placeholder="Message your twin…" autocomplete="off" />
       <button class="send-btn" id="send" title="Send">↑</button>
     </div>
-    <p class="hint">Type /exit to save &amp; close</p>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     const { createClient } = window.supabase;
-    let sb = null;
-    let _session = null;
+    let sb = null, _session = null;
 
     async function initAuth() {
       const cfg = await fetch('/api/config').then(r => r.json());
@@ -314,8 +298,7 @@
     const inputEl    = document.getElementById('input');
     const sendBtn    = document.getElementById('send');
     const emptyState = document.getElementById('emptyState');
-    let sending    = false;
-    let thinkingEl = null;
+    let sending = false, thinkingEl = null;
     const transcript = [];
 
     function addMessage(text, role) {
@@ -344,7 +327,7 @@
 
     function showThinking() {
       if (thinkingEl) return;
-      const row    = document.createElement('div');
+      const row = document.createElement('div');
       row.className = 'msg-row assistant';
       thinkingEl = document.createElement('div');
       thinkingEl.className = 'bubble thinking';
@@ -364,12 +347,6 @@
       const text = inputEl.value.trim();
       if (!text || sending) return;
 
-      if (text === '/exit') {
-        await saveTranscript();
-        window.close();
-        return;
-      }
-
       sending = true;
       sendBtn.disabled = true;
       addMessage(text, 'user');
@@ -378,11 +355,7 @@
       showThinking();
 
       try {
-        const res  = await fetch('/chat', {
-          method:  'POST',
-          headers: authHeaders(),
-          body:    JSON.stringify({ message: text }),
-        });
+        const res  = await fetch('/chat', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ message: text }) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Server error');
         hideThinking();
@@ -402,11 +375,7 @@
     async function saveTranscript() {
       if (!transcript.length) return;
       try {
-        await fetch('/save', {
-          method:  'POST',
-          headers: authHeaders(),
-          body:    JSON.stringify({ transcript: transcript.join('\n') }),
-        });
+        await fetch('/save', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ transcript: transcript.join('\n') }) });
         transcript.length = 0;
       } catch (e) { console.warn('Save failed', e); }
     }
@@ -415,9 +384,8 @@
     inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
 
     window.addEventListener('beforeunload', () => {
-      if (transcript.length && _session) {
+      if (transcript.length && _session)
         navigator.sendBeacon('/save', JSON.stringify({ transcript: transcript.join('\n') }));
-      }
     });
 
     initAuth().then(() => inputEl.focus());
