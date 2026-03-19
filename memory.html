@@ -291,6 +291,7 @@
     <div class="header-actions">
       <span class="pending-pill" id="pendingBadge">0 pending</span>
       <button class="btn" onclick="downloadWallet()">⬇ Twin Card</button>
+      <button class="btn" onclick="sb.auth.signOut().then(() => window.location.href='/login')">Sign out</button>
       <button class="btn" id="resetBtn" onclick="resetPendingChanges()" disabled>Reset</button>
       <button class="btn btn-success" id="commitBtn" onclick="showCommitModal()" disabled>Commit</button>
     </div>
@@ -387,7 +388,26 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    const { createClient } = window.supabase;
+    let sb = null;
+    let _session = null;
+
+    async function initAuth() {
+      const cfg = await fetch('/api/config').then(r => r.json());
+      sb = createClient(cfg.supabase_url, cfg.supabase_anon_key);
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { window.location.href = '/login'; return; }
+      _session = session;
+      sb.auth.onAuthStateChange((_e, s) => { _session = s; if (!s) window.location.href = '/login'; });
+      loadGraph();
+    }
+
+    function authHeaders(extra) {
+      return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_session.access_token}`, ...extra };
+    }
+
     // ── Simple DataSet ──
     class SimpleDataSet {
       constructor() { this._data = new Map(); }
@@ -792,8 +812,7 @@
 
     // ── Load graph ──
     async function loadGraph() {
-      const headers = personId ? { 'X-Person-Id': personId } : {};
-      const resp = await fetch('/api/graph', { headers });
+      const resp = await fetch('/api/graph', { headers: authHeaders() });
       if (!resp.ok) { alert('Failed to load graph'); return; }
       const data = await resp.json();
       graphData.nodes.clear();
@@ -890,11 +909,8 @@
         catch { alert('Invalid JSON properties'); return; }
       }
 
-      const headers = { 'Content-Type': 'application/json' };
-      if (personId) headers['X-Person-Id'] = personId;
-
       const resp = await fetch('/api/nodes', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ label, name, properties: props }),
       });
       if (!resp.ok) { const err = await resp.json(); alert(err.error || 'Failed'); return; }
@@ -930,11 +946,8 @@
         alert('Node IDs not found in graph'); return;
       }
 
-      const headers = { 'Content-Type': 'application/json' };
-      if (personId) headers['X-Person-Id'] = personId;
-
       const resp = await fetch('/api/relationships', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ from: fromId, type: relType, to: toId }),
       });
       if (!resp.ok) { const err = await resp.json(); alert(err.error || 'Failed'); return; }
@@ -983,11 +996,8 @@
     }
 
     async function commitChanges() {
-      const headers = { 'Content-Type': 'application/json' };
-      if (personId) headers['X-Person-Id'] = personId;
-
       const resp = await fetch('/api/commit', {
-        method: 'POST', headers,
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify(pending),
       });
       if (!resp.ok) { const err = await resp.json(); alert(err.error || 'Commit failed'); return; }
@@ -1056,8 +1066,7 @@
 
     // ── Wallet ──
     async function downloadWallet() {
-      const url  = personId ? `/api/wallet?person_id=${encodeURIComponent(personId)}` : '/api/wallet';
-      const resp = await fetch(url, { headers: personId ? { 'X-Person-Id': personId } : {} });
+      const resp = await fetch('/api/wallet', { headers: authHeaders() });
       const blob = await resp.blob();
       const cd   = resp.headers.get('Content-Disposition') || '';
       const match = cd.match(/filename="([^"]+)"/);
@@ -1077,7 +1086,7 @@
     // ── Boot ──
     window.addEventListener('load', () => {
       render();
-      loadGraph();
+      initAuth();
     });
   </script>
 </body>
