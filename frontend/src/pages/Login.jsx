@@ -61,7 +61,7 @@ export default function Login() {
           <style>{`@keyframes rise { from { opacity:0; transform:translateY(24px) } to { opacity:1; transform:translateY(0) } }`}</style>
 
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: 16 }}>Welcome</p>
-          <h1 style={{ fontSize: 'clamp(48px,8vw,80px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, color: 'var(--text)', marginBottom: 16 }}>Sign in.</h1>
+          <h1 style={{ fontSize: 'clamp(48px,8vw,80px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, color: 'var(--text)', marginBottom: 16 }}>Aegis.</h1>
           <p style={{ fontSize: 15, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 48 }}>Your digital twin lives here.<br />Sign in to continue building it.</p>
 
           <button
