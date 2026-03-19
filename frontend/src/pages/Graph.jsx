@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { getSupabase } from '../lib/supabase'
-import ThemeToggle from '../components/ThemeToggle'
 
 // ── Shared button styles ──
 const S = {
@@ -19,6 +18,7 @@ export default function Graph() {
   const [searchQ, setSearchQ] = useState('')
   const [searchResults, setSearchResults] = useState(null)
   const [modal, setModal] = useState(null) // null | 'addNode' | 'addEdge' | 'commit'
+  const [confirmDialog, setConfirmDialog] = useState(null) // { message, onConfirm, danger? }
   const [nodeForm, setNodeForm] = useState({ label:'', name:'', props:'' })
   const [edgeForm, setEdgeForm] = useState({ from:'', type:'', to:'' })
   const sessionRef = useRef(null)
@@ -72,9 +72,9 @@ export default function Graph() {
     let props = {}
     if (propsStr) { try { props = JSON.parse(propsStr) } catch { alert('Invalid JSON'); return } }
     const resp = await fetch('/api/nodes', { method:'POST', headers:authH(), body:JSON.stringify({ label, name, properties:props }) })
-    if (!resp.ok) { alert('Failed'); return }
     const data = await resp.json()
-    graphRef.current?.addNode(String(data.id), name, label)
+    if (!resp.ok) { alert(data.error || data.detail || 'Failed to create node'); return }
+    graphRef.current?.addNode(String(data.id), name, data.label || label)
     setPending(p => ({ ...p, nodes: { ...p.nodes, [data.id]:{ type:'add', label, name } } }))
     setStats(s => ({ ...s, nodes: s.nodes+1 }))
     setModal(null)
@@ -95,21 +95,32 @@ export default function Graph() {
     if (!selectedNode) return
     const g = graphRef.current
     const n = g?.getNode(selectedNode)
-    if (!confirm(`Delete "${n?._label||selectedNode}"?`)) return
-    const removed = g?.deleteNode(selectedNode) || []
-    setStats(s => ({ ...s, nodes: s.nodes-1, edges: s.edges - removed.length }))
-    setPending(p => ({ ...p, deletedNodes:[...p.deletedNodes,selectedNode], deletedEdges:[...p.deletedEdges,...removed] }))
-    setSelectedNode(null)
+    setConfirmDialog({
+      message: `Delete "${n?._label||selectedNode}"?`,
+      hint: 'This will also remove all its relationships.',
+      danger: true,
+      onConfirm: () => {
+        const removed = g?.deleteNode(selectedNode) || []
+        setStats(s => ({ ...s, nodes: s.nodes-1, edges: s.edges - removed.length }))
+        setPending(p => ({ ...p, deletedNodes:[...p.deletedNodes,selectedNode], deletedEdges:[...p.deletedEdges,...removed] }))
+        setSelectedNode(null)
+      }
+    })
   }
 
   function doDeleteEdge() {
     if (!selectedEdge) return
     const e = graphRef.current?.getEdge(selectedEdge)
-    if (!confirm(`Delete "${e?.label||selectedEdge}"?`)) return
-    graphRef.current?.deleteEdge(selectedEdge)
-    setStats(s => ({ ...s, edges: s.edges-1 }))
-    setPending(p => ({ ...p, deletedEdges:[...p.deletedEdges,selectedEdge] }))
-    setSelectedEdge(null)
+    setConfirmDialog({
+      message: `Delete relationship "${e?.label||selectedEdge}"?`,
+      danger: true,
+      onConfirm: () => {
+        graphRef.current?.deleteEdge(selectedEdge)
+        setStats(s => ({ ...s, edges: s.edges-1 }))
+        setPending(p => ({ ...p, deletedEdges:[...p.deletedEdges,selectedEdge] }))
+        setSelectedEdge(null)
+      }
+    })
   }
 
   async function doCommit() {
@@ -121,9 +132,15 @@ export default function Graph() {
   }
 
   function doReset() {
-    if (!confirm('Discard all pending changes?')) return
-    setPending({ nodes:{}, edges:{}, deletedNodes:[], deletedEdges:[] })
-    graphRef.current?.reload(authH)
+    setConfirmDialog({
+      message: 'Discard all pending changes?',
+      hint: 'This cannot be undone.',
+      danger: true,
+      onConfirm: () => {
+        setPending({ nodes:{}, edges:{}, deletedNodes:[], deletedEdges:[] })
+        graphRef.current?.reload(authH)
+      }
+    })
   }
 
   async function downloadWallet() {
@@ -133,33 +150,64 @@ export default function Graph() {
     URL.revokeObjectURL(a.href)
   }
 
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDown(e) { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [menuOpen])
+
   const pendingCount = Object.keys(pending.nodes).length + Object.keys(pending.edges).length + pending.deletedNodes.length + pending.deletedEdges.length
   const selectedNodeData = selectedNode && graphRef.current?.getNode(selectedNode)
   const selectedEdgeData = selectedEdge && graphRef.current?.getEdge(selectedEdge)
 
   const TYPE_COLORS = { 'Person':'#2997ff','Skill':'#30d158','Value':'#ff9f0a','Goal':'#ff375f','Trait':'#bf5af2','Identity':'#64d2ff','Project':'#ffd60a','Behavior':'#ff6961','Constraint':'#ac8e68','Belief':'#32ade6' }
+  function typeColor(t) {
+    if (TYPE_COLORS[t]) return TYPE_COLORS[t]
+    let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) & 0xffff
+    return `hsl(${h % 360},80%,62%)`
+  }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:'var(--bg)', overflow:'hidden' }}>
       {/* Header */}
-      <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 24px', height:60, borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--bg)', gap:12, zIndex:50 }}>
-        <span style={{ fontSize:15, fontWeight:800, letterSpacing:'-0.03em', flexShrink:0 }}>Aegis</span>
-        <nav style={{ display:'flex', gap:4, flexShrink:0 }}>
-          <a href="/chat" style={{ padding:'6px 14px', borderRadius:80, fontSize:13, fontWeight:500, color:'var(--text-2)', textDecoration:'none', border:'1px solid transparent' }}>Chat</a>
-          <a href="/memory" style={{ padding:'6px 14px', borderRadius:80, fontSize:13, fontWeight:500, color:'var(--text)', textDecoration:'none', border:'1px solid var(--border-strong)', background:'var(--surface)' }}>Graph</a>
-        </nav>
-        <div style={{ flex:1, maxWidth:280 }}>
-          <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter') runSearch(); if(e.key==='Escape'){setSearchQ('');setSearchResults(null);graphRef.current?.clearHighlight()} }}
-            placeholder="Search nodes & relationships…"
-            style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:80, color:'var(--text)', fontFamily:'Inter,sans-serif', fontSize:13, padding:'7px 16px', outline:'none' }} />
+      <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 20px', height:56, borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--bg)', zIndex:50 }}>
+        {/* Left: brand + nav */}
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <span style={{ fontSize:15, fontWeight:800, letterSpacing:'-0.03em' }}>Identiti</span>
+          <div style={{ display:'flex', gap:1, background:'var(--surface)', borderRadius:10, padding:3, border:'1px solid var(--border)' }}>
+            <a href="/chat" style={{ padding:'5px 12px', borderRadius:7, fontSize:13, fontWeight:500, color:'var(--text-2)', textDecoration:'none' }}>Chat</a>
+            <a href="/memory" style={{ padding:'5px 12px', borderRadius:7, fontSize:13, fontWeight:600, color:'var(--text)', textDecoration:'none', background:'var(--bg)', boxShadow:'0 1px 3px rgba(0,0,0,0.12)' }}>Graph</a>
+          </div>
         </div>
-        <div style={{ display:'flex', gap:6, flexShrink:0, alignItems:'center' }}>
-          <span style={{ padding:'4px 12px', borderRadius:80, fontSize:11, fontWeight:700, background: pendingCount>0?'rgba(0,0,238,0.1)':'var(--surface)', border:`1px solid ${pendingCount>0?'rgba(0,0,238,0.3)':'var(--border)'}`, color: pendingCount>0?'#0000ee':'var(--text-2)' }}>{pendingCount} pending</span>
-          <button style={S.btn} onClick={downloadWallet}>⬇ Twin Card</button>
-          <ThemeToggle />
-          <button style={S.btn} onClick={signOut}>Sign out</button>
-          <button style={{ ...S.btn, opacity: pendingCount===0?.35:1 }} disabled={pendingCount===0} onClick={doReset}>Reset</button>
-          <button style={{ ...S.btn, background:'#f0fdf4', borderColor:'#86efac', color:'#16a34a', opacity:pendingCount===0?.3:1 }} disabled={pendingCount===0} onClick={()=>setModal('commit')}>Commit</button>
+
+        {/* Right: commit + overflow */}
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button
+            onClick={()=>setModal('commit')}
+            disabled={pendingCount===0}
+            style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px', borderRadius:8, fontSize:13, fontWeight:600, cursor:pendingCount===0?'not-allowed':'pointer', border:'none', fontFamily:'Inter,sans-serif', background:pendingCount>0?'#0000ee':'var(--surface)', color:pendingCount>0?'#fff':'var(--text-3)', transition:'all .15s' }}
+          >
+            {pendingCount>0 && <span style={{ background:'rgba(255,255,255,0.25)', borderRadius:4, padding:'1px 6px', fontSize:11, fontWeight:700 }}>{pendingCount}</span>}
+            Commit
+          </button>
+
+          {/* ··· menu */}
+          <div style={{ position:'relative' }} ref={menuRef}>
+            <button onClick={()=>setMenuOpen(o=>!o)} style={{ width:34, height:34, borderRadius:8, background:'var(--surface)', border:'1px solid var(--border)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, color:'var(--text-2)', fontFamily:'Inter,sans-serif' }}>···</button>
+            {menuOpen && (
+              <div style={{ position:'absolute', top:'calc(100% + 8px)', right:0, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:6, minWidth:180, boxShadow:'0 8px 24px rgba(0,0,0,0.18)', zIndex:200 }}>
+                <MenuItem label="Download Twin Card" icon="⬇" onClick={()=>{ downloadWallet(); setMenuOpen(false) }} />
+                <MenuItem label="Reset changes" icon="↺" onClick={()=>{ doReset(); setMenuOpen(false) }} disabled={pendingCount===0} />
+                <div style={{ height:1, background:'var(--border)', margin:'4px 0' }} />
+                <ThemeMenuItem />
+                <div style={{ height:1, background:'var(--border)', margin:'4px 0' }} />
+                <MenuItem label="Sign out" icon="→" onClick={()=>{ signOut(); setMenuOpen(false) }} danger />
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -171,6 +219,12 @@ export default function Graph() {
 
         {/* Sidebar */}
         <div style={{ width:280, flexShrink:0, background:'var(--bg)', borderLeft:'1px solid var(--border)', display:'flex', flexDirection:'column', overflowY:'auto' }}>
+          <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--border)' }}>
+            <input value={searchQ} onChange={e=>setSearchQ(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter') runSearch(); if(e.key==='Escape'){setSearchQ('');setSearchResults(null);graphRef.current?.clearHighlight()} }}
+              placeholder="Search nodes & relationships…"
+              style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', fontFamily:'Inter,sans-serif', fontSize:13, padding:'8px 12px', outline:'none' }} />
+          </div>
           <Section label="Graph">
             <StatRow k="Nodes" v={stats.nodes} />
             <StatRow k="Relationships" v={stats.edges} />
@@ -198,7 +252,7 @@ export default function Graph() {
           {selectedNodeData && (
             <Section label="Node">
               <DR k="Name" v={selectedNodeData._label||selectedNodeData.label||'—'} />
-              {selectedNodeData.title && <DR k="Type" v={<span style={{ color:TYPE_COLORS[selectedNodeData.title]||'var(--text-2)' }}>{selectedNodeData.title}</span>} />}
+              {selectedNodeData.title && <DR k="Type" v={<span style={{ color:typeColor(selectedNodeData.title) }}>{selectedNodeData.title}</span>} />}
               <div style={{ marginTop:12 }}>
                 <button style={{ ...S.btn, background:'#fff1f2', borderColor:'#fecdd3', color:'#e11d48', width:'100%', justifyContent:'center' }} onClick={doDeleteNode}>Delete Node</button>
               </div>
@@ -277,7 +331,43 @@ export default function Graph() {
           </div>
         </div>
       )}
+
+      {/* Confirm dialog */}
+      {confirmDialog && (
+        <div onClick={e=>{ if(e.target===e.currentTarget){ setConfirmDialog(null) } }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(6px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300 }}>
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:16, padding:28, width:'90%', maxWidth:380, boxShadow:'0 24px 60px rgba(0,0,0,0.4)' }}>
+            <p style={{ fontSize:16, fontWeight:700, letterSpacing:'-0.02em', marginBottom: confirmDialog.hint ? 8 : 24 }}>{confirmDialog.message}</p>
+            {confirmDialog.hint && <p style={{ fontSize:13, color:'var(--text-2)', marginBottom:24, lineHeight:1.5 }}>{confirmDialog.hint}</p>}
+            <div style={{ display:'flex', gap:8 }}>
+              <button style={{ ...S.btn, flex:1, justifyContent:'center' }} onClick={()=>setConfirmDialog(null)}>Cancel</button>
+              <button
+                style={{ ...S.btn, flex:1, justifyContent:'center', border:'none', background: confirmDialog.danger?'#e11d48':'var(--text)', color:'#fff' }}
+                onClick={()=>{ confirmDialog.onConfirm(); setConfirmDialog(null) }}
+              >
+                {confirmDialog.danger ? 'Delete' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+function MenuItem({ label, icon, onClick, disabled, danger }) {
+  return (
+    <button onClick={disabled?undefined:onClick} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', padding:'8px 10px', borderRadius:7, border:'none', background:'transparent', cursor:disabled?'not-allowed':'pointer', fontSize:13, fontWeight:500, color:danger?'#e11d48':disabled?'var(--text-3)':'var(--text)', fontFamily:'Inter,sans-serif', textAlign:'left', opacity:disabled?0.4:1 }}>
+      <span style={{ opacity:0.6, fontSize:14 }}>{icon}</span>{label}
+    </button>
+  )
+}
+function ThemeMenuItem() {
+  const [theme, setTheme] = useState(()=>localStorage.getItem('identiti-theme')||'dark')
+  function toggle() { const n=theme==='dark'?'light':'dark'; localStorage.setItem('identiti-theme',n); document.documentElement.setAttribute('data-theme',n); setTheme(n) }
+  return (
+    <button onClick={toggle} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', padding:'8px 10px', borderRadius:7, border:'none', background:'transparent', cursor:'pointer', fontSize:13, fontWeight:500, color:'var(--text)', fontFamily:'Inter,sans-serif', textAlign:'left' }}>
+      <span style={{ opacity:0.6, fontSize:14 }}>{theme==='dark'?'☀️':'🌙'}</span>{theme==='dark'?'Light mode':'Dark mode'}
+    </button>
   )
 }
 
@@ -315,7 +405,6 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
   const ctx = canvas.getContext('2d')
   let rafId = null, destroyed = false
 
-  // DataSet
   class DS {
     constructor() { this._d = new Map() }
     add(items) { [].concat(items).forEach(i=>{ if(i&&i.id!=null) this._d.set(String(i.id),{...i}) }) }
@@ -330,53 +419,123 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
   const nodes = new DS(), edges = new DS()
   const animNodes = new Map()
   const cam = { x:0, y:0, scale:1, tx:0, ty:0, ts:1 }
-  const mouse = { sx:-9999, sy:-9999, wx:-9999, wy:-9999 }
+  const mouse = { sx:-9999, sy:-9999, wx:-9999, wy:-9999, radius:130 }
   let dragging=false, dragStartSX=0, dragStartSY=0, camStartX=0, camStartY=0
   let draggedNode=null, dragOffX=0, dragOffY=0, didDrag=false
   let hoveredNode=null, hoveredEdge=null
   let selNode=null, selEdge=null
   let searchHL=new Set()
   let shiftHeld=false
+  let zoomTimer=null
 
-  function resize() { const r=canvas.parentElement.getBoundingClientRect(); canvas.width=r.width; canvas.height=r.height }
+  function resize() {
+    const r=canvas.parentElement.getBoundingClientRect()
+    const dpr=window.devicePixelRatio||1
+    canvas.width=r.width*dpr; canvas.height=r.height*dpr
+    canvas.style.width=r.width+'px'; canvas.style.height=r.height+'px'
+  }
   const ro = new ResizeObserver(resize)
   ro.observe(canvas.parentElement)
   resize()
 
+  function cssW() { return canvas.width/(window.devicePixelRatio||1)||800 }
+  function cssH() { return canvas.height/(window.devicePixelRatio||1)||600 }
   function authH() { return { 'Content-Type':'application/json','Authorization':`Bearer ${sessionRef.current?.access_token}` } }
-
   function sToW(sx,sy) { return { x:(sx-cam.x)/cam.scale, y:(sy-cam.y)/cam.scale } }
-  function hitNode(wx,wy) { const r=10/cam.scale; for(const [id,an] of animNodes){ const dx=an.x-wx,dy=an.y-wy; if(dx*dx+dy*dy<r*r) return id } return null }
+
+  function hitNode(wx,wy) {
+    const r=10/cam.scale
+    for(const [id,an] of animNodes){ const dx=an.x-wx,dy=an.y-wy; if(dx*dx+dy*dy<r*r) return id }
+    return null
+  }
   function hitEdge(wx,wy) {
     const th=7/cam.scale
-    for(const eid of edges.getIds()){ const e=edges.get(eid); const a=animNodes.get(String(e.from)),b=animNodes.get(String(e.to)); if(!a||!b) continue; const dx=b.x-a.x,dy=b.y-a.y,l2=dx*dx+dy*dy; if(!l2) continue; const t=Math.max(0,Math.min(1,((wx-a.x)*dx+(wy-a.y)*dy)/l2)); const px=a.x+t*dx-wx,py=a.y+t*dy-wy; if(px*px+py*py<th*th) return eid }
+    for(const eid of edges.getIds()){
+      const e=edges.get(eid),a=animNodes.get(String(e.from)),b=animNodes.get(String(e.to)); if(!a||!b) continue
+      const dx=b.x-a.x,dy=b.y-a.y,l2=dx*dx+dy*dy; if(!l2) continue
+      const t=Math.max(0,Math.min(1,((wx-a.x)*dx+(wy-a.y)*dy)/l2))
+      const px=a.x+t*dx-wx,py=a.y+t*dy-wy
+      if(px*px+py*py<th*th) return eid
+    }
     return null
   }
 
+  // 350-iteration force layout with cooling + velocity damping (matches old HTML)
   function computeLayout(nl,el) {
-    const W=canvas.width||800,H=canvas.height||600
+    const W=cssW(),H=cssH()
     const pos=new Map()
-    nl.forEach((n,i)=>{ const a=(i/nl.length)*Math.PI*2; pos.set(String(n.id),{ x:W/2+Math.cos(a)*220,y:H/2+Math.sin(a)*220 }) })
-    for(let iter=0;iter<120;iter++){
-      const forces=new Map(); nl.forEach(n=>forces.set(String(n.id),{x:0,y:0}))
-      nl.forEach((a,i)=>{ nl.slice(i+1).forEach(b=>{ const pa=pos.get(String(a.id)),pb=pos.get(String(b.id)); let dx=pb.x-pa.x,dy=pb.y-pa.y; const d=Math.sqrt(dx*dx+dy*dy)||1; const f=-6000/(d*d); const fa=forces.get(String(a.id)),fb=forces.get(String(b.id)); fa.x+=dx/d*f; fa.y+=dy/d*f; fb.x-=dx/d*f; fb.y-=dy/d*f }) })
-      el.forEach(e=>{ const pa=pos.get(String(e.from)),pb=pos.get(String(e.to)); if(!pa||!pb) return; const dx=pb.x-pa.x,dy=pb.y-pa.y; const d=Math.sqrt(dx*dx+dy*dy)||1; const f=(d-120)*0.05; const fa=forces.get(String(e.from)),fb=forces.get(String(e.to)); if(fa){fa.x+=dx/d*f;fa.y+=dy/d*f} if(fb){fb.x-=dx/d*f;fb.y-=dy/d*f} })
-      nl.forEach(n=>{ const p=pos.get(String(n.id)),f=forces.get(String(n.id)); if(p&&f){p.x+=f.x*.35;p.y+=f.y*.35} })
+    nl.forEach((n,i)=>{
+      const a=(i/nl.length)*Math.PI*2, r=Math.min(W,H)*0.3
+      pos.set(String(n.id),{ x:W/2+Math.cos(a)*r+(Math.random()-.5)*50, y:H/2+Math.sin(a)*r+(Math.random()-.5)*50, vx:0, vy:0 })
+    })
+    for(let iter=0;iter<350;iter++){
+      const cool=Math.max(0.05,1-iter/250)
+      const ids=[...pos.keys()]
+      // Repulsion
+      for(let i=0;i<ids.length;i++){
+        for(let j=i+1;j<ids.length;j++){
+          const a=pos.get(ids[i]),b=pos.get(ids[j])
+          const dx=a.x-b.x,dy=a.y-b.y,dist=Math.sqrt(dx*dx+dy*dy)||0.1
+          const f=(6000/(dist*dist))*cool
+          a.vx+=(dx/dist)*f; a.vy+=(dy/dist)*f
+          b.vx-=(dx/dist)*f; b.vy-=(dy/dist)*f
+        }
+      }
+      // Spring attraction
+      el.forEach(e=>{
+        const a=pos.get(String(e.from)),b=pos.get(String(e.to)); if(!a||!b) return
+        const dx=b.x-a.x,dy=b.y-a.y,dist=Math.sqrt(dx*dx+dy*dy)||0.1
+        const f=(dist-170)*0.006*cool
+        a.vx+=(dx/dist)*f; a.vy+=(dy/dist)*f
+        b.vx-=(dx/dist)*f; b.vy-=(dy/dist)*f
+      })
+      // Center gravity
+      pos.forEach(p=>{ p.vx+=(W/2-p.x)*0.003; p.vy+=(H/2-p.y)*0.003 })
+      // Integrate + dampen
+      pos.forEach(p=>{ p.x+=p.vx*0.6; p.y+=p.vy*0.6; p.vx*=0.82; p.vy*=0.82 })
     }
     return pos
   }
 
-  function makeAnimNode(id,x,y) { return { x,y,baseX:x,baseY:y,angle:Math.random()*Math.PI*2,av:(Math.random()-.5)*.015,phase:Math.random()*Math.PI*2,ar:2.5+Math.random()*1.5 } }
-  function rebuildAnimNodes() { const nl=nodes.get(),el=edges.get(); const pos=computeLayout(nl,el); nl.forEach(n=>{ const p=pos.get(String(n.id)); animNodes.set(String(n.id),makeAnimNode(String(n.id),p?.x||0,p?.y||0)) }) }
-  function updateAnimNode(an) { const spd=0.08,mag=0.012; an.angle+=an.av; an.phase+=.01; const tx=an.baseX+Math.cos(an.angle)*an.ar,ty=an.baseY+Math.sin(an.angle)*an.ar; an.x+=(tx-an.x)*spd; an.y+=(ty-an.y)*spd }
+  function makeAnimNode(id,x,y) {
+    return { x, y, baseX:x, baseY:y, angle:Math.random()*Math.PI*2, av:(Math.random()-.5)*.01, phase:Math.random()*Math.PI*2, ar:10+Math.random()*8 }
+  }
+  function rebuildAnimNodes() {
+    const nl=nodes.get(), el=edges.get()
+    const pos=computeLayout(nl,el)
+    animNodes.clear()
+    pos.forEach((p,id)=>animNodes.set(id,makeAnimNode(id,p.x,p.y)))
+  }
+
+  // Node animation: orbital float + mouse repulsion when shift NOT held
+  function updateAnimNode(an) {
+    an.angle+=an.av; an.phase+=0.011
+    const ax=Math.cos(an.angle)*an.ar
+    const ay=Math.sin(an.angle)*an.ar+Math.cos(an.phase)*5
+    if(!shiftHeld){
+      const dx=mouse.wx-an.x, dy=mouse.wy-an.y
+      const dist=Math.sqrt(dx*dx+dy*dy)
+      if(dist<mouse.radius&&mouse.wx>-9000){
+        const force=(mouse.radius-dist)/mouse.radius
+        const angle=Math.atan2(dy,dx)
+        an.x-=Math.cos(angle)*force*12
+        an.y-=Math.sin(angle)*force*12
+        return
+      }
+    }
+    an.x+=(an.baseX+ax-an.x)*0.05
+    an.y+=(an.baseY+ay-an.y)*0.05
+  }
 
   function fitAll() {
     const anl=[...animNodes.values()]; if(!anl.length) return
-    let mx=Infinity,mn=-Infinity,my=Infinity,mny=-Infinity
-    anl.forEach(a=>{ mx=Math.min(mx,a.x);mn=Math.max(mn,a.x);my=Math.min(my,a.y);mny=Math.max(mny,a.y) })
-    const pad=80,cw=canvas.width||800,ch=canvas.height||600
-    const sc=Math.min((cw-pad*2)/(mn-mx||1),(ch-pad*2)/(mny-my||1),.8)
-    cam.ts=Math.max(.15,Math.min(sc,2)); cam.tx=cw/2-(mx+mn)/2*cam.ts; cam.ty=ch/2-(my+mny)/2*cam.ts
+    const xs=anl.map(a=>a.baseX), ys=anl.map(a=>a.baseY)
+    const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys)
+    const pad=80,cw=cssW(),ch=cssH()
+    const sc=Math.min((cw-pad*2)/(maxX-minX||1),(ch-pad*2)/(maxY-minY||1),2)
+    cam.ts=Math.max(0.1,Math.min(sc,2))
+    cam.tx=cw/2-(minX+maxX)/2*cam.ts
+    cam.ty=ch/2-(minY+maxY)/2*cam.ts
     cam.x=cam.tx; cam.y=cam.ty; cam.scale=cam.ts
   }
 
@@ -387,18 +546,32 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
     'Project':{fill:'#ffd60a',glow:'rgba(255,214,10,0.7)'},'Behavior':{fill:'#ff6961',glow:'rgba(255,105,97,0.7)'},
     'Constraint':{fill:'#ac8e68',glow:'rgba(172,142,104,0.7)'},'Belief':{fill:'#32ade6',glow:'rgba(50,173,230,0.7)'},
   }
-  const DEF_PAL = { fill:'#2997ff',glow:'rgba(41,151,255,0.75)' }
-
+  const dynPalCache = new Map()
+  function palFor(type) {
+    if (NODE_PALETTE[type]) return NODE_PALETTE[type]
+    if (dynPalCache.has(type)) return dynPalCache.get(type)
+    // Hash the label string to a hue, then pick a vivid HSL color
+    let h = 0
+    for (let i = 0; i < type.length; i++) h = (h * 31 + type.charCodeAt(i)) & 0xffff
+    const hue = h % 360
+    const fill = `hsl(${hue},80%,62%)`
+    const glow = `hsla(${hue},80%,62%,0.75)`
+    const pal = { fill, glow }
+    dynPalCache.set(type, pal)
+    return pal
+  }
   function isDark() { return document.documentElement.getAttribute('data-theme')!=='light' }
 
   function render() {
     if(destroyed) return
-    ctx.clearRect(0,0,canvas.width,canvas.height)
-    // Background
-    ctx.fillStyle = isDark() ? '#0f0f13' : '#f5f5f7'
-    ctx.fillRect(0,0,canvas.width,canvas.height)
+    const dpr=window.devicePixelRatio||1
+    const W=cssW(),H=cssH()
+    ctx.setTransform(dpr,0,0,dpr,0,0)
+    ctx.clearRect(0,0,W,H)
+    ctx.fillStyle=isDark()?'#0f0f13':'#f5f5f7'
+    ctx.fillRect(0,0,W,H)
 
-    cam.x+=(cam.tx-cam.x)*.1; cam.y+=(cam.ty-cam.y)*.1; cam.scale+=(cam.ts-cam.scale)*.1
+    cam.x+=(cam.tx-cam.x)*0.1; cam.y+=(cam.ty-cam.y)*0.1; cam.scale+=(cam.ts-cam.scale)*0.1
     ctx.save(); ctx.translate(cam.x,cam.y); ctx.scale(cam.scale,cam.scale)
 
     // Edges
@@ -417,9 +590,9 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
       if(id!==draggedNode) updateAnimNode(an)
       const node=nodes.get(id); if(!node) continue
       const isSel=id===selNode,isHov=id===hoveredNode,isHL=searchHL.has(id)
-      const type=node.title||'Node',pal=NODE_PALETTE[type]||DEF_PAL
+      const type=node.title||'Node',pal=palFor(type)
       const r=(type==='Person'?(isSel?11:9):(isSel?8:6))/cam.scale
-      const alpha=isSel?1:isHov?.95:.75
+      const alpha=isSel?1:isHov?0.95:0.75
       ctx.save()
       ctx.shadowBlur=isSel?28:isHov?18:isHL?22:10
       ctx.shadowColor=isHL?'rgba(255,214,10,0.8)':pal.glow
@@ -434,32 +607,59 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
     rafId=requestAnimationFrame(render)
   }
 
-  // Mouse events
+  // Mouse events — shift to select/drag nodes, no-shift = pan + repulsion
   function onMouseMove(e) {
-    const rect=canvas.getBoundingClientRect(); const sx=e.clientX-rect.left,sy=e.clientY-rect.top; mouse.sx=sx;mouse.sy=sy; const w=sToW(sx,sy); mouse.wx=w.x;mouse.wy=w.y
+    const rect=canvas.getBoundingClientRect()
+    const sx=e.clientX-rect.left, sy=e.clientY-rect.top
+    mouse.sx=sx; mouse.sy=sy
+    const w=sToW(sx,sy); mouse.wx=w.x; mouse.wy=w.y
     if(draggedNode){ const an=animNodes.get(draggedNode); if(an){an.x=w.x+dragOffX;an.y=w.y+dragOffY;an.baseX=an.x;an.baseY=an.y} didDrag=true; return }
-    if(dragging&&!shiftHeld){ cam.tx=camStartX+(mouse.sx-dragStartSX);cam.ty=camStartY+(mouse.sy-dragStartSY);didDrag=true; return }
+    if(dragging&&!shiftHeld){ cam.tx=camStartX+(sx-dragStartSX); cam.ty=camStartY+(sy-dragStartSY); didDrag=true; return }
     hoveredNode=hitNode(w.x,w.y); hoveredEdge=hoveredNode?null:hitEdge(w.x,w.y)
     canvas.style.cursor=(hoveredNode||hoveredEdge)?'pointer':'grab'
   }
-  function onMouseLeave() { mouse.wx=-9999;mouse.wy=-9999;hoveredNode=null;hoveredEdge=null }
+  function onMouseLeave() { mouse.wx=-9999; mouse.wy=-9999; hoveredNode=null; hoveredEdge=null }
   function onMouseDown(e) {
-    const w=sToW(e.clientX-canvas.getBoundingClientRect().left,e.clientY-canvas.getBoundingClientRect().top)
-    const hn=hitNode(w.x,w.y)
-    if(hn&&shiftHeld){ draggedNode=hn; const an=animNodes.get(hn); dragOffX=an.x-w.x;dragOffY=an.y-w.y;didDrag=false; return }
-    dragging=true; dragStartSX=mouse.sx;dragStartSY=mouse.sy;camStartX=cam.tx;camStartY=cam.ty;didDrag=false
+    if(e.button!==0) return
+    const rect=canvas.getBoundingClientRect()
+    const sx=e.clientX-rect.left, sy=e.clientY-rect.top
+    const w=sToW(sx,sy); didDrag=false
+    if(e.shiftKey){
+      const hn=hitNode(w.x,w.y)
+      if(hn){ draggedNode=hn; const an=animNodes.get(hn); dragOffX=an.x-w.x; dragOffY=an.y-w.y; return }
+    }
+    dragging=true; dragStartSX=sx; dragStartSY=sy; camStartX=cam.tx; camStartY=cam.ty
+    canvas.style.cursor='grabbing'
   }
-  function onMouseUp() {
-    if(draggedNode){ draggedNode=null } else if(!didDrag){
-      const hn=hitNode(mouse.wx,mouse.wy),he=hn?null:hitEdge(mouse.wx,mouse.wy)
-      selNode=hn||null; selEdge=he||null
+  function onMouseUp(e) {
+    if(e.button!==0) return
+    const rect=canvas.getBoundingClientRect()
+    const w=sToW(e.clientX-rect.left, e.clientY-rect.top)
+    if(!didDrag&&e.shiftKey){
+      const hn=hitNode(w.x,w.y), he=hn?null:hitEdge(w.x,w.y)
+      if(hn){ selNode=hn===selNode?null:hn; selEdge=null }
+      else if(he){ selEdge=he===selEdge?null:he; selNode=null }
+      else { selNode=null; selEdge=null }
       setSelectedNode(selNode); setSelectedEdge(selEdge)
     }
-    dragging=false; didDrag=false
+    draggedNode=null; dragging=false; didDrag=false
+    canvas.style.cursor=hoveredNode?'pointer':'grab'
   }
-  function onWheel(e) { e.preventDefault(); const f=e.deltaY<0?1.1:.91; const sx=e.clientX-canvas.getBoundingClientRect().left,sy=e.clientY-canvas.getBoundingClientRect().top; cam.ts=Math.max(.07,Math.min(cam.ts*f,5)); cam.tx=sx-(sx-cam.tx)*(cam.ts/cam.scale); cam.ty=sy-(sy-cam.ty)*(cam.ts/cam.scale) }
-  function onKeyDown(e) { if(e.key==='Shift'){shiftHeld=true;canvas.style.cursor=hoveredNode?'pointer':'crosshair'} }
-  function onKeyUp(e) { if(e.key==='Shift'){shiftHeld=false;canvas.style.cursor=hoveredNode?'pointer':'grab'} }
+  function onWheel(e) {
+    e.preventDefault()
+    const rect=canvas.getBoundingClientRect()
+    const sx=e.clientX-rect.left, sy=e.clientY-rect.top
+    const factor=e.deltaY>0?0.88:1.14
+    const ns=Math.max(0.1,Math.min(cam.ts*factor,6))
+    const wx=(sx-cam.tx)/cam.ts, wy=(sy-cam.ty)/cam.ts
+    cam.tx=sx-wx*ns; cam.ty=sy-wy*ns; cam.ts=ns
+    // Brightness flash on zoom
+    clearTimeout(zoomTimer)
+    canvas.style.filter='brightness(1.35)'
+    zoomTimer=setTimeout(()=>{ canvas.style.filter='brightness(1)' },220)
+  }
+  function onKeyDown(e) { if(e.key==='Shift'){ shiftHeld=true; canvas.style.cursor=hoveredNode?'pointer':'crosshair' } }
+  function onKeyUp(e) { if(e.key==='Shift'){ shiftHeld=false; canvas.style.cursor=hoveredNode?'pointer':'grab' } }
 
   canvas.addEventListener('mousemove',onMouseMove)
   canvas.addEventListener('mouseleave',onMouseLeave)
@@ -492,16 +692,27 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
       window.removeEventListener('keydown',onKeyDown)
       window.removeEventListener('keyup',onKeyUp)
     },
-    reload(getHeaders) { loadGraph() },
+    reload() { loadGraph() },
     getAllNodes() { return nodes.get() },
     getAllEdges() { return edges.get() },
     getNode(id) { return nodes.get(id) },
     getEdge(id) { return edges.get(id) },
-    addNode(id,name,label) { nodes.add({id,_label:name,label:' ',title:label}); const cx=canvas.width/2,cy=canvas.height/2,w=sToW(cx,cy); animNodes.set(id,makeAnimNode(id,w.x+(Math.random()-.5)*100,w.y+(Math.random()-.5)*100)) },
+    addNode(id,name,label) {
+      nodes.add({id,_label:name,label:' ',title:label})
+      const cx=cssW()/2, cy=cssH()/2, w=sToW(cx,cy)
+      animNodes.set(id,makeAnimNode(id,w.x+(Math.random()-.5)*100,w.y+(Math.random()-.5)*100))
+    },
     addEdge(id,from,to,label) { edges.add({id,from,to,label}) },
-    deleteNode(id) { const connected=edges.get({filter:e=>String(e.from)===id||String(e.to)===id}); connected.forEach(e=>{edges.remove(e.id)}); nodes.remove(id); animNodes.delete(id); return connected.map(e=>e.id) },
+    deleteNode(id) {
+      const connected=edges.get({filter:e=>String(e.from)===id||String(e.to)===id})
+      connected.forEach(e=>edges.remove(e.id)); nodes.remove(id); animNodes.delete(id)
+      return connected.map(e=>e.id)
+    },
     deleteEdge(id) { edges.remove(id) },
-    focusNode(id) { const an=animNodes.get(id); if(an){ cam.ts=1.5; cam.tx=canvas.width/2-an.baseX*1.5; cam.ty=canvas.height/2-an.baseY*1.5 } },
+    focusNode(id) {
+      const an=animNodes.get(id)
+      if(an){ cam.ts=1.5; cam.tx=cssW()/2-an.baseX*1.5; cam.ty=cssH()/2-an.baseY*1.5 }
+    },
     setHighlight(set) { searchHL=set },
     clearHighlight() { searchHL=new Set() },
   }
