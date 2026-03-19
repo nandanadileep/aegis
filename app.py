@@ -380,13 +380,14 @@ def _spa():
     return send_from_directory(app.static_folder, "index.html")
 
 
-@app.route("/")
-def index():
-    return _spa()
-
-
-@app.route("/login")
-def login_page():
+# Catch-all: serve React SPA for any non-API route (handles /callback, etc.)
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def catch_all(path):
+    # Let Flask serve static assets (JS, CSS) normally
+    if path.startswith("assets/") or path in ("favicon.svg", "favicon.ico"):
+        return send_from_directory(app.static_folder, path)
+    # All other paths → SPA
     return _spa()
 
 
