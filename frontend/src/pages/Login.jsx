@@ -51,7 +51,7 @@ export default function Login() {
 
       {/* Header */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 40px', height: 60, position: 'relative', zIndex: 10, borderBottom: '1px solid var(--border)' }}>
-        <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>Aegis</span>
+        <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>Identiti</span>
         <ThemeToggle />
       </header>
 
@@ -61,7 +61,7 @@ export default function Login() {
           <style>{`@keyframes rise { from { opacity:0; transform:translateY(24px) } to { opacity:1; transform:translateY(0) } }`}</style>
 
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: 16 }}>Welcome</p>
-          <h1 style={{ fontSize: 'clamp(48px,8vw,80px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, color: 'var(--text)', marginBottom: 16 }}>Aegis.</h1>
+          <h1 style={{ fontSize: 'clamp(48px,8vw,80px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, color: 'var(--text)', marginBottom: 16 }}>Identiti.</h1>
           <p style={{ fontSize: 15, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 48 }}>Your digital twin lives here.<br />Sign in to continue building it.</p>
 
           <button
