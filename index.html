@@ -267,6 +267,7 @@
     </nav>
     <div class="header-right">
       <button class="btn-sm" onclick="saveTranscript()">Save</button>
+      <button class="btn-sm" onclick="signOut()">Sign out</button>
     </div>
   </header>
 
@@ -285,7 +286,30 @@
     <p class="hint">Type /exit to save &amp; close</p>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    const { createClient } = window.supabase;
+    let sb = null;
+    let _session = null;
+
+    async function initAuth() {
+      const cfg = await fetch('/api/config').then(r => r.json());
+      sb = createClient(cfg.supabase_url, cfg.supabase_anon_key);
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { window.location.href = '/login'; return; }
+      _session = session;
+      sb.auth.onAuthStateChange((_e, s) => { _session = s; if (!s) window.location.href = '/login'; });
+    }
+
+    function authHeaders() {
+      return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_session.access_token}` };
+    }
+
+    async function signOut() {
+      await sb.auth.signOut();
+      window.location.href = '/login';
+    }
+
     const messagesEl = document.getElementById('messages');
     const inputEl    = document.getElementById('input');
     const sendBtn    = document.getElementById('send');
@@ -293,11 +317,6 @@
     let sending    = false;
     let thinkingEl = null;
     const transcript = [];
-    const personId   = new URLSearchParams(window.location.search).get('person_id');
-
-    function withPersonId(payload) {
-      return personId ? { ...payload, person_id: personId } : payload;
-    }
 
     function addMessage(text, role) {
       if (emptyState) emptyState.style.display = 'none';
@@ -361,8 +380,8 @@
       try {
         const res  = await fetch('/chat', {
           method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(withPersonId({ message: text })),
+          headers: authHeaders(),
+          body:    JSON.stringify({ message: text }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Server error');
@@ -385,8 +404,8 @@
       try {
         await fetch('/save', {
           method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(withPersonId({ transcript: transcript.join('\n') })),
+          headers: authHeaders(),
+          body:    JSON.stringify({ transcript: transcript.join('\n') }),
         });
         transcript.length = 0;
       } catch (e) { console.warn('Save failed', e); }
@@ -396,12 +415,12 @@
     inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
 
     window.addEventListener('beforeunload', () => {
-      if (transcript.length) {
-        navigator.sendBeacon('/save', JSON.stringify(withPersonId({ transcript: transcript.join('\n') })));
+      if (transcript.length && _session) {
+        navigator.sendBeacon('/save', JSON.stringify({ transcript: transcript.join('\n') }));
       }
     });
 
-    inputEl.focus();
+    initAuth().then(() => inputEl.focus());
   </script>
 </body>
 </html>
