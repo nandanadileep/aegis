@@ -45,7 +45,11 @@ export default function Chat() {
       const res = await fetch('/chat', { method: 'POST', headers: authHeaders(session), body: JSON.stringify({ message: text }) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Server error')
-      setMessages(m => [...m.filter(x => x.role !== 'thinking'), { role: 'assistant', text: data.reply || 'No response' }])
+      setMessages(m => [...m.filter(x => x.role !== 'thinking'), {
+        role: 'assistant',
+        text: data.reply || 'No response',
+        addedNodes: data.added_nodes || [],
+      }])
       transcript.current.push(`Assistant: ${data.reply}`)
     } catch (e) {
       setMessages(m => [...m.filter(x => x.role !== 'thinking'), { role: 'assistant', text: `Error: ${e.message}` }])
@@ -72,7 +76,7 @@ export default function Chat() {
 
       {/* Header */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 32px', height: 60, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg)', zIndex: 10, position: 'relative' }}>
-        <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>Aegis</span>
+        <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>Identiti</span>
         <nav style={{ display: 'flex', gap: 4 }}>
           <NavLink to="/chat" active>Chat</NavLink>
           <NavLink to="/memory">Graph</NavLink>
@@ -88,8 +92,8 @@ export default function Chat() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '48px 0 24px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative', zIndex: 10 }}>
         {messages.length === 0 && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, paddingBottom: 80, pointerEvents: 'none' }}>
-            <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>Start talking.</p>
-            <p style={{ fontSize: 14, color: 'var(--text-3)', textAlign: 'center', maxWidth: 240, lineHeight: 1.6 }}>Your twin is listening. As you chat, your profile builds itself.</p>
+            <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>Your memory is with you.</p>
+            <p style={{ fontSize: 14, color: 'var(--text-3)', textAlign: 'center', maxWidth: 240, lineHeight: 1.6 }}>Everything you've built lives here. Start talking.</p>
           </div>
         )}
         {messages.map((m, i) => <Message key={i} msg={m} />)}
@@ -144,7 +148,7 @@ function Message({ msg }) {
   }
   const isUser = msg.role === 'user'
   return (
-    <div style={{ display: 'flex', width: '100%', maxWidth: 680, margin: '0 auto', padding: '3px 24px', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 680, margin: '0 auto', padding: '3px 24px', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
       <div style={{
         maxWidth: '72%', padding: '11px 16px', fontSize: 14, lineHeight: 1.6,
         whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
@@ -155,6 +159,20 @@ function Message({ msg }) {
       }}
         dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
       />
+      {msg.addedNodes?.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, maxWidth: '72%' }}>
+          {msg.addedNodes.map((n, i) => (
+            <span key={i} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+              background: 'rgba(0,0,238,0.08)', border: '1px solid rgba(0,0,238,0.2)', color: '#0000ee',
+              letterSpacing: '-0.01em',
+            }}>
+              <span style={{ opacity: 0.6 }}>✦</span> {n.name} · {n.label}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
