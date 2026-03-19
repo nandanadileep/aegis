@@ -228,7 +228,7 @@ def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dic
                 session.run(
                     f"""
                     MERGE (p:Person {{id: $person_id}})
-                    MERGE (n:{label} {{key: $key, value: $value}})
+                    MERGE (n:{label} {{key: $key, value: $value, person_id: $person_id}})
                     MERGE (p)-[:{rel}]->(n)
                     """,
                     person_id=person_id,
