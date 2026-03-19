@@ -706,14 +706,56 @@ def onboard_chat():
     return jsonify({"reply": reply, "profile": profile})
 
 
+def _parse_raw_memory_to_twin(raw_text: str) -> dict:
+    """Use LLM to convert any memory export format into our structured profile dict."""
+    prompt = f"""You are given a memory export from an AI assistant. Extract structured profile data from it.
+
+Output ONLY a valid JSON object with these exact keys (omit keys with no data):
+{{
+  "name": "person's name if mentioned",
+  "description": "one sentence who this person is",
+  "values": ["list of values"],
+  "skills": ["list of skills"],
+  "personality": ["list of personality traits"],
+  "goals": ["list of goals"],
+  "speaking_style": "how they communicate",
+  "known_for": ["things they are known for"]
+}}
+
+Memory export:
+{raw_text}
+
+Respond with ONLY the JSON object, no explanation."""
+
+    completion = litellm.completion(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+    )
+    content = completion.choices[0].message.content or ""
+    # Strip markdown code fences if present
+    content = re.sub(r"^```(?:json)?\s*", "", content.strip())
+    content = re.sub(r"\s*```$", "", content.strip())
+    return json.loads(content)
+
+
 @app.route("/api/import", methods=["POST"])
 @require_auth
 def import_twin():
     data = parse_body_json()
     person_id = resolve_person_id(data)
-    twin = data.get("twin", {})
-    if not isinstance(twin, dict):
-        return jsonify({"error": "twin must be a JSON object"}), 400
+
+    # Accept either raw memory text or pre-structured twin dict
+    raw_memory = data.get("raw_memory", "")
+    if raw_memory:
+        try:
+            twin = _parse_raw_memory_to_twin(str(raw_memory))
+        except Exception as e:
+            return jsonify({"error": f"Could not parse memory: {e}"}), 400
+    else:
+        twin = data.get("twin", {})
+        if not isinstance(twin, dict):
+            return jsonify({"error": "twin must be a JSON object"}), 400
 
     name = str(twin.get("name") or person_id)
     username = str(data.get("username") or name.lower().replace(" ", "") )

@@ -92,13 +92,13 @@ export default function Onboarding() {
 
   async function importTwin() {
     setImportErr('')
-    let twin
-    try { twin = JSON.parse(importJson) } catch { setImportErr('Invalid JSON — check the format.'); return }
+    const raw = importJson.trim()
+    if (!raw) { setImportErr('Paste your memory export first.'); return }
     setImporting(true)
     try {
       const resp = await fetch('/api/import', {
         method: 'POST', headers: authHeaders(session),
-        body: JSON.stringify({ twin, username: autoUsername }),
+        body: JSON.stringify({ raw_memory: raw, username: autoUsername }),
       })
       if (!resp.ok) throw new Error()
       setScreen('success')
@@ -209,14 +209,14 @@ function MsgBubble({ msg }) {
 
 function Import1Screen({ onBack, onNext }) {
   const [copied, setCopied] = useState(false)
-  const prompt = `I want to build a profile of who I am and who I'm becoming. Have a real conversation with me — ask one short question at a time, like a curious friend. No numbered lists, no multiple questions at once. Just talk naturally.\n\nWhen you feel like you have a full picture, output a JSON at the end in this exact format:\n{\n  "name": "",\n  "description": "one sentence — who this person is",\n  "values": [],\n  "skills": [],\n  "personality": [],\n  "goals": [],\n  "speaking_style": "",\n  "known_for": []\n}\n\nOnly fill in what you actually learned. Don't guess.`
+  const prompt = `I'm moving to another service and need to export my data. List every memory you have stored about me, as well as any context you've learned about me from past conversations. Output everything in a single code block so I can easily copy it. Format each entry as: [date saved, if available] - memory content`
   function copy() { navigator.clipboard.writeText(prompt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200) }) }
   return (
-    <ImportLayout onBack={onBack} step="Step 1 of 2" title="Have the conversation first" sub="Copy this prompt. Paste it into ChatGPT, Claude, or Gemini. Have a real conversation. Come back with the JSON.">
+    <ImportLayout onBack={onBack} step="Step 1 of 2" title="Export your memory" sub="Copy this prompt. Paste it into ChatGPT, Claude, or Gemini. Come back with whatever it gives you.">
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, fontFamily: 'monospace', fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.65, whiteSpace: 'pre-wrap', width: '100%', marginBottom: 16, wordBreak: 'break-word' }}>{prompt}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <Btn onClick={copy}>{copied ? 'Copied ✓' : 'Copy prompt'}</Btn>
-        <BtnFill onClick={onNext}>I have the JSON →</BtnFill>
+        <BtnFill onClick={onNext}>I have it →</BtnFill>
       </div>
     </ImportLayout>
   )
@@ -224,9 +224,9 @@ function Import1Screen({ onBack, onNext }) {
 
 function Import2Screen({ value, onChange, onBack, onImport, importing, error }) {
   return (
-    <ImportLayout onBack={onBack} step="Step 2 of 2" title="Paste your JSON" sub="Drop the JSON your AI generated below.">
+    <ImportLayout onBack={onBack} step="Step 2 of 2" title="Paste what it gave you" sub="Drop the memory export below. We'll parse it automatically.">
       <textarea value={value} onChange={e => onChange(e.target.value)} rows={10}
-        placeholder='{ "name": "...", "values": [...] }'
+        placeholder='Paste your memory export here…'
         style={{ width: '100%', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontFamily: 'monospace', fontSize: 12.5, padding: '14px 16px', outline: 'none', resize: 'none', lineHeight: 1.5, marginBottom: 16 }} />
       <BtnFill onClick={onImport} disabled={importing}>{importing ? 'Importing…' : 'Import twin'}</BtnFill>
       {error && <p style={{ color: '#ff3b30', fontSize: 13, textAlign: 'center', marginTop: 12 }}>{error}</p>}
