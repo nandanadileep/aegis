@@ -368,7 +368,7 @@ def parse_body_json() -> Dict[str, Any]:
 # Flask app
 # ---------------------------
 load_env()
-app = Flask(__name__, static_folder=".", static_url_path="")
+app = Flask(__name__, static_folder="static", static_url_path="")
 
 DEFAULT_PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
 DATABASE = env_var("NEO4J_DATABASE")
@@ -376,14 +376,18 @@ REDIS_CLIENT = get_redis_client()
 NEO4J_DRIVER = get_neo4j_driver()
 
 
+def _spa():
+    return send_from_directory(app.static_folder, "index.html")
+
+
 @app.route("/")
 def index():
-    return redirect("/onboarding")
+    return _spa()
 
 
 @app.route("/login")
 def login_page():
-    return send_from_directory(app.static_folder, "login.html")
+    return _spa()
 
 
 @app.route("/api/config")
@@ -569,17 +573,17 @@ def save():
 
 @app.route("/chat")
 def chat_page():
-    return send_from_directory(app.static_folder, "index.html")
+    return _spa()
 
 
 @app.route("/memory")
 def memory_page():
-    return send_from_directory(app.static_folder, "memory.html")
+    return _spa()
 
 
 @app.route("/onboarding")
 def onboarding_page():
-    return send_from_directory(app.static_folder, "onboarding.html")
+    return _spa()
 
 
 ONBOARD_SYSTEM_PROMPT = """
