@@ -1,11 +1,14 @@
 import os
 import json
+import base64
 from urllib.parse import urlparse, urlunparse, quote
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+from functools import wraps
 
+import jwt as pyjwt
 import litellm
-from flask import Flask, request, jsonify, send_from_directory, Response
+from flask import Flask, request, jsonify, send_from_directory, Response, redirect, g
 from neo4j import GraphDatabase
 
 # Ensure we're in the right directory for .env
@@ -44,6 +47,61 @@ def env_var(name: str) -> str:
     return val
 
 
+
+
+_JWKS_CACHE: Dict[str, Any] = {}
+
+def _get_jwks() -> list:
+    global _JWKS_CACHE
+    import time
+    now = time.time()
+    if _JWKS_CACHE.get("ts", 0) + 3600 > now:
+        return _JWKS_CACHE.get("keys", [])
+    import urllib.request
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    with urllib.request.urlopen(f"{supabase_url}/auth/v1/.well-known/jwks.json") as r:
+        data = json.loads(r.read())
+    _JWKS_CACHE = {"keys": data.get("keys", []), "ts": now}
+    return _JWKS_CACHE["keys"]
+
+
+def verify_supabase_token(token: str) -> str:
+    """Verify a Supabase JWT using JWKS and return the user UUID."""
+    from jwt.algorithms import ECAlgorithm
+    keys = _get_jwks()
+    if not keys:
+        raise ValueError("no JWKS keys available")
+
+    errors = []
+    for jwk in keys:
+        try:
+            public_key = ECAlgorithm.from_jwk(json.dumps(jwk))
+            payload = pyjwt.decode(
+                token, public_key,
+                algorithms=[jwk.get("alg", "ES256")],
+                options={"verify_aud": False},
+            )
+            user_id = payload.get("sub")
+            if not user_id:
+                raise ValueError("missing sub claim")
+            return user_id
+        except Exception as e:
+            errors.append(str(e))
+    raise ValueError(f"token verification failed: {errors}")
+
+
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "unauthorized", "detail": "no bearer token"}), 401
+        try:
+            g.user_id = verify_supabase_token(auth_header[7:])
+        except ValueError as e:
+            return jsonify({"error": "unauthorized", "detail": str(e)}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 
 def get_neo4j_driver():
@@ -246,21 +304,9 @@ def history_to_transcript(history: List[Dict[str, str]]) -> str:
 
 
 def resolve_person_id(payload: Optional[Dict[str, Any]] = None) -> str:
-    if payload:
-        payload_person_id = payload.get("person_id")
-        if payload_person_id is not None:
-            candidate = str(payload_person_id).strip()
-            if candidate:
-                return candidate
-
-    header_person_id = request.headers.get("X-Person-Id", "").strip()
-    if header_person_id:
-        return header_person_id
-
-    query_person_id = request.args.get("person_id", "").strip()
-    if query_person_id:
-        return query_person_id
-
+    # Auth token always wins — never trust client-supplied person_id
+    if hasattr(g, "user_id") and g.user_id:
+        return g.user_id
     return DEFAULT_PERSON_ID
 
 
@@ -332,10 +378,41 @@ NEO4J_DRIVER = get_neo4j_driver()
 
 @app.route("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    return redirect("/onboarding")
+
+
+@app.route("/login")
+def login_page():
+    return send_from_directory(app.static_folder, "login.html")
+
+
+@app.route("/api/config")
+def public_config():
+    return jsonify({
+        "supabase_url":      os.getenv("SUPABASE_URL", ""),
+        "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY", ""),
+    })
+
+
+@app.route("/api/me")
+@require_auth
+def me():
+    person_id = g.user_id
+    try:
+        with NEO4J_DRIVER.session(database=DATABASE) as session:
+            result = session.run(
+                "MATCH (p:Person {id: $pid}) RETURN p.name as name, p.username as username LIMIT 1",
+                pid=person_id,
+            ).single()
+        if result:
+            return jsonify({"exists": True, "name": result["name"], "username": result["username"]})
+        return jsonify({"exists": False})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/context", methods=["GET"])
+@require_auth
 def context():
     person_id = resolve_person_id()
     records = fetch_memory_summary(person_id, DATABASE)
@@ -344,6 +421,7 @@ def context():
 
 
 @app.route("/api/wallet", methods=["GET"])
+@require_auth
 def export_wallet():
     person_id = resolve_person_id()
     md = generate_wallet_markdown(person_id, DATABASE)
@@ -361,6 +439,7 @@ def health():
 
 
 @app.route("/chat", methods=["POST"])
+@require_auth
 def chat():
     data = request.get_json(force=True)
     if not isinstance(data, dict):
@@ -452,6 +531,7 @@ def proxy_completions():
 
 
 @app.route("/save", methods=["POST"])
+@require_auth
 def save():
     body = parse_body_json()
     person_id = resolve_person_id(body)
@@ -487,6 +567,11 @@ def save():
     return jsonify(response)
 
 
+@app.route("/chat")
+def chat_page():
+    return send_from_directory(app.static_folder, "index.html")
+
+
 @app.route("/memory")
 def memory_page():
     return send_from_directory(app.static_folder, "memory.html")
@@ -497,7 +582,66 @@ def onboarding_page():
     return send_from_directory(app.static_folder, "onboarding.html")
 
 
+ONBOARD_SYSTEM_PROMPT = """
+You are having a casual conversation to get to know someone. Start with a natural greeting and ease into it. Ask one short question at a time — like a curious friend. Never ask two questions at once. Never use numbered lists. Keep each message to 1-2 sentences max.
+
+Just talk. Learn who they are and who they want to become through the conversation. Don't follow a script or a list. Let it flow naturally based on what they say.
+
+If they mention a real person or fictional character they admire or want to be like, you already know who that is — bring up what you know about them and keep the conversation going from there.
+
+Once you feel like you have a real sense of who they are (their name, what drives them, what they want, how they think), output the profile at the very end of your message in this format. Nothing after it.
+
+<PROFILE>
+{"name": "...", "twin_description": "...", "values": [...], "skills": [...], "personality": [...], "goals": [...], "speaking_style": "..."}
+</PROFILE>
+""".strip()
+
+
+@app.route("/api/onboard-chat", methods=["POST"])
+@require_auth
+def onboard_chat():
+    data = request.get_json(force=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid payload"}), 400
+
+    user_message = str(data.get("message", "")).strip()
+    history = data.get("history", [])
+    if not isinstance(history, list):
+        history = []
+
+    messages = [{"role": "system", "content": ONBOARD_SYSTEM_PROMPT}]
+    for entry in history:
+        if isinstance(entry, dict) and entry.get("role") in ("user", "assistant"):
+            messages.append({"role": entry["role"], "content": str(entry.get("content", ""))})
+
+    if user_message:
+        messages.append({"role": "user", "content": user_message})
+
+    completion = litellm.completion(
+        model=LLM_MODEL,
+        messages=messages,
+        temperature=0.7,
+    )
+    reply = completion.choices[0].message.content or ""
+
+    profile = None
+    if "<PROFILE>" in reply and "</PROFILE>" in reply:
+        start = reply.index("<PROFILE>") + len("<PROFILE>")
+        end = reply.index("</PROFILE>")
+        profile_text = reply[start:end].strip()
+        display_reply = reply[:reply.index("<PROFILE>")].strip()
+        try:
+            profile = json.loads(profile_text)
+        except Exception:
+            profile = None
+        if profile:
+            reply = display_reply
+
+    return jsonify({"reply": reply, "profile": profile})
+
+
 @app.route("/api/import", methods=["POST"])
+@require_auth
 def import_twin():
     data = parse_body_json()
     person_id = resolve_person_id(data)
@@ -506,6 +650,7 @@ def import_twin():
         return jsonify({"error": "twin must be a JSON object"}), 400
 
     name = str(twin.get("name") or person_id)
+    username = str(data.get("username") or name.lower().replace(" ", "") )
     description = str(twin.get("twin_description") or "")
     speaking_style = str(twin.get("speaking_style") or "")
 
@@ -525,10 +670,11 @@ def import_twin():
                 """
                 MERGE (p:Person {id: $pid})
                 SET p.name = $name,
+                    p.username = $username,
                     p.description = $desc,
                     p.speaking_style = $style
                 """,
-                pid=person_id, name=name, desc=description, style=speaking_style,
+                pid=person_id, name=name, username=username, desc=description, style=speaking_style,
             )
             for field, (label, rel) in field_map.items():
                 items = twin.get(field) or []
@@ -541,7 +687,7 @@ def import_twin():
                     session.run(
                         f"""
                         MATCH (p:Person {{id: $pid}})
-                        MERGE (n:{label} {{name: $name}})
+                        MERGE (n:{label} {{name: $name, person_id: $pid}})
                         MERGE (p)-[:{rel}]->(n)
                         """,
                         pid=person_id, name=item,
@@ -553,6 +699,7 @@ def import_twin():
 
 
 @app.route("/api/onboard", methods=["POST"])
+@require_auth
 def onboard():
     data = parse_body_json()
     person_id = resolve_person_id(data)
@@ -592,22 +739,25 @@ def onboard():
 # ---------------------------
 
 @app.route("/api/graph", methods=["GET"])
+@require_auth
 def get_graph():
     """Fetch all nodes and relationships for a person."""
     person_id = resolve_person_id()
     
     query = """
     MATCH (p:Person {id: $person_id})
-    OPTIONAL MATCH (p)-[*0..5]-(n)
+    OPTIONAL MATCH (p)-[]->(n)
+    WHERE n.person_id = $person_id OR 'Person' IN labels(n)
     RETURN DISTINCT id(n) as node_id, n.name as name, n.key as key, labels(n) as labels
+    UNION
+    MATCH (p:Person {id: $person_id})
+    RETURN id(p) as node_id, p.name as name, p.id as key, labels(p) as labels
     """
 
     query_edges = """
-    MATCH (p:Person {id: $person_id})
-    MATCH (p)-[*0..5]-(a)
-    MATCH (a)-[r]->(b)
-    MATCH (p)-[*0..5]-(b)
-    RETURN DISTINCT id(r) as rel_id, id(a) as from_id, id(b) as to_id, type(r) as rel_type
+    MATCH (p:Person {id: $person_id})-[r]->(n)
+    WHERE n.person_id = $person_id OR 'Person' IN labels(n)
+    RETURN DISTINCT id(r) as rel_id, id(p) as from_id, id(n) as to_id, type(r) as rel_type
     """
     
     try:
@@ -646,6 +796,7 @@ def get_graph():
 
 
 @app.route("/api/nodes", methods=["POST"])
+@require_auth
 def create_node():
     """Create a new node."""
     person_id = resolve_person_id()
@@ -684,6 +835,7 @@ def create_node():
 
 
 @app.route("/api/relationships", methods=["POST"])
+@require_auth
 def create_relationship():
     """Create a new relationship between nodes."""
     person_id = resolve_person_id()
@@ -716,6 +868,7 @@ def create_relationship():
 
 
 @app.route("/api/commit", methods=["POST"])
+@require_auth
 def commit_changes():
     """Apply all pending changes to the graph."""
     person_id = resolve_person_id()
