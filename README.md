@@ -6,77 +6,33 @@ Your memory lives here. Chat with an AI that knows who you are — and builds yo
 
 ```mermaid
 flowchart TD
-    User["User (Browser)"]
+    User("User")
 
-    subgraph Frontend ["Frontend — React + Vite"]
-        Login["Login\n/login"]
-        Onboarding["Onboarding\n/onboarding"]
-        Chat["Chat\n/chat"]
-        Graph["Graph\n/memory"]
+    User -->|Google OAuth| Supabase("Supabase Auth")
+    User --> Frontend
+
+    subgraph Frontend ["React + Vite"]
+        direction LR
+        Login("Login") --> Onboarding("Onboarding") --> Chat("Chat") --> Graph("Graph")
     end
 
-    subgraph Backend ["Backend — Flask (port 3000)"]
-        Auth["Auth Middleware\nSupabase JWT"]
+    Frontend -->|JWT| Flask
 
-        subgraph ChatFlow ["Chat Flow"]
-            ChatAPI["/chat"]
-            EntityExtract["Entity Extraction\nLLM"]
-        end
-
-        subgraph OnboardFlow ["Onboard Flow"]
-            OnboardChat["/api/onboard-chat\nLLM"]
-            ImportAPI["/api/import\nLLM → parse memory"]
-        end
-
-        subgraph GraphAPI ["Graph API"]
-            GetGraph["/api/graph"]
-            CreateNode["/api/graph/node\nLLM → normalize label"]
-            DeleteNode["/api/graph/node DELETE"]
-        end
-
-        WalletAPI["/api/wallet\nTwin Card export"]
-        SaveAPI["/save\nTranscript → pipeline"]
+    subgraph Flask ["Flask API"]
+        direction TB
+        ChatAPI("/chat") --> LLM
+        ChatAPI -->|extract entities| LLM
+        OnboardChat("/api/onboard-chat") --> LLM
+        Import("/api/import") --> LLM
+        NodeAPI("/api/graph/node") --> LLM
+        LLM("Groq\nllama-3.3-70b")
     end
 
-    subgraph AI ["LLM — Groq llama-3.3-70b"]
-        LLM["litellm.completion"]
-    end
+    ExternalAI("ChatGPT / Claude") -->|memory export| Import
 
-    subgraph Storage ["Storage"]
-        Neo4j[("Neo4j\nKnowledge Graph")]
-        Supabase[("Supabase\nAuth")]
-        Redis[("Redis\nConversation History")]
-    end
-
-    ExternalAI["ChatGPT / Claude\n(memory export)"]
-
-    User -->|"Google OAuth"| Supabase
-    Supabase -->|JWT| Auth
-
-    User --> Login --> Onboarding
-    Onboarding -->|"onboard-chat"| OnboardChat
-    Onboarding -->|"paste memory export"| ImportAPI
-    ExternalAI -->|"JSON profile"| ImportAPI
-
-    User --> Chat --> ChatAPI
-    ChatAPI -->|"read memory context"| Neo4j
-    ChatAPI -->|"conversation history"| Redis
-    ChatAPI --> LLM
-    ChatAPI --> EntityExtract --> LLM
-    EntityExtract -->|"MERGE nodes"| Neo4j
-
-    User --> Graph --> GetGraph --> Neo4j
-    Graph --> CreateNode --> LLM
-    CreateNode -->|"MERGE node"| Neo4j
-    Graph --> DeleteNode --> Neo4j
-
-    OnboardChat --> LLM
-    OnboardChat -->|"profile → import"| ImportAPI
-    ImportAPI --> LLM
-    ImportAPI -->|"MERGE person + nodes"| Neo4j
-
-    ChatAPI --> SaveAPI --> Neo4j
-    WalletAPI --> Neo4j
+    Flask -->|read & write| Neo4j[("Neo4j\nKnowledge Graph")]
+    Flask -->|conversation history| Redis[("Redis")]
+    Supabase -->|verify JWT| Flask
 ```
 
 ## Stack
