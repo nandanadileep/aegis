@@ -419,45 +419,48 @@ def generate_wallet_html(person_id: str, database: str) -> str:
     padding: 64px 20px 80px;
   }}
   .wrap {{ max-width: 660px; margin: 0 auto }}
-  .header {{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    margin-bottom: 36px;
+  .card-wrap {{
+    position: relative;
+    padding-top: 28px;
   }}
   .stamp {{
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 28px;
-    filter: drop-shadow(0 0 20px rgba(255,255,255,0.12));
-    user-select: none;
+    position: absolute;
+    top: -4px;
+    left: -18px;
+    font-size: 36px;
     line-height: 1;
+    user-select: none;
+    transform: rotate(-12deg);
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+    z-index: 2;
   }}
-  .copy-btn {{
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.13);
-    border-radius: 50%;
-    color: #e8e8ed;
-    font-size: 17px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-    flex-shrink: 0;
-  }}
-  .copy-btn:hover {{ background: rgba(255,255,255,0.13) }}
-  .copy-btn.copied {{ color: #30d158; border-color: rgba(48,209,88,0.28) }}
-  pre {{
+  .card {{
+    position: relative;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.07);
     border-radius: 14px;
+  }}
+  .copy-btn {{
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    color: rgba(255,255,255,0.25);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    z-index: 1;
+  }}
+  .copy-btn:hover {{ background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.15) }}
+  .copy-btn.copied {{ color: #30d158; border-color: rgba(48,209,88,0.28) }}
+  pre {{
     padding: 32px;
     font-family: inherit;
     font-size: 13px;
@@ -470,11 +473,13 @@ def generate_wallet_html(person_id: str, database: str) -> str:
 </head>
 <body>
 <div class="wrap">
-  <div class="header">
+  <div class="card-wrap">
     <div class="stamp">{stamp}</div>
-    <button class="copy-btn" onclick="copy()" title="Copy markdown">⎘</button>
+    <div class="card">
+      <button class="copy-btn" onclick="copy()" title="Copy">⎘</button>
+      <pre id="md">{md_escaped}</pre>
+    </div>
   </div>
-  <pre id="md">{md_escaped}</pre>
 </div>
 <script>
 function copy() {{
