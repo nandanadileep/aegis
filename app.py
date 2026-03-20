@@ -31,7 +31,7 @@ except ImportError:
     from memory_pipeline import run_pipeline
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
-LLM_FAST = os.getenv("LLM_FAST", "groq/llama-3.1-8b-instant")
+LLM_FAST = os.getenv("LLM_FAST", "groq/qwen3-32b")
 
 
 # ---------------------------
