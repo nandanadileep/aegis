@@ -427,14 +427,19 @@ def generate_wallet_html(person_id: str, database: str) -> str:
     margin-bottom: 36px;
   }}
   .stamp {{
-    font-size: 52px;
-    filter: drop-shadow(0 0 28px rgba(255,255,255,0.12));
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    filter: drop-shadow(0 0 20px rgba(255,255,255,0.12));
     user-select: none;
     line-height: 1;
   }}
   .copy-btn {{
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -442,7 +447,7 @@ def generate_wallet_html(person_id: str, database: str) -> str:
     border: 1px solid rgba(255,255,255,0.13);
     border-radius: 50%;
     color: #e8e8ed;
-    font-size: 18px;
+    font-size: 17px;
     cursor: pointer;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
     flex-shrink: 0;
