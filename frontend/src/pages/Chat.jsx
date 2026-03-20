@@ -92,12 +92,7 @@ export default function Chat() {
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '48px 0 24px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative', zIndex: 10 }}>
-        {messages.length === 0 && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, paddingBottom: 80, pointerEvents: 'none' }}>
-            <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>Your memory is with you.</p>
-            <p style={{ fontSize: 14, color: 'var(--text-3)', textAlign: 'center', maxWidth: 240, lineHeight: 1.6 }}>Everything you've built lives here. Start talking.</p>
-          </div>
-        )}
+        {messages.length === 0 && <EmptyState />}
         {messages.map((m, i) => <Message key={i} msg={m} />)}
         <div ref={bottomRef} />
       </div>
@@ -134,6 +129,22 @@ export default function Chat() {
           >↑</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function EmptyState() {
+  const h = new Date().getHours()
+  const { greeting, sub } =
+    h >= 5  && h < 9  ? { greeting: 'Good morning.', sub: 'Early start. Your memory is ready when you are.' } :
+    h >= 9  && h < 12 ? { greeting: 'Good morning.', sub: 'Everything you\'ve built lives here. Start talking.' } :
+    h >= 12 && h < 17 ? { greeting: 'Good afternoon.', sub: 'Your context is with you. Pick up where you left off.' } :
+    h >= 17 && h < 21 ? { greeting: 'Good evening.', sub: 'Wind down or level up — your memory\'s here either way.' } :
+                        { greeting: 'Hey, night owl.', sub: 'Late night thinking hits different. Let\'s capture it.' }
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, paddingBottom: 80, pointerEvents: 'none' }}>
+      <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>{greeting}</p>
+      <p style={{ fontSize: 14, color: 'var(--text-3)', textAlign: 'center', maxWidth: 260, lineHeight: 1.6 }}>{sub}</p>
     </div>
   )
 }
