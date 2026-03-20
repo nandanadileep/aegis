@@ -76,11 +76,13 @@ export default function Chat() {
 
       {/* Header */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 32px', height: 60, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg)', zIndex: 10, position: 'relative' }}>
-        <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>Identiti</span>
-        <nav style={{ display: 'flex', gap: 4 }}>
-          <NavLink to="/chat" active>Chat</NavLink>
-          <NavLink to="/memory">Graph</NavLink>
-        </nav>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>Identiti</span>
+          <nav style={{ display: 'flex', gap: 4 }}>
+            <NavLink to="/chat" active>Chat</NavLink>
+            <NavLink to="/memory">Graph</NavLink>
+          </nav>
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <ThemeToggle />
           <BtnSm onClick={saveTranscript}>Save</BtnSm>
