@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getSupabase } from '../lib/supabase'
 import ThemeToggle from '../components/ThemeToggle'
+import styles from './Login.module.css'
 
 export default function Login() {
   const [status, setStatus] = useState('')
@@ -12,8 +13,8 @@ export default function Login() {
       const sb = await getSupabase()
       const { data: { session } } = await sb.auth.getSession()
       if (session && !cancel) await redirect(sb, session)
-      sb.auth.onAuthStateChange(async (_e, s) => {
-        if (s && !cancel) await redirect(sb, s)
+      sb.auth.onAuthStateChange(async (event, s) => {
+        if (event === 'SIGNED_IN' && s && !cancel) await redirect(sb, s)
       })
     }
     check()
@@ -23,7 +24,7 @@ export default function Login() {
   async function redirect(sb, session) {
     const res = await fetch('/api/me', { headers: { Authorization: `Bearer ${session.access_token}` } })
     const d = await res.json()
-    window.location.href = d.exists ? '/chat' : '/onboarding'
+    window.location.href = '/onboarding'
   }
 
   async function signIn() {
@@ -37,52 +38,31 @@ export default function Login() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
-      {/* Gradient blobs */}
-      <div style={{
-        position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
-        background: 'radial-gradient(ellipse 70% 60% at 20% 50%, rgba(255,107,53,0.35) 0%, transparent 70%), radial-gradient(ellipse 50% 70% at 80% 30%, rgba(34,211,238,0.3) 0%, transparent 65%), radial-gradient(ellipse 40% 50% at 50% 80%, rgba(225,29,72,0.25) 0%, transparent 60%)',
-      }} />
-      <div style={{
-        position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
-        backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.75\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'0.04\'/%3E%3C/svg%3E")',
-        backgroundRepeat: 'repeat', backgroundSize: '200px',
-      }} />
+    <div className={styles.root}>
+      <div className={styles.blobGradient} />
+      <div className={styles.blobNoise} />
 
-      {/* Header */}
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 40px', height: 60, position: 'relative', zIndex: 10, borderBottom: '1px solid var(--border)' }}>
-        <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>Identiti</span>
+      <header className={styles.header}>
+        <span className={styles.brand}>Identiti</span>
         <ThemeToggle />
       </header>
 
-      {/* Main */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', position: 'relative', zIndex: 10 }}>
-        <div style={{ width: '100%', maxWidth: 420, animation: 'rise 0.5s cubic-bezier(0.22,1,0.36,1) both' }}>
-          <style>{`@keyframes rise { from { opacity:0; transform:translateY(24px) } to { opacity:1; transform:translateY(0) } }`}</style>
-
-          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: 8 }}>Welcome</p>
-          <h1 style={{ fontSize: 'clamp(48px,8vw,80px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, color: 'var(--text)', marginBottom: 12 }}>Identiti.</h1>
-          <p style={{ fontSize: 15, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 24 }}>Your memory is with you.<br />Sign in to continue.</p>
+      <div className={styles.main}>
+        <div className={styles.card}>
+          <p className={styles.label}>Welcome</p>
+          <h1 className={styles.heading}>Identiti.</h1>
+          <p className={styles.subtitle}>Your memory is with you.<br />Sign in to continue.</p>
 
           <button
             onClick={signIn}
             disabled={loading}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              width: '100%', padding: '16px 24px',
-              background: 'var(--text)', color: 'var(--bg)',
-              border: 'none', borderRadius: 40, fontSize: 15, fontWeight: 700,
-              fontFamily: 'Inter, sans-serif', cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'opacity 0.15s', opacity: loading ? 0.5 : 1,
-              letterSpacing: '-0.01em',
-            }}
+            className={styles.signInBtn}
           >
             <GoogleIcon />
             Continue with Google
           </button>
 
-          {status && <p style={{ fontSize: 13, color: 'var(--text-2)', textAlign: 'center', marginTop: 16 }}>{status}</p>}
-
+          {status && <p className={styles.statusText}>{status}</p>}
         </div>
       </div>
     </div>
