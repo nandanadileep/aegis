@@ -708,21 +708,27 @@ def onboard_chat():
 
 def _parse_raw_memory_to_twin(raw_text: str) -> dict:
     """Use LLM to convert any memory export format into our structured profile dict."""
-    prompt = f"""You are given a memory export from an AI assistant. Extract structured profile data from it.
+    prompt = f"""You are given a profile or memory export. Extract structured data and output it as clean, minimal node labels for a knowledge graph.
 
-Output ONLY a valid JSON object with these exact keys (omit keys with no data):
+Rules for arrays (values, skills, personality, goals, known_for):
+- Each item must be 1–3 words max. No sentences.
+- Distill the essence. "learning through hands-on practice" → "Hands-on Learning". "become a CEO" → "CEO". "building AI and ML projects including chatbots" → "AI/ML Projects".
+- Remove redundancy. If two items mean the same thing, keep one.
+- Capitalize each item like a title.
+
+Output ONLY a valid JSON object:
 {{
-  "name": "person's name if mentioned",
-  "description": "one sentence who this person is",
-  "values": ["list of values"],
-  "skills": ["list of skills"],
-  "personality": ["list of personality traits"],
-  "goals": ["list of goals"],
-  "speaking_style": "how they communicate",
-  "known_for": ["things they are known for"]
+  "name": "person's name",
+  "description": "one concise sentence who this person is",
+  "values": ["Short Label", ...],
+  "skills": ["Short Label", ...],
+  "personality": ["Short Label", ...],
+  "goals": ["Short Label", ...],
+  "speaking_style": "brief phrase",
+  "known_for": ["Short Label", ...]
 }}
 
-Memory export:
+Input:
 {raw_text}
 
 Respond with ONLY the JSON object, no explanation."""
