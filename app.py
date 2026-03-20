@@ -510,14 +510,16 @@ def _extract_and_add_nodes(person_id: str, user_message: str, reply: str) -> lis
             messages=[{
                 "role": "user",
                 "content": (
-                    "Decide what to add to the user's personal knowledge graph from this message.\n"
+                    "Extract concrete, specific facts about the user from this message to store in their personal knowledge graph.\n"
                     "Rules:\n"
-                    "- ONLY extract if the user states something definitively about themselves RIGHT NOW (e.g. 'I use Rust', 'I love music', 'I'm building a startup').\n"
-                    "- Do NOT extract vague, speculative, or future-oriented mentions (e.g. 'thinking about learning', 'might try', 'want to someday', 'heard about').\n"
-                    "- Do NOT extract things the assistant says. Do NOT infer.\n"
+                    "- ONLY extract if the user states something concrete and specific about themselves (e.g. 'I use Rust', 'I run a startup called Aegis', 'I value honesty').\n"
+                    "- The name must be a specific noun — a real skill, tool, value, project name, trait, belief. NOT a vague concept or process description.\n"
+                    "- Reject anything generic, abstract, or process-like (e.g. 'context aware thing', 'building something', 'learning stuff', 'working on it').\n"
+                    "- Do NOT extract things the assistant says. Do NOT infer. Do NOT paraphrase.\n"
+                    "- If the user says 'I use Python' → {\"name\": \"Python\", \"label\": \"Skill\"}. If they say 'I think about building' → [].\n"
                     f"Known labels: {', '.join(KNOWN_LABELS)}\n"
                     "Return a JSON array only, no explanation. Format: [{\"name\": \"Rust\", \"label\": \"Skill\"}, ...]\n"
-                    "If unsure or nothing qualifies, return []\n\n"
+                    "When in doubt, return []. It is better to return nothing than to return noise.\n\n"
                     f"User: {user_message}\n"
                     f"Assistant: {reply}"
                 )

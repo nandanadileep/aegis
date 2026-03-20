@@ -106,6 +106,9 @@ export default function Chat() {
           </nav>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500, letterSpacing: '0.02em' }}>
+            {localStorage.getItem('byok_model') ? localStorage.getItem('byok_model').split('/').pop() : 'llama-3.3-70b'}
+          </span>
           <ThemeToggle />
           <BtnSm onClick={() => setByokOpen(true)}>
             {localStorage.getItem('byok_key') ? 'Key set' : 'API Key'}
@@ -291,20 +294,6 @@ function Message({ msg }) {
       }}
         dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
       />
-      {msg.addedNodes?.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, maxWidth: '72%' }}>
-          {msg.addedNodes.map((n, i) => (
-            <span key={i} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-              background: 'rgba(0,0,238,0.08)', border: '1px solid rgba(0,0,238,0.2)', color: '#0000ee',
-              letterSpacing: '-0.01em',
-            }}>
-              <span style={{ opacity: 0.6 }}>✦</span> {n.name} · {n.label}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
