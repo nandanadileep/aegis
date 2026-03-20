@@ -276,26 +276,6 @@ export default function Graph() {
             <StatRow k="Relationships" v={stats.edges} />
           </Section>
 
-          <Section label="Shape">
-            <style>{`
-              @keyframes shapeTicker { from { transform:translateX(0) } to { transform:translateX(-50%) } }
-              .shape-strip:hover { animation-play-state: paused !important; }
-            `}</style>
-            <div style={{ overflow:'hidden', width:'100%', maskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)', WebkitMaskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)' }}>
-              <div className="shape-strip" style={{ display:'flex', gap:4, animation:'shapeTicker 28s linear infinite', width:'max-content' }}>
-                {[...SHAPE_STRIP, ...SHAPE_STRIP].map((s,i) => (
-                  <button key={i} title={s.label} onClick={() => {
-                    if (shapeMode?.shape === s.shape) { setShapeMode(null); graphRef.current?.setShape(null) }
-                    else { setShapeMode(s); graphRef.current?.setShape(s.shape) }
-                  }}
-                    style={{ fontSize:20, background: shapeMode?.shape===s.shape&&i<SHAPE_STRIP.length ? 'var(--surface)' : 'transparent', border:'none', cursor:'pointer', padding:'4px 3px', borderRadius:6, lineHeight:1, flexShrink:0, outline:'none' }}>
-                    {s.icon}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </Section>
-
           {searchResults && (
             <Section label="Search Results">
               {searchResults.nodes.length===0&&searchResults.edges.length===0 && <p style={{ fontSize:13, color:'var(--text-3)', textAlign:'center', padding:'8px 0' }}>No results</p>}
@@ -340,6 +320,23 @@ export default function Graph() {
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
               <button style={{ ...S.btn, justifyContent:'center' }} onClick={()=>{ setNodeForm({label:'',name:'',props:''}); setModal('addNode') }}>+ Node</button>
               <button style={{ ...S.btn, justifyContent:'center' }} onClick={()=>{ setEdgeForm({from:selectedNode||'',type:'',to:''}); setModal('addEdge') }}>+ Relationship</button>
+            </div>
+            <style>{`
+              @keyframes shapeTicker { from { transform:translateX(0) } to { transform:translateX(-50%) } }
+              .shape-strip:hover { animation-play-state: paused !important; }
+            `}</style>
+            <div style={{ overflow:'hidden', width:'100%', marginTop:10, maskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)', WebkitMaskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)' }}>
+              <div className="shape-strip" style={{ display:'flex', gap:4, animation:'shapeTicker 28s linear infinite', width:'max-content' }}>
+                {[...SHAPE_STRIP, ...SHAPE_STRIP].map((s,i) => (
+                  <button key={i} title={s.label} onClick={() => {
+                    if (shapeMode?.shape === s.shape) { setShapeMode(null); graphRef.current?.setShape(null) }
+                    else { setShapeMode(s); graphRef.current?.setShape(s.shape) }
+                  }}
+                    style={{ fontSize:20, background: shapeMode?.shape===s.shape&&i<SHAPE_STRIP.length ? 'var(--surface)' : 'transparent', border:'none', cursor:'pointer', padding:'4px 3px', borderRadius:6, lineHeight:1, flexShrink:0, outline:'none' }}>
+                    {s.icon}
+                  </button>
+                ))}
+              </div>
             </div>
           </Section>
 
