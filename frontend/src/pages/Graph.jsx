@@ -651,8 +651,8 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
     const ay=Math.sin(an.angle)*an.ar+Math.cos(an.phase)*5
     // Shape attraction: gently pull baseX/baseY toward shape target
     if(an.shapeTarget){
-      an.baseX+=(an.shapeTarget.x-an.baseX)*0.018
-      an.baseY+=(an.shapeTarget.y-an.baseY)*0.018
+      an.baseX+=(an.shapeTarget.x-an.baseX)*0.05
+      an.baseY+=(an.shapeTarget.y-an.baseY)*0.05
     }
     if(!shiftHeld){
       const dx=mouse.wx-an.x, dy=mouse.wy-an.y
