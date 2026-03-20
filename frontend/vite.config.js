@@ -9,6 +9,7 @@ export default defineConfig({
       '/api': 'http://localhost:3000',
       '/chat': { target: 'http://localhost:3000', changeOrigin: true },
       '/save': 'http://localhost:3000',
+      '/clear-history': 'http://localhost:3000',
       '/context': 'http://localhost:3000',
     },
   },

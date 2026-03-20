@@ -278,17 +278,24 @@ def generate_wallet_markdown(person_id: str, database: str) -> str:
     return "\n".join(lines)
 
 
-_BASE_PROMPT = (
-    "You are a helpful assistant. "
-    "Answer what the user asks. Do not proactively mention or volunteer information about them. "
-    "Do not say things like 'I was thinking about you' or bring up their background unprompted."
-)
-
-def build_system_prompt(memory_context: str) -> str:
-    has_memory = memory_context and memory_context != "No stored memory yet."
-    if not has_memory:
-        return _BASE_PROMPT
-    return _BASE_PROMPT + "\n\nRelevant context about the user:\n" + memory_context
+def needs_retrieval(message: str) -> bool:
+    """Fast check: does this message need personal context from the user's graph?"""
+    if _GREETING.match(message.strip()):
+        return False
+    try:
+        result = litellm.completion(
+            model=LLM_FAST,
+            messages=[{"role": "user", "content": (
+                "Does answering this message require personal context about the user "
+                "(their skills, projects, goals, values, interests, etc.)? "
+                "Answer only YES or NO.\n\nMessage: " + message
+            )}],
+            temperature=0,
+            max_tokens=3,
+        )
+        return result.choices[0].message.content.strip().upper().startswith("Y")
+    except Exception:
+        return False
 
 
 
@@ -481,22 +488,27 @@ def chat():
 
     person_id = resolve_person_id(data)
 
-    try:
-        records = fetch_relevant_memory(person_id, DATABASE, user_message)
-    except Exception as e:
-        return jsonify({"error": "memory unavailable", "detail": str(e)}), 503
-
-    memory_context = format_memory_context(records)
-    system_prompt = build_system_prompt(memory_context)
-
     storage_warning = None
     try:
         conversation_history = load_conversation_history(person_id)
     except Exception as e:
         conversation_history = []
         storage_warning = f"redis read failed: {e}"
-    history = [{"role": "system", "content": system_prompt}, *conversation_history]
-    history.append({"role": "user", "content": user_message})
+
+    # Retrieval pipeline: only fetch graph context when the message actually needs it
+    context_block = ""
+    if needs_retrieval(user_message):
+        try:
+            records = fetch_relevant_memory(person_id, DATABASE, user_message)
+            ctx = format_memory_context(records)
+            if ctx and ctx != "No stored memory yet.":
+                context_block = f"[Context about the user from their knowledge graph:\n{ctx}]"
+        except Exception:
+            pass
+
+    # Build message with context injected into user turn if needed
+    augmented_message = f"{context_block}\n\n{user_message}".strip() if context_block else user_message
+    history = [*conversation_history, {"role": "user", "content": augmented_message}]
 
     try:
         completion = litellm.completion(
@@ -634,6 +646,17 @@ def proxy_completions():
         pass
 
     return jsonify(completion.model_dump())
+
+
+@app.route("/clear-history", methods=["POST"])
+@require_auth
+def clear_history():
+    person_id = resolve_person_id(parse_body_json())
+    try:
+        clear_conversation_history(person_id)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"ok": True})
 
 
 @app.route("/save", methods=["POST"])

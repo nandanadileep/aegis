@@ -81,6 +81,15 @@ export default function Chat() {
     }
   }
 
+  async function newChat() {
+    try {
+      await fetch('/clear-history', { method: 'POST', headers: authHeaders(session) })
+    } catch {}
+    setMessages([])
+    transcript.current = []
+    inputRef.current?.focus()
+  }
+
   async function saveTranscript() {
     if (!transcript.current.length || !session) return
     try {
@@ -113,6 +122,7 @@ export default function Chat() {
           <BtnSm onClick={() => setByokOpen(true)}>
             {byokKey ? 'Key set' : 'API Key'}
           </BtnSm>
+          <BtnSm onClick={newChat}>New chat</BtnSm>
           <BtnSm onClick={saveTranscript}>Save</BtnSm>
           <BtnPrimary onClick={signOut}>Sign out</BtnPrimary>
         </div>
