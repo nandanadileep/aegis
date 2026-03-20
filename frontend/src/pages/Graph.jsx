@@ -7,6 +7,12 @@ const S = {
   btnPrimary: { background:'var(--text)',border:'none',color:'var(--bg)' },
 }
 
+const SI = ({ children }) => (
+  <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display:'block' }}>
+    {children}
+  </svg>
+)
+
 const SHAPE_COLORS = {
   octopus:  {fill:'#7c5c9e',glow:'rgba(124,92,158,0.5)'},
   jellyfish:{fill:'#a8607e',glow:'rgba(168,96,126,0.5)'},
@@ -26,39 +32,21 @@ const SHAPE_COLORS = {
 }
 
 const SHAPE_STRIP = [
-  {icon:'🐙',shape:'octopus',label:'Octopus'},
-  {icon:'🪼',shape:'jellyfish',label:'Jellyfish'},
-  {icon:'🐟',shape:'fish',label:'Fish'},
-  {icon:'🐋',shape:'whale',label:'Whale'},
-  {icon:'⭐',shape:'starfish',label:'Starfish'},
-  {icon:'🦋',shape:'butterfly',label:'Butterfly'},
-  {icon:'❤️',shape:'heart',label:'Heart'},
-  {icon:'🦅',shape:'bird',label:'Eagle'},
-  {icon:'🌀',shape:'spiral',label:'Spiral'},
-  {icon:'❄️',shape:'snowflake',label:'Snowflake'},
-  {icon:'🌸',shape:'flower',label:'Flower'},
-  {icon:'🌲',shape:'tree',label:'Tree'},
-  {icon:'🐍',shape:'snake',label:'Snake'},
-  {icon:'🌙',shape:'crescent',label:'Crescent'},
-  {icon:'💎',shape:'diamond',label:'Diamond'},
-  {icon:'🦈',shape:'fish',label:'Shark'},
-  {icon:'🦑',shape:'octopus',label:'Squid'},
-  {icon:'🐬',shape:'fish',label:'Dolphin'},
-  {icon:'🕊️',shape:'bird',label:'Dove'},
-  {icon:'🐠',shape:'fish',label:'Clownfish'},
-  {icon:'🦜',shape:'bird',label:'Parrot'},
-  {icon:'🐳',shape:'whale',label:'Humpback'},
-  {icon:'☀️',shape:'snowflake',label:'Sun'},
-  {icon:'🦀',shape:'starfish',label:'Crab'},
-  {icon:'🌺',shape:'flower',label:'Hibiscus'},
-  {icon:'🎯',shape:'spiral',label:'Target'},
-  {icon:'🦚',shape:'flower',label:'Peacock'},
-  {icon:'🐡',shape:'fish',label:'Puffer'},
-  {icon:'🦢',shape:'bird',label:'Swan'},
-  {icon:'🦭',shape:'whale',label:'Seal'},
-  {icon:'🌟',shape:'starfish',label:'Starburst'},
-  {icon:'🐉',shape:'snake',label:'Dragon'},
-  {icon:'🦋',shape:'butterfly',label:'Moth'},
+  { icon: <SI><path d="M10 16c0 0-7-4.5-7-9a3.5 3.5 0 0 1 7-1 3.5 3.5 0 0 1 7 1c0 4.5-7 9-7 9z"/></SI>, shape:'heart', label:'Heart' },
+  { icon: <SI><path d="M10 2l8 8-8 8-8-8z"/></SI>, shape:'diamond', label:'Diamond' },
+  { icon: <SI><path d="M10 2l2.4 5.8h6.1l-4.9 3.9 1.9 5.8L10 14l-5.5 3.5 1.9-5.8L2.5 7.8h6.1z"/></SI>, shape:'starfish', label:'Star' },
+  { icon: <SI><path d="M13 4a6 6 0 1 0 0 12 4.5 4.5 0 1 1 0-12z"/></SI>, shape:'crescent', label:'Crescent' },
+  { icon: <SI><line x1="10" y1="2" x2="10" y2="18"/><line x1="2" y1="10" x2="18" y2="10"/><line x1="4.3" y1="4.3" x2="15.7" y2="15.7"/><line x1="15.7" y1="4.3" x2="4.3" y2="15.7"/></SI>, shape:'snowflake', label:'Snowflake' },
+  { icon: <SI><path d="M4 10 Q4 3 10 3 Q17 3 17 10 Q17 16 12 16 Q8 16 8 12 Q8 8 11 8"/></SI>, shape:'spiral', label:'Spiral' },
+  { icon: <SI><circle cx="10" cy="10" r="2.5"/><line x1="10" y1="2" x2="10" y2="5.5"/><line x1="10" y1="14.5" x2="10" y2="18"/><line x1="2" y1="10" x2="5.5" y2="10"/><line x1="14.5" y1="10" x2="18" y2="10"/><line x1="4.2" y1="4.2" x2="6.4" y2="6.4"/><line x1="13.6" y1="13.6" x2="15.8" y2="15.8"/><line x1="15.8" y1="4.2" x2="13.6" y2="6.4"/><line x1="6.4" y1="13.6" x2="4.2" y2="15.8"/></SI>, shape:'flower', label:'Flower' },
+  { icon: <SI><path d="M10 2l7 9H3z"/><rect x="8.5" y="11" width="3" height="7" rx="0.5"/></SI>, shape:'tree', label:'Tree' },
+  { icon: <SI><path d="M3 10q5.5-6 11 0q-5.5 6-11 0z"/><path d="M14 6.5l4-3-1 6.5 1 6.5-4-3"/></SI>, shape:'fish', label:'Fish' },
+  { icon: <SI><path d="M2 10c3-5 10-4 14 0c-4 5-11 5-14 0z"/><line x1="16" y1="7.5" x2="19" y2="5.5"/><line x1="16" y1="12.5" x2="19" y2="14.5"/></SI>, shape:'whale', label:'Whale' },
+  { icon: <SI><path d="M2 12c2-5 5-5 8-3 3-2 6-2 8 3"/></SI>, shape:'bird', label:'Bird' },
+  { icon: <SI><line x1="10" y1="5" x2="10" y2="15"/><path d="M3 7.5c0-4.5 7-3 7 3"/><path d="M17 7.5c0-4.5-7-3-7 3"/><path d="M3 12.5c0 4.5 7 3 7-3"/><path d="M17 12.5c0 4.5-7 3-7-3"/></SI>, shape:'butterfly', label:'Butterfly' },
+  { icon: <SI><circle cx="10" cy="7" r="3"/><path d="M7.5 9.5c-.5 2.5-1 4.5-.5 7M9.2 10c-.2 2.5 0 5 .5 7M10.8 10c.2 2.5 0 5-.5 7M12.5 9.5c.5 2.5 1 4.5.5 7"/></SI>, shape:'octopus', label:'Octopus' },
+  { icon: <SI><path d="M4 9a6 4.5 0 0 1 12 0"/><line x1="7" y1="9" x2="7" y2="17"/><line x1="10" y1="9" x2="10" y2="18"/><line x1="13" y1="9" x2="13" y2="17"/></SI>, shape:'jellyfish', label:'Jellyfish' },
+  { icon: <SI><path d="M3 6.5c2-3.5 5-3 7 .5s5 3 7-.5M3 13.5c2 3.5 5 3 7-.5s5-3 7 .5"/></SI>, shape:'snake', label:'Snake' },
 ]
 
 export default function Graph() {
@@ -321,24 +309,27 @@ export default function Graph() {
               <button style={{ ...S.btn, justifyContent:'center' }} onClick={()=>{ setNodeForm({label:'',name:'',props:''}); setModal('addNode') }}>+ Node</button>
               <button style={{ ...S.btn, justifyContent:'center' }} onClick={()=>{ setEdgeForm({from:selectedNode||'',type:'',to:''}); setModal('addEdge') }}>+ Relationship</button>
             </div>
+          </Section>
+
+          <div style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)' }}>
             <style>{`
               @keyframes shapeTicker { from { transform:translateX(0) } to { transform:translateX(-50%) } }
               .shape-strip:hover { animation-play-state: paused !important; }
             `}</style>
-            <div style={{ overflow:'hidden', width:'100%', marginTop:10, maskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)', WebkitMaskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)' }}>
-              <div className="shape-strip" style={{ display:'flex', gap:4, animation:'shapeTicker 28s linear infinite', width:'max-content' }}>
+            <div style={{ overflow:'hidden', width:'100%', maskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)', WebkitMaskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)' }}>
+              <div className="shape-strip" style={{ display:'flex', gap:2, animation:'shapeTicker 20s linear infinite', width:'max-content' }}>
                 {[...SHAPE_STRIP, ...SHAPE_STRIP].map((s,i) => (
                   <button key={i} title={s.label} onClick={() => {
                     if (shapeMode?.shape === s.shape) { setShapeMode(null); graphRef.current?.setShape(null) }
                     else { setShapeMode(s); graphRef.current?.setShape(s.shape) }
                   }}
-                    style={{ fontSize:20, background: shapeMode?.shape===s.shape&&i<SHAPE_STRIP.length ? 'var(--surface)' : 'transparent', border:'none', cursor:'pointer', padding:'4px 3px', borderRadius:6, lineHeight:1, flexShrink:0, outline:'none' }}>
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', width:28, height:28, background: shapeMode?.shape===s.shape&&i<SHAPE_STRIP.length ? 'var(--surface)' : 'transparent', border:'none', cursor:'pointer', borderRadius:6, flexShrink:0, outline:'none', color: shapeMode?.shape===s.shape&&i<SHAPE_STRIP.length ? 'var(--text)' : 'var(--text-3)', transition:'color 0.15s,background 0.15s' }}>
                     {s.icon}
                   </button>
                 ))}
               </div>
             </div>
-          </Section>
+          </div>
 
           {pendingCount > 0 && (
             <Section label="Pending">
