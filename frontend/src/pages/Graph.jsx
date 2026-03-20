@@ -833,11 +833,11 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
   }
 
   const NODE_PALETTE = {
-    'Person':{fill:'#2997ff',glow:'rgba(41,151,255,0.8)'},'Skill':{fill:'#30d158',glow:'rgba(48,209,88,0.7)'},
-    'Value':{fill:'#ff9f0a',glow:'rgba(255,159,10,0.7)'},'Goal':{fill:'#ff375f',glow:'rgba(255,55,95,0.7)'},
-    'Trait':{fill:'#bf5af2',glow:'rgba(191,90,242,0.7)'},'Identity':{fill:'#64d2ff',glow:'rgba(100,210,255,0.7)'},
-    'Project':{fill:'#ffd60a',glow:'rgba(255,214,10,0.7)'},'Behavior':{fill:'#ff6961',glow:'rgba(255,105,97,0.7)'},
-    'Constraint':{fill:'#ac8e68',glow:'rgba(172,142,104,0.7)'},'Belief':{fill:'#32ade6',glow:'rgba(50,173,230,0.7)'},
+    'Person':{fill:'#4a7fa8',glow:'rgba(74,127,168,0.5)'},'Skill':{fill:'#4a8c62',glow:'rgba(74,140,98,0.5)'},
+    'Value':{fill:'#a07840',glow:'rgba(160,120,64,0.5)'},'Goal':{fill:'#9a4a52',glow:'rgba(154,74,82,0.5)'},
+    'Trait':{fill:'#7c5a9e',glow:'rgba(124,90,158,0.5)'},'Identity':{fill:'#4a8a9e',glow:'rgba(74,138,158,0.5)'},
+    'Project':{fill:'#9a8840',glow:'rgba(154,136,64,0.5)'},'Behavior':{fill:'#a05858',glow:'rgba(160,88,88,0.5)'},
+    'Constraint':{fill:'#7a6a52',glow:'rgba(122,106,82,0.5)'},'Belief':{fill:'#3a7a9e',glow:'rgba(58,122,158,0.5)'},
   }
   let shapeColorOverride = null
   const dynPalCache = new Map()
