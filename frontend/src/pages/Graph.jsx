@@ -7,6 +7,42 @@ const S = {
   btnPrimary: { background:'var(--text)',border:'none',color:'var(--bg)' },
 }
 
+const SHAPE_STRIP = [
+  {icon:'🐙',shape:'octopus',label:'Octopus'},
+  {icon:'🪼',shape:'jellyfish',label:'Jellyfish'},
+  {icon:'🐟',shape:'fish',label:'Fish'},
+  {icon:'🐋',shape:'whale',label:'Whale'},
+  {icon:'⭐',shape:'starfish',label:'Starfish'},
+  {icon:'🦋',shape:'butterfly',label:'Butterfly'},
+  {icon:'❤️',shape:'heart',label:'Heart'},
+  {icon:'🦅',shape:'bird',label:'Eagle'},
+  {icon:'🌀',shape:'spiral',label:'Spiral'},
+  {icon:'❄️',shape:'snowflake',label:'Snowflake'},
+  {icon:'🌸',shape:'flower',label:'Flower'},
+  {icon:'🌲',shape:'tree',label:'Tree'},
+  {icon:'🐍',shape:'snake',label:'Snake'},
+  {icon:'🌙',shape:'crescent',label:'Crescent'},
+  {icon:'💎',shape:'diamond',label:'Diamond'},
+  {icon:'🦈',shape:'fish',label:'Shark'},
+  {icon:'🦑',shape:'octopus',label:'Squid'},
+  {icon:'🐬',shape:'fish',label:'Dolphin'},
+  {icon:'🕊️',shape:'bird',label:'Dove'},
+  {icon:'🐠',shape:'fish',label:'Clownfish'},
+  {icon:'🦜',shape:'bird',label:'Parrot'},
+  {icon:'🐳',shape:'whale',label:'Humpback'},
+  {icon:'☀️',shape:'snowflake',label:'Sun'},
+  {icon:'🦀',shape:'starfish',label:'Crab'},
+  {icon:'🌺',shape:'flower',label:'Hibiscus'},
+  {icon:'🎯',shape:'spiral',label:'Target'},
+  {icon:'🦚',shape:'flower',label:'Peacock'},
+  {icon:'🐡',shape:'fish',label:'Puffer'},
+  {icon:'🦢',shape:'bird',label:'Swan'},
+  {icon:'🦭',shape:'whale',label:'Seal'},
+  {icon:'🌟',shape:'starfish',label:'Starburst'},
+  {icon:'🐉',shape:'snake',label:'Dragon'},
+  {icon:'🦋',shape:'butterfly',label:'Moth'},
+]
+
 export default function Graph() {
   const [session, setSession] = useState(null)
   const canvasRef = useRef(null)
@@ -223,36 +259,26 @@ export default function Graph() {
           </Section>
 
           <Section label="Shape">
-            <button style={{ ...S.btn, width:'100%', justifyContent:'center', background: shapeMode ? 'var(--surface)' : 'transparent', letterSpacing:'0.02em' }}
-              onClick={() => {
-                const SHAPES = [
-                  { name:'jellyfish', icon:'🪼' },
-                  { name:'fish',      icon:'🐟' },
-                  { name:'octopus',   icon:'🐙' },
-                  { name:'whale',     icon:'🐋' },
-                  { name:'starfish',  icon:'⭐' },
-                ]
-                if (shapeMode) {
-                  setShapeMode(null)
-                  graphRef.current?.setShape(null)
-                } else {
-                  const s = SHAPES[Math.floor(Math.random() * SHAPES.length)]
-                  setShapeMode(s)
-                  graphRef.current?.setShape(s.name)
-                }
-              }}>
-              {shapeMode ? `${shapeMode.icon} ${shapeMode.name} · release` : '✦ Morph into shape'}
-            </button>
+            <style>{`
+              @keyframes shapeTicker { from { transform:translateX(0) } to { transform:translateX(-50%) } }
+              .shape-strip:hover { animation-play-state: paused !important; }
+            `}</style>
             {shapeMode && (
-              <div style={{ display:'flex', gap:6, marginTop:6, flexWrap:'wrap' }}>
-                {[{name:'jellyfish',icon:'🪼'},{name:'fish',icon:'🐟'},{name:'octopus',icon:'🐙'},{name:'whale',icon:'🐋'},{name:'starfish',icon:'⭐'}].map(s => (
-                  <button key={s.name} onClick={() => { setShapeMode(s); graphRef.current?.setShape(s.name) }}
-                    style={{ ...S.btn, padding:'5px 10px', fontSize:12, background: shapeMode?.name===s.name ? 'var(--surface)' : 'transparent', border: shapeMode?.name===s.name ? '1px solid var(--border-strong)' : '1px solid transparent' }}>
+              <button onClick={() => { setShapeMode(null); graphRef.current?.setShape(null) }}
+                style={{ ...S.btn, width:'100%', justifyContent:'center', fontSize:11, marginBottom:6, color:'var(--text-3)' }}>
+                {shapeMode.icon} release
+              </button>
+            )}
+            <div style={{ overflow:'hidden', width:'100%', maskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)', WebkitMaskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)' }}>
+              <div className="shape-strip" style={{ display:'flex', gap:4, animation:'shapeTicker 28s linear infinite', width:'max-content' }}>
+                {[...SHAPE_STRIP, ...SHAPE_STRIP].map((s,i) => (
+                  <button key={i} title={s.label} onClick={() => { setShapeMode(s); graphRef.current?.setShape(s.shape) }}
+                    style={{ fontSize:20, background: shapeMode?.label===s.label&&i<SHAPE_STRIP.length ? 'var(--surface)' : 'transparent', border:'none', cursor:'pointer', padding:'4px 3px', borderRadius:6, lineHeight:1, flexShrink:0, outline:'none' }}>
                     {s.icon}
                   </button>
                 ))}
               </div>
-            )}
+            </div>
           </Section>
 
           {searchResults && (
@@ -634,6 +660,93 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
             y:cy+Math.sin(baseA)*R*1.05*t+(Math.random()-.5)*spread*2
           })
         }
+      }
+    } else if (shape==='butterfly') {
+      const bodyN=Math.max(3,Math.floor(n*0.07))
+      for(let i=0;i<bodyN;i++) pts.push({ x:cx+(Math.random()-.5)*R*0.08, y:cy-R*0.3+i*(R*0.6/bodyN) })
+      const wingN=n-bodyN, pw=Math.floor(wingN/2)
+      for(let i=0;i<pw;i++){
+        const a=(i/pw)*Math.PI*2, r=Math.sqrt(Math.random())
+        const bx=Math.cos(a)*R*0.52*r, by=Math.sin(a)*R*0.35*r
+        pts.push({ x:cx-R*0.42+bx*Math.cos(-0.35)-by*Math.sin(-0.35), y:cy-R*0.08+bx*Math.sin(-0.35)+by*Math.cos(-0.35) })
+      }
+      for(let i=0;i<wingN-pw;i++){
+        const a=(i/(wingN-pw))*Math.PI*2, r=Math.sqrt(Math.random())
+        const bx=Math.cos(a)*R*0.52*r, by=Math.sin(a)*R*0.35*r
+        pts.push({ x:cx+R*0.42+bx*Math.cos(0.35)-by*Math.sin(0.35), y:cy-R*0.08+bx*Math.sin(0.35)+by*Math.cos(0.35) })
+      }
+    } else if (shape==='heart') {
+      for(let i=0;i<n;i++){
+        const t=(i/n)*Math.PI*2
+        const hx=R*0.65*Math.pow(Math.sin(t),3)
+        const hy=-R*0.55*(0.8125*Math.cos(t)-0.3125*Math.cos(2*t)-0.125*Math.cos(3*t)-0.0625*Math.cos(4*t))
+        const j=R*0.08*(Math.random()-.5)
+        pts.push({ x:cx+hx+j, y:cy+hy+R*0.08+j })
+      }
+    } else if (shape==='bird') {
+      const bodyN=Math.max(3,Math.floor(n*0.08))
+      for(let i=0;i<bodyN;i++) pts.push({ x:cx+(Math.random()-.5)*R*0.1, y:cy+(Math.random()-.5)*R*0.1 })
+      const wingN=n-bodyN, pw=Math.floor(wingN/2)
+      for(let i=0;i<pw;i++){
+        const t=(i+1)/(pw+1), arc=Math.sin(t*Math.PI)*R*0.18
+        pts.push({ x:cx-R*0.08-t*R*0.92, y:cy-arc-t*R*0.28+(Math.random()-.5)*R*0.06 })
+      }
+      for(let i=0;i<wingN-pw;i++){
+        const t=(i+1)/(wingN-pw+1), arc=Math.sin(t*Math.PI)*R*0.18
+        pts.push({ x:cx+R*0.08+t*R*0.92, y:cy-arc-t*R*0.28+(Math.random()-.5)*R*0.06 })
+      }
+    } else if (shape==='spiral') {
+      const turns=3.2, tMax=turns*Math.PI*2
+      for(let i=0;i<n;i++){
+        const theta=(i/n)*tMax, r=(theta/tMax)*R*1.1
+        pts.push({ x:cx+r*Math.cos(theta)+(Math.random()-.5)*R*0.04, y:cy+r*Math.sin(theta)+(Math.random()-.5)*R*0.04 })
+      }
+    } else if (shape==='snowflake') {
+      const nArms=6, perArm=n/nArms
+      for(let arm=0;arm<nArms;arm++){
+        const baseA=(arm/nArms)*Math.PI*2, count=arm<n%nArms?Math.ceil(perArm):Math.floor(perArm)
+        for(let j=0;j<count;j++){
+          const t=(j+1)/(count+1), sp=R*0.05*(1-t)
+          pts.push({ x:cx+Math.cos(baseA)*R*t+(Math.random()-.5)*sp*2, y:cy+Math.sin(baseA)*R*t+(Math.random()-.5)*sp*2 })
+        }
+      }
+    } else if (shape==='flower') {
+      const nP=6, cN=Math.max(4,Math.floor(n*0.1)), pN=n-cN, perP=pN/nP
+      for(let i=0;i<cN;i++){ const a=Math.random()*Math.PI*2,r=Math.random()*R*0.14; pts.push({ x:cx+Math.cos(a)*r, y:cy+Math.sin(a)*r }) }
+      for(let p=0;p<nP;p++){
+        const baseA=(p/nP)*Math.PI*2, pcx=cx+Math.cos(baseA)*R*0.52, pcy=cy+Math.sin(baseA)*R*0.52
+        const count=p<pN%nP?Math.ceil(perP):Math.floor(perP)
+        for(let j=0;j<count;j++){ const a=Math.random()*Math.PI*2,r=Math.sqrt(Math.random())*R*0.28; pts.push({ x:pcx+Math.cos(a)*r, y:pcy+Math.sin(a)*r }) }
+      }
+    } else if (shape==='tree') {
+      const trunkN=Math.max(3,Math.floor(n*0.07))
+      for(let i=0;i<trunkN;i++) pts.push({ x:cx+(Math.random()-.5)*R*0.1, y:cy+R*0.38+i*(R*0.38/trunkN) })
+      const cN=n-trunkN
+      for(let i=0;i<cN;i++){
+        const lv=Math.sqrt(Math.random()), y=cy-R*0.85+lv*R*1.15, hw=R*0.72*lv
+        pts.push({ x:cx+(Math.random()*2-1)*hw, y })
+      }
+    } else if (shape==='snake') {
+      const sp=R*0.09
+      for(let i=0;i<n;i++){
+        const t=i/n, y=cy+R*1.1*(t-0.5)
+        const x=cx+R*0.45*Math.sin(t*Math.PI*3.5)
+        pts.push({ x:x+(Math.random()-.5)*sp, y:y+(Math.random()-.5)*sp })
+      }
+    } else if (shape==='crescent') {
+      let att=0
+      while(pts.length<n&&att<n*30){
+        att++; const a=Math.random()*Math.PI*2,r=Math.sqrt(Math.random())*R
+        const px=cx+Math.cos(a)*r, py=cy+Math.sin(a)*r
+        const idx=px-(cx+R*0.32), idy=py-cy
+        if(idx*idx+idy*idy>(R*0.72)*(R*0.72)) pts.push({ x:px, y:py })
+      }
+    } else if (shape==='diamond') {
+      for(let i=0;i<n;i++){
+        const rx=R*0.72, ry=R*0.98
+        let x,y
+        do{ x=(Math.random()*2-1)*rx; y=(Math.random()*2-1)*ry }while(Math.abs(x)/rx+Math.abs(y)/ry>1)
+        pts.push({ x:cx+x, y:cy+y })
       }
     }
 
