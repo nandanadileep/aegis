@@ -16,13 +16,26 @@ try:
 except ImportError:
     redis = None
 
+try:
+    from scripts.crypto import enc, node_hash
+except ImportError:
+    try:
+        from crypto import enc, node_hash  # type: ignore
+    except ImportError:
+        def enc(v, u): return v  # type: ignore
+        def node_hash(v, u): return v  # type: ignore
+
 
 THRESHOLDS = {
-    "identity": 0.6,
-    "behavior": 0.75,
-    "projects": 0.65,
+    "identity":    0.6,
+    "skills":      0.55,
+    "behavior":    0.75,
+    "projects":    0.65,
+    "goals":       0.65,
+    "traits":      0.7,
+    "beliefs":     0.8,
     "constraints": 0.7,
-    "values": 0.85,
+    "values":      0.85,
 }
 
 
@@ -83,8 +96,12 @@ def staging_key(person_id: str) -> str:
     return f"staging:{person_id}"
 
 
-def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, List[Dict[str, Any]]]:
-    """Return extraction dict keyed by category; each item has key/value/status."""
+def call_llm_extract(conversation: str, use_mock: bool = False, llm_fn=None) -> Dict[str, List[Dict[str, Any]]]:
+    """Return extraction dict keyed by category; each item has key/value/status.
+
+    llm_fn: optional callable with signature llm_fn(messages, temperature, **kw) -> completion.
+            Falls back to litellm.completion with the default model if not provided.
+    """
     if use_mock:
         return {
             "identity": [
@@ -106,21 +123,40 @@ def call_llm_extract(conversation: str, use_mock: bool = False) -> Dict[str, Lis
         }
 
     prompt = (
-        "Extract any new information from the conversation in the five categories. "
-        "Return JSON with keys identity, behavior, projects, constraints, values. "
-        "Each value is a list of objects with keys: key, value, status "
-        "(one of first_mention, confirmation, contradiction, explicit_preference). "
-        "Use empty list if nothing new."
+        "Extract only concrete, specific facts the USER explicitly states about themselves. "
+        "Do NOT extract things the assistant says. Do NOT infer. Do NOT paraphrase vague statements.\n\n"
+        "NEVER extract:\n"
+        "  - Health, medical, or mental health information\n"
+        "  - Financial details (salary, debt, bank info, card numbers)\n"
+        "  - Government IDs, passport, SSN, or national ID numbers\n"
+        "  - Passwords, tokens, or credentials of any kind\n"
+        "  - Information about other people (family, friends, coworkers) — only about the user\n"
+        "  - Precise home address or GPS coordinates\n\n"
+        "Categories (only what the user explicitly states about themselves):\n"
+        "  identity    — name, city/region, professional role\n"
+        "  skills      — specific tools, languages, or abilities they use (e.g. Python, welding, Neo4j)\n"
+        "  behavior    — how they work or communicate (habits, working style)\n"
+        "  projects    — specific named projects or ventures they're building\n"
+        "  goals       — concrete objectives they're working toward\n"
+        "  traits      — personality characteristics they describe about themselves\n"
+        "  beliefs     — explicit worldviews or principles they hold\n"
+        "  constraints — real limits they mention (time, budget, access) — no financial specifics\n"
+        "  values      — explicit values they name (honesty, speed, etc.)\n\n"
+        "Return JSON with exactly these keys: "
+        "identity, skills, behavior, projects, goals, traits, beliefs, constraints, values.\n"
+        "Each value is a list of objects: {\"key\": str, \"value\": str, \"status\": one of "
+        "[first_mention, confirmation, explicit_preference, contradiction]}.\n"
+        "If nothing concrete was stated for a category, use [].\n"
+        "When in doubt, return []."
     )
-    model_name = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
-    completion = litellm.completion(
-        model=model_name,
-        temperature=0,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "user", "content": prompt + "\n\nConversation:\n" + conversation}
-        ],
-    )
+    messages = [{"role": "user", "content": prompt + "\n\nConversation:\n" + conversation}]
+
+    if llm_fn is not None:
+        completion = llm_fn(messages=messages, temperature=0)
+    else:
+        model_name = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
+        completion = litellm.completion(model=model_name, temperature=0, messages=messages)
+
     content = completion.choices[0].message.content
     try:
         return json.loads(content)
@@ -204,18 +240,26 @@ def split_ready(staging: Dict[str, List[Dict[str, Any]]]) -> Tuple[Dict[str, Lis
 
 def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dict[str, Any]]]) -> None:
     label_map = {
-        "identity": "Identity",
-        "behavior": "Behavior",
-        "projects": "Project",
+        "identity":    "Identity",
+        "skills":      "Skill",
+        "behavior":    "Behavior",
+        "projects":    "Project",
+        "goals":       "Goal",
+        "traits":      "Trait",
+        "beliefs":     "Belief",
         "constraints": "Constraint",
-        "values": "Value",
+        "values":      "Value",
     }
     rel_map = {
-        "identity": "HAS_IDENTITY",
-        "behavior": "HAS_BEHAVIOR",
-        "projects": "WORKS_ON",
+        "identity":    "HAS_IDENTITY",
+        "skills":      "HAS_SKILL",
+        "behavior":    "HAS_BEHAVIOR",
+        "projects":    "WORKS_ON",
+        "goals":       "HAS_GOAL",
+        "traits":      "HAS_TRAIT",
+        "beliefs":     "HAS_BELIEF",
         "constraints": "HAS_CONSTRAINT",
-        "values": "HAS_VALUE",
+        "values":      "HAS_VALUE",
     }
 
     for category, items in ready.items():
@@ -225,19 +269,24 @@ def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dic
         rel = rel_map[category]
         with driver.session(database=database) as session:
             for item in items:
+                raw_key = item.get("key") or ""
+                raw_value = item.get("value") or ""
                 session.run(
                     f"""
                     MERGE (p:Person {{id: $person_id}})
-                    MERGE (n:{label} {{key: $key, value: $value, person_id: $person_id}})
+                    MERGE (n:{label} {{_h: $h, person_id: $person_id}})
+                    ON CREATE SET n.key = $enc_key, n.value = $enc_value
+                    ON MATCH SET n.key = $enc_key, n.value = $enc_value
                     MERGE (p)-[:{rel}]->(n)
                     """,
                     person_id=person_id,
-                    key=item.get("key"),
-                    value=item.get("value"),
+                    h=node_hash(raw_key, person_id),
+                    enc_key=enc(raw_key, person_id),
+                    enc_value=enc(raw_value, person_id),
                 )
 
 
-def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str = "nandana_dileep", redis_client=None, neo4j_driver=None) -> Dict[str, Any]:
+def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str = "nandana_dileep", redis_client=None, neo4j_driver=None, llm_fn=None) -> Dict[str, Any]:
     load_env()
     
     # Use provided clients/drivers or create new ones
@@ -255,7 +304,7 @@ def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str =
 
     try:
         database = env_var("NEO4J_DATABASE")
-        extractions = call_llm_extract(conversation, use_mock=use_mock_llm)
+        extractions = call_llm_extract(conversation, use_mock=use_mock_llm, llm_fn=llm_fn)
         staging = load_staging(redis_client, person_id)
         staging = update_staging(staging, extractions)
         ready, remaining = split_ready(staging)
