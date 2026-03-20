@@ -6,3 +6,5 @@ litellm==1.38.11
 pydantic==2.5.3
 requests==2.31.0
 PyJWT
+gunicorn
+cryptography

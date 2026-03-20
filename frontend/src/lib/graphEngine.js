@@ -24,7 +24,7 @@ const SHAPE_COLORS = {
   wave:     {fill:'#3a7a9e',glow:'rgba(58,122,158,0.5)'},
 }
 
-export default function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, setSelectedEdge, setGraphLoading) {
+export default function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, setSelectedEdge, setGraphLoading, apiBase='') {
   const ctx = canvas.getContext('2d')
   let rafId = null, destroyed = false
 
@@ -574,7 +574,7 @@ export default function initGraph(canvas, sessionRef, setStats, setPending, setS
   async function loadGraph() {
     setGraphLoading?.(true)
     try {
-      const resp=await fetch('/api/graph',{headers:authH()}); if(!resp.ok) return
+      const resp=await fetch(`${apiBase}/api/graph`,{headers:authH()}); if(!resp.ok) return
       const data=await resp.json()
       nodes.clear(); edges.clear()
       nodes.add(data.nodes.map(n=>({...n,_label:n.label,label:' '})))

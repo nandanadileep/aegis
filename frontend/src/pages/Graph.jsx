@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getSupabase } from '../lib/supabase'
+import { API } from '../lib/api'
 import initGraph from '../lib/graphEngine'
 import styles from './Graph.module.css'
 
@@ -43,7 +44,7 @@ export default function Graph() {
 
   useEffect(() => {
     if (!session || !canvasRef.current) return
-    const g = initGraph(canvasRef.current, sessionRef, setStats, setPending, setSelectedNode, setSelectedEdge, setGraphLoading)
+    const g = initGraph(canvasRef.current, sessionRef, setStats, setPending, setSelectedNode, setSelectedEdge, setGraphLoading, API)
     graphRef.current = g
     g.start()
     return () => g.destroy()
@@ -54,7 +55,7 @@ export default function Graph() {
     autoNodeCreated.current = true
     const meta = session.user?.user_metadata || {}
     const name = meta.full_name || meta.name || session.user?.email?.split('@')[0] || 'You'
-    fetch('/api/import', { method:'POST', headers:authH(), body:JSON.stringify({ twin: { name } }) })
+    fetch(`${API}/api/import`, { method:'POST', headers:authH(), body:JSON.stringify({ twin: { name } }) })
       .then(r => r.json())
       .then(data => { if (data.status === 'ok') graphRef.current?.reload() })
   }, [graphLoading, stats.nodes, session])
@@ -87,7 +88,7 @@ export default function Graph() {
     if (!label||!name) { alert('Label and Name required'); return }
     let props = {}
     if (propsStr) { try { props = JSON.parse(propsStr) } catch { alert('Invalid JSON'); return } }
-    const resp = await fetch('/api/nodes', { method:'POST', headers:authH(), body:JSON.stringify({ label, name, properties:props }) })
+    const resp = await fetch(`${API}/api/nodes`, { method:'POST', headers:authH(), body:JSON.stringify({ label, name, properties:props }) })
     const data = await resp.json()
     if (!resp.ok) { alert(data.error || data.detail || 'Failed to create node'); return }
     graphRef.current?.addNode(String(data.id), name, data.label || label)
@@ -99,7 +100,7 @@ export default function Graph() {
   async function doAddEdge() {
     const { from, type, to } = edgeForm
     if (!from||!type||!to) { alert('All fields required'); return }
-    const resp = await fetch('/api/relationships', { method:'POST', headers:authH(), body:JSON.stringify({ from, type, to }) })
+    const resp = await fetch(`${API}/api/relationships`, { method:'POST', headers:authH(), body:JSON.stringify({ from, type, to }) })
     if (!resp.ok) { alert('Failed'); return }
     const data = await resp.json()
     graphRef.current?.addEdge(String(data.id), from, to, type)
@@ -130,7 +131,7 @@ export default function Graph() {
   }
 
   async function doCommit() {
-    const resp = await fetch('/api/commit', { method:'POST', headers:authH(), body:JSON.stringify(pendingRef.current) })
+    const resp = await fetch(`${API}/api/commit`, { method:'POST', headers:authH(), body:JSON.stringify(pendingRef.current) })
     if (!resp.ok) { alert('Commit failed'); return }
     setPending({ nodes:{}, edges:{}, deletedNodes:[], deletedEdges:[] })
     graphRef.current?.reload(authH)
@@ -152,7 +153,7 @@ export default function Graph() {
   async function doEditNode() {
     const name = editNodeName.trim()
     if (!name || !selectedNode) return
-    const resp = await fetch(`/api/nodes/${selectedNode}`, { method:'PATCH', headers:authH(), body:JSON.stringify({ name }) })
+    const resp = await fetch(`${API}/api/nodes/${selectedNode}`, { method:'PATCH', headers:authH(), body:JSON.stringify({ name }) })
     if (!resp.ok) { alert('Failed to rename node'); return }
     graphRef.current?.renameNode(selectedNode, name)
     setModal(null)
@@ -160,7 +161,7 @@ export default function Graph() {
 
   async function doDeduplicateGraph() {
     setMenuOpen(false)
-    const resp = await fetch('/api/deduplicate', { method:'POST', headers:authH() })
+    const resp = await fetch(`${API}/api/deduplicate`, { method:'POST', headers:authH() })
     const data = await resp.json()
     if (!resp.ok) { alert('Dedup failed'); return }
     graphRef.current?.reload(authH)
@@ -168,7 +169,7 @@ export default function Graph() {
   }
 
   async function downloadWallet() {
-    const resp = await fetch('/api/wallet', { headers:authH() })
+    const resp = await fetch(`${API}/api/wallet`, { headers:authH() })
     const html = await resp.text()
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank')

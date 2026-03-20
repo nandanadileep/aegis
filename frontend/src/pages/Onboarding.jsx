@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSupabase, authHeaders } from '../lib/supabase'
+import { API } from '../lib/api'
 import ThemeToggle from '../components/ThemeToggle'
 import styles from './Onboarding.module.css'
 
@@ -43,7 +44,7 @@ export default function Onboarding() {
 
   async function startChat() {
     if (!session) return
-    const res = await fetch('/api/me', { headers: { Authorization: `Bearer ${session.access_token}` } })
+    const res = await fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${session.access_token}` } })
     const d = await res.json()
     if (d.exists) { window.location.href = '/chat'; return }
     chatHistory.current = []
@@ -65,7 +66,7 @@ export default function Onboarding() {
     setMessages(m => [...m, { role: 'thinking' }])
 
     try {
-      const res = await fetch('/api/onboard-chat', {
+      const res = await fetch(`${API}/api/onboard-chat`, {
         method: 'POST', headers: authHeaders(session),
         body: JSON.stringify({ message: userText, history: chatHistory.current }),
       })
@@ -87,7 +88,7 @@ export default function Onboarding() {
 
   async function saveProfile(profile) {
     try {
-      const resp = await fetch('/api/import', {
+      const resp = await fetch(`${API}/api/import`, {
         method: 'POST', headers: authHeaders(session),
         body: JSON.stringify({ twin: profile, username: autoUsername }),
       })
@@ -104,7 +105,7 @@ export default function Onboarding() {
     if (!raw) { setImportErr('Paste your memory export first.'); return }
     setImporting(true)
     try {
-      const resp = await fetch('/api/import', {
+      const resp = await fetch(`${API}/api/import`, {
         method: 'POST', headers: authHeaders(session),
         body: JSON.stringify({ raw_memory: raw, username: autoUsername }),
       })
@@ -115,7 +116,7 @@ export default function Onboarding() {
   }
 
   async function downloadCard() {
-    const resp = await fetch('/api/wallet', { headers: authHeaders(session) })
+    const resp = await fetch(`${API}/api/wallet`, { headers: authHeaders(session) })
     const html = await resp.text()
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
     window.open(url, '_blank')
