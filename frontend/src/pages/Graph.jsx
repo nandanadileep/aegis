@@ -515,7 +515,7 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
   function sToW(sx,sy) { return { x:(sx-cam.x)/cam.scale, y:(sy-cam.y)/cam.scale } }
 
   function hitNode(wx,wy) {
-    const r=10/cam.scale
+    const r=10/Math.pow(cam.scale,0.5)
     for(const [id,an] of animNodes){ const dx=an.x-wx,dy=an.y-wy; if(dx*dx+dy*dy<r*r) return id }
     return null
   }
@@ -874,7 +874,7 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
       const node=nodes.get(id); if(!node) continue
       const isSel=id===selNode,isHov=id===hoveredNode,isHL=searchHL.has(id)
       const type=node.title||'Node',pal=palFor(type)
-      const r=(type==='Person'?(isSel?11:9):(isSel?8:6))/cam.scale
+      const r=(type==='Person'?(isSel?11:9):(isSel?8:6))/Math.pow(cam.scale,0.5)
       const alpha=isSel?1:isHov?0.95:0.75
       ctx.save()
       ctx.shadowBlur=isSel?28:isHov?18:isHL?22:10
