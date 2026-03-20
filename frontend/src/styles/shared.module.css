@@ -1,0 +1,40 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 16px;
+  border-radius: 40px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: Inter, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  transition: all 0.15s;
+}
+
+.btnPrimary {
+  background: var(--text);
+  color: var(--bg);
+  border: none;
+}
+
+.btnSm {
+  padding: 7px 16px;
+  border-radius: 40px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: Inter, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  transition: all 0.15s;
+}
+
+.btnDanger {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #e11d48;
+}
