@@ -1,74 +1,36 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getSupabase } from '../lib/supabase'
-
-// ── Shared button styles ──
-const S = {
-  btn: { display:'inline-flex',alignItems:'center',gap:5,padding:'7px 14px',borderRadius:40,fontSize:13,fontWeight:600,cursor:'pointer',border:'1px solid var(--border-strong)',background:'var(--bg)',color:'var(--text)',fontFamily:'Inter,sans-serif',transition:'all .15s',whiteSpace:'nowrap',letterSpacing:'-0.01em' },
-  btnPrimary: { background:'var(--text)',border:'none',color:'var(--bg)' },
-}
+import initGraph from '../lib/graphEngine'
+import styles from './Graph.module.css'
 
 const SI = ({ children }) => (
-  <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ display:'block' }}>
+  <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={styles.siIcon}>
     {children}
   </svg>
 )
 
-const SHAPE_COLORS = {
-  octopus:  {fill:'#7c5c9e',glow:'rgba(124,92,158,0.5)'},
-  jellyfish:{fill:'#a8607e',glow:'rgba(168,96,126,0.5)'},
-  fish:     {fill:'#4a8fa8',glow:'rgba(74,143,168,0.5)'},
-  whale:    {fill:'#3a6b8a',glow:'rgba(58,107,138,0.5)'},
-  starfish: {fill:'#b07840',glow:'rgba(176,120,64,0.5)'},
-  butterfly:{fill:'#8c5a9e',glow:'rgba(140,90,158,0.5)'},
-  heart:    {fill:'#a04a52',glow:'rgba(160,74,82,0.5)'},
-  bird:     {fill:'#5a8faa',glow:'rgba(90,143,170,0.5)'},
-  spiral:   {fill:'#3a8c84',glow:'rgba(58,140,132,0.5)'},
-  snowflake:{fill:'#6a9aa0',glow:'rgba(106,154,160,0.5)'},
-  flower:   {fill:'#a05878',glow:'rgba(160,88,120,0.5)'},
-  tree:     {fill:'#4a8464',glow:'rgba(74,132,100,0.5)'},
-  snake:    {fill:'#567a40',glow:'rgba(86,122,64,0.5)'},
-  crescent: {fill:'#9a8840',glow:'rgba(154,136,64,0.5)'},
-  diamond:  {fill:'#3a9a8e',glow:'rgba(58,154,142,0.5)'},
-}
-
-const SHAPE_STRIP = [
-  { icon: <SI><path d="M10 16c0 0-7-4.5-7-9a3.5 3.5 0 0 1 7-1 3.5 3.5 0 0 1 7 1c0 4.5-7 9-7 9z"/></SI>, shape:'heart', label:'Heart' },
-  { icon: <SI><path d="M10 2l8 8-8 8-8-8z"/></SI>, shape:'diamond', label:'Diamond' },
-  { icon: <SI><path d="M10 2l2.4 5.8h6.1l-4.9 3.9 1.9 5.8L10 14l-5.5 3.5 1.9-5.8L2.5 7.8h6.1z"/></SI>, shape:'starfish', label:'Star' },
-  { icon: <SI><path d="M13 4a6 6 0 1 0 0 12 4.5 4.5 0 1 1 0-12z"/></SI>, shape:'crescent', label:'Crescent' },
-  { icon: <SI><line x1="10" y1="2" x2="10" y2="18"/><line x1="2" y1="10" x2="18" y2="10"/><line x1="4.3" y1="4.3" x2="15.7" y2="15.7"/><line x1="15.7" y1="4.3" x2="4.3" y2="15.7"/></SI>, shape:'snowflake', label:'Snowflake' },
-  { icon: <SI><path d="M4 10 Q4 3 10 3 Q17 3 17 10 Q17 16 12 16 Q8 16 8 12 Q8 8 11 8"/></SI>, shape:'spiral', label:'Spiral' },
-  { icon: <SI><circle cx="10" cy="10" r="2.5"/><line x1="10" y1="2" x2="10" y2="5.5"/><line x1="10" y1="14.5" x2="10" y2="18"/><line x1="2" y1="10" x2="5.5" y2="10"/><line x1="14.5" y1="10" x2="18" y2="10"/><line x1="4.2" y1="4.2" x2="6.4" y2="6.4"/><line x1="13.6" y1="13.6" x2="15.8" y2="15.8"/><line x1="15.8" y1="4.2" x2="13.6" y2="6.4"/><line x1="6.4" y1="13.6" x2="4.2" y2="15.8"/></SI>, shape:'flower', label:'Flower' },
-  { icon: <SI><path d="M10 2l7 9H3z"/><rect x="8.5" y="11" width="3" height="7" rx="0.5"/></SI>, shape:'tree', label:'Tree' },
-  { icon: <SI><path d="M3 10q5.5-6 11 0q-5.5 6-11 0z"/><path d="M14 6.5l4-3-1 6.5 1 6.5-4-3"/></SI>, shape:'fish', label:'Fish' },
-  { icon: <SI><path d="M2 10c3-5 10-4 14 0c-4 5-11 5-14 0z"/><line x1="16" y1="7.5" x2="19" y2="5.5"/><line x1="16" y1="12.5" x2="19" y2="14.5"/></SI>, shape:'whale', label:'Whale' },
-  { icon: <SI><path d="M2 12c2-5 5-5 8-3 3-2 6-2 8 3"/></SI>, shape:'bird', label:'Bird' },
-  { icon: <SI><line x1="10" y1="5" x2="10" y2="15"/><path d="M3 7.5c0-4.5 7-3 7 3"/><path d="M17 7.5c0-4.5-7-3-7 3"/><path d="M3 12.5c0 4.5 7 3 7-3"/><path d="M17 12.5c0 4.5-7 3-7-3"/></SI>, shape:'butterfly', label:'Butterfly' },
-  { icon: <SI><circle cx="10" cy="7" r="3"/><path d="M7.5 9.5c-.5 2.5-1 4.5-.5 7M9.2 10c-.2 2.5 0 5 .5 7M10.8 10c.2 2.5 0 5-.5 7M12.5 9.5c.5 2.5 1 4.5.5 7"/></SI>, shape:'octopus', label:'Octopus' },
-  { icon: <SI><path d="M4 9a6 4.5 0 0 1 12 0"/><line x1="7" y1="9" x2="7" y2="17"/><line x1="10" y1="9" x2="10" y2="18"/><line x1="13" y1="9" x2="13" y2="17"/></SI>, shape:'jellyfish', label:'Jellyfish' },
-  { icon: <SI><path d="M3 6.5c2-3.5 5-3 7 .5s5 3 7-.5M3 13.5c2 3.5 5 3 7-.5s5-3 7 .5"/></SI>, shape:'snake', label:'Snake' },
-]
-
 export default function Graph() {
   const [session, setSession] = useState(null)
   const canvasRef = useRef(null)
-  const graphRef  = useRef(null) // holds all graph state
+  const graphRef  = useRef(null)
   const [stats, setStats] = useState({ nodes: 0, edges: 0 })
+  const [showLabels, setShowLabels] = useState(false)
   const [pending, setPending] = useState({ nodes:{}, edges:{}, deletedNodes:[], deletedEdges:[] })
   const [selectedNode, setSelectedNode] = useState(null)
   const [selectedEdge, setSelectedEdge] = useState(null)
   const [searchQ, setSearchQ] = useState('')
   const [searchResults, setSearchResults] = useState(null)
-  const [modal, setModal] = useState(null) // null | 'addNode' | 'addEdge' | 'commit'
-  const [shapeMode, setShapeMode] = useState(null)
-  const [confirmDialog, setConfirmDialog] = useState(null) // { message, onConfirm, danger? }
+  const [modal, setModal] = useState(null)
+  const [confirmDialog, setConfirmDialog] = useState(null)
   const [nodeForm, setNodeForm] = useState({ label:'', name:'', props:'' })
   const [edgeForm, setEdgeForm] = useState({ from:'', type:'', to:'' })
+  const [editNodeName, setEditNodeName] = useState('')
+  const [graphLoading, setGraphLoading] = useState(true)
   const sessionRef = useRef(null)
   const pendingRef = useRef(pending)
   pendingRef.current = pending
+  const autoNodeCreated = useRef(false)
 
-  // ── Auth ──
   useEffect(() => {
     getSupabase().then(sb => {
       sb.auth.getSession().then(({ data: { session: s } }) => {
@@ -79,14 +41,23 @@ export default function Graph() {
     })
   }, [])
 
-  // ── Canvas init ──
   useEffect(() => {
     if (!session || !canvasRef.current) return
-    const g = initGraph(canvasRef.current, sessionRef, setStats, setPending, setSelectedNode, setSelectedEdge)
+    const g = initGraph(canvasRef.current, sessionRef, setStats, setPending, setSelectedNode, setSelectedEdge, setGraphLoading)
     graphRef.current = g
     g.start()
     return () => g.destroy()
   }, [session])
+
+  useEffect(() => {
+    if (graphLoading || stats.nodes > 0 || autoNodeCreated.current || !session) return
+    autoNodeCreated.current = true
+    const meta = session.user?.user_metadata || {}
+    const name = meta.full_name || meta.name || session.user?.email?.split('@')[0] || 'You'
+    fetch('/api/import', { method:'POST', headers:authH(), body:JSON.stringify({ twin: { name } }) })
+      .then(r => r.json())
+      .then(data => { if (data.status === 'ok') graphRef.current?.reload() })
+  }, [graphLoading, stats.nodes, session])
 
   function authH() {
     return { 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionRef.current?.access_token}` }
@@ -103,8 +74,10 @@ export default function Graph() {
     const q = searchQ.toLowerCase()
     const g = graphRef.current
     if (!g) return
-    const matchedNodes = g.getAllNodes().filter(n => (n._label||'').toLowerCase().includes(q)||(n.title||'').toLowerCase().includes(q))
-    const matchedEdges = g.getAllEdges().filter(e => (e.label||'').toLowerCase().includes(q))
+    const deleted = new Set(pendingRef.current.deletedNodes.map(String))
+    const deletedEdges = new Set(pendingRef.current.deletedEdges.map(String))
+    const matchedNodes = g.getAllNodes().filter(n => !deleted.has(String(n.id)) && ((n._label||'').toLowerCase().includes(q)||(n.title||'').toLowerCase().includes(q)))
+    const matchedEdges = g.getAllEdges().filter(e => !deletedEdges.has(String(e.id)) && (e.label||'').toLowerCase().includes(q))
     g.setHighlight(new Set(matchedNodes.map(n=>String(n.id))))
     setSearchResults({ nodes: matchedNodes, edges: matchedEdges })
   }
@@ -137,33 +110,23 @@ export default function Graph() {
   function doDeleteNode() {
     if (!selectedNode) return
     const g = graphRef.current
-    const n = g?.getNode(selectedNode)
-    setConfirmDialog({
-      message: `Delete "${n?._label||selectedNode}"?`,
-      hint: 'This will also remove all its relationships.',
-      danger: true,
-      onConfirm: () => {
-        const removed = g?.deleteNode(selectedNode) || []
-        setStats(s => ({ ...s, nodes: s.nodes-1, edges: s.edges - removed.length }))
-        setPending(p => ({ ...p, deletedNodes:[...p.deletedNodes,selectedNode], deletedEdges:[...p.deletedEdges,...removed] }))
-        setSelectedNode(null)
-      }
-    })
+    const removed = g?.deleteNode(selectedNode) || []
+    setStats(s => ({ ...s, nodes: s.nodes-1, edges: s.edges - removed.length }))
+    setPending(p => ({ ...p, deletedNodes:[...p.deletedNodes,selectedNode], deletedEdges:[...p.deletedEdges,...removed] }))
+    setSelectedNode(null)
+    setSearchResults(r => r ? {
+      nodes: r.nodes.filter(n => String(n.id) !== String(selectedNode)),
+      edges: r.edges.filter(e => !removed.includes(String(e.id))),
+    } : null)
   }
 
   function doDeleteEdge() {
     if (!selectedEdge) return
-    const e = graphRef.current?.getEdge(selectedEdge)
-    setConfirmDialog({
-      message: `Delete relationship "${e?.label||selectedEdge}"?`,
-      danger: true,
-      onConfirm: () => {
-        graphRef.current?.deleteEdge(selectedEdge)
-        setStats(s => ({ ...s, edges: s.edges-1 }))
-        setPending(p => ({ ...p, deletedEdges:[...p.deletedEdges,selectedEdge] }))
-        setSelectedEdge(null)
-      }
-    })
+    graphRef.current?.deleteEdge(selectedEdge)
+    setStats(s => ({ ...s, edges: s.edges-1 }))
+    setPending(p => ({ ...p, deletedEdges:[...p.deletedEdges,selectedEdge] }))
+    setSelectedEdge(null)
+    setSearchResults(r => r ? { ...r, edges: r.edges.filter(e => String(e.id) !== String(selectedEdge)) } : null)
   }
 
   async function doCommit() {
@@ -186,13 +149,39 @@ export default function Graph() {
     })
   }
 
-  async function downloadWallet() {
-    const resp = await fetch('/api/wallet', { headers:authH() })
-    const blob = await resp.blob()
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='memory_card.md'; a.click()
-    URL.revokeObjectURL(a.href)
+  async function doEditNode() {
+    const name = editNodeName.trim()
+    if (!name || !selectedNode) return
+    const resp = await fetch(`/api/nodes/${selectedNode}`, { method:'PATCH', headers:authH(), body:JSON.stringify({ name }) })
+    if (!resp.ok) { alert('Failed to rename node'); return }
+    graphRef.current?.renameNode(selectedNode, name)
+    setModal(null)
   }
 
+  async function doDeduplicateGraph() {
+    setMenuOpen(false)
+    const resp = await fetch('/api/deduplicate', { method:'POST', headers:authH() })
+    const data = await resp.json()
+    if (!resp.ok) { alert('Dedup failed'); return }
+    graphRef.current?.reload(authH)
+    setStats(s => ({ ...s, nodes: Math.max(0, s.nodes - (data.deleted || 0)) }))
+  }
+
+  async function downloadWallet() {
+    const resp = await fetch('/api/wallet', { headers:authH() })
+    const html = await resp.text()
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+    window.open(url, '_blank')
+  }
+
+  const SHAPES = ['octopus','jellyfish','fish','whale','starfish','butterfly','heart','bird','spiral','snowflake','flower','tree','snake','crescent','diamond','ring','galaxy','dna','cross','infinity','crown','mountain','wave']
+  const [shapeIdx, setShapeIdx] = useState(-1)
+  const activeShape = shapeIdx >= 0 ? SHAPES[shapeIdx] : null
+  function applyShape(idx) { setShapeIdx(idx); graphRef.current?.setShape(idx >= 0 ? SHAPES[idx] : null) }
+  function nextShape() { applyShape((shapeIdx + 1) % SHAPES.length) }
+  function prevShape() { applyShape(shapeIdx <= 0 ? SHAPES.length - 1 : shapeIdx - 1) }
+
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
   useEffect(() => {
@@ -214,50 +203,86 @@ export default function Graph() {
   }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:'var(--bg)', overflow:'hidden' }}>
-      {/* Header */}
-      <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 20px', height:56, borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--bg)', zIndex:50 }}>
-        {/* Left: brand + nav */}
-        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-          <span style={{ fontSize:15, fontWeight:800, letterSpacing:'-0.03em' }}>Identiti</span>
-          <div style={{ display:'flex', gap:1, background:'var(--surface)', borderRadius:10, padding:3, border:'1px solid var(--border)' }}>
-            <a href="/chat" style={{ padding:'5px 12px', borderRadius:7, fontSize:13, fontWeight:500, color:'var(--text-2)', textDecoration:'none' }}>Chat</a>
-            <a href="/memory" style={{ padding:'5px 12px', borderRadius:7, fontSize:13, fontWeight:600, color:'var(--text)', textDecoration:'none', background:'var(--bg)', boxShadow:'0 1px 3px rgba(0,0,0,0.12)' }}>Graph</a>
-          </div>
+    <div className={styles.root}>
+      <header className={styles.header}>
+        <div className={styles.headerLeft}>
+          <span className={styles.brand}>Identiti</span>
         </div>
 
-        {/* Right: overflow */}
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-
-          {/* ··· menu */}
-          <div style={{ position:'relative' }} ref={menuRef}>
-            <button onClick={()=>setMenuOpen(o=>!o)} style={{ width:34, height:34, borderRadius:8, background:'var(--surface)', border:'1px solid var(--border)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, color:'var(--text-2)', fontFamily:'Inter,sans-serif' }}>···</button>
+        <div className={styles.headerRight}>
+          <div className={styles.menuWrap} ref={menuRef}>
+            <button onClick={() => setMenuOpen(o => !o)} className={styles.menuTrigger}>···</button>
             {menuOpen && (
-              <div style={{ position:'absolute', top:'calc(100% + 8px)', right:0, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:6, minWidth:180, boxShadow:'0 8px 24px rgba(0,0,0,0.18)', zIndex:200 }}>
-                <MenuItem label="Download Memory Card" icon="⬇" onClick={()=>{ downloadWallet(); setMenuOpen(false) }} />
-                <div style={{ height:1, background:'var(--border)', margin:'4px 0' }} />
+              <div className={styles.menuDropdown}>
+                <MenuItem label="Download Memory Card" icon="⬇" onClick={() => { downloadWallet(); setMenuOpen(false) }} />
+                <MenuItem label="Clean up duplicates" icon="✦" onClick={doDeduplicateGraph} />
+                <div className={styles.menuDivider} />
                 <ThemeMenuItem />
-                <div style={{ height:1, background:'var(--border)', margin:'4px 0' }} />
-                <MenuItem label="Sign out" icon="→" onClick={()=>{ signOut(); setMenuOpen(false) }} danger />
+                <div className={styles.menuDivider} />
+                <MenuItem label="Sign out" icon="→" onClick={() => { signOut(); setMenuOpen(false) }} danger />
               </div>
             )}
           </div>
         </div>
       </header>
 
-      <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-        {/* Canvas */}
-        <div style={{ flex:1, minWidth:0, position:'relative', background:'var(--surface-2)', overflow:'hidden', borderRight:'1px solid var(--border)' }}>
-          <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block', cursor:'grab' }} />
+      <div className={styles.navToggle}>
+        <a href="/chat" className={styles.navToggleBtn}>Chat</a>
+        <a href="/memory" className={`${styles.navToggleBtn} ${styles.navToggleBtnActive}`}>Graph</a>
+        <button className={styles.sidebarToggleBtn} onClick={() => setSidebarOpen(o => !o)}>≡</button>
+      </div>
+
+      <div className={styles.body}>
+        <div className={styles.canvasWrap}>
+          <canvas ref={canvasRef} className={styles.canvas} />
+          {graphLoading && (
+            <div className={styles.loadingOverlay}>
+              <div className={styles.spinner} />
+            </div>
+          )}
+          {!graphLoading && stats.nodes === 0 && (
+            <div className={styles.emptyGraphHint}>
+              <p className={styles.emptyGraphText}>Add nodes and relationships to see the graph</p>
+            </div>
+          )}
+          {!graphLoading && stats.nodes > 0 && stats.nodes < 20 && (
+            <div className={styles.nodeHint}>
+              {20 - stats.nodes} more nodes and the shapes get interesting
+            </div>
+          )}
         </div>
 
-        {/* Sidebar */}
-        <div style={{ width:280, flexShrink:0, background:'var(--bg)', borderLeft:'1px solid var(--border)', display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
-          <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--border)' }}>
-            <input value={searchQ} onChange={e=>setSearchQ(e.target.value)}
-              onKeyDown={e=>{ if(e.key==='Enter') runSearch(); if(e.key==='Escape'){setSearchQ('');setSearchResults(null);graphRef.current?.clearHighlight()} }}
+        {sidebarOpen && <div className={styles.sidebarBackdrop} onClick={() => setSidebarOpen(false)} />}
+        <div className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''}`}>
+          <div className={styles.sidebarHandle} onClick={() => setSidebarOpen(false)} />
+          <div className={styles.searchWrap}>
+            <button
+              className={`${styles.eyeBtn} ${showLabels ? styles.eyeBtnOn : ''}`}
+              onClick={() => { const next = !showLabels; setShowLabels(next); graphRef.current?.setShowLabels(next) }}
+              title={showLabels ? 'Hide labels' : 'Show labels'}
+            >
+              {showLabels ? (
+                <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 10s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="10" cy="10" r="2.5"/></svg>
+              ) : (
+                <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 10s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="10" cy="10" r="2.5"/><line x1="2" y1="2" x2="18" y2="18"/></svg>
+              )}
+            </button>
+            <input
+              value={searchQ}
+              onChange={e => setSearchQ(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') runSearch()
+                if (e.key === 'Escape') { setSearchQ(''); setSearchResults(null); graphRef.current?.clearHighlight() }
+              }}
               placeholder="Search nodes & relationships…"
-              style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', fontFamily:'Inter,sans-serif', fontSize:13, padding:'8px 12px', outline:'none' }} />
+              className={styles.searchInput}
+            />
+            {searchQ && (
+              <button
+                className={styles.searchClear}
+                onClick={() => { setSearchQ(''); setSearchResults(null); graphRef.current?.clearHighlight() }}
+              >×</button>
+            )}
           </div>
           <Section label="Graph">
             <StatRow k="Nodes" v={stats.nodes} />
@@ -266,141 +291,190 @@ export default function Graph() {
 
           {searchResults && (
             <Section label="Search Results">
-              {searchResults.nodes.length===0&&searchResults.edges.length===0 && <p style={{ fontSize:13, color:'var(--text-3)', textAlign:'center', padding:'8px 0' }}>No results</p>}
-              {searchResults.nodes.map(n=>(
-                <div key={n.id} onClick={()=>{setSelectedNode(String(n.id));setSelectedEdge(null);graphRef.current?.focusNode(String(n.id))}} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 10px', borderRadius:8, cursor:'pointer', marginBottom:4 }} onMouseEnter={e=>e.currentTarget.style.background='var(--surface)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <span style={{ fontSize:13 }}>{n._label||n.label}</span>
-                  <span style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)' }}>{n.title||'node'}</span>
-                </div>
-              ))}
-              {searchResults.edges.map(e=>{
-                const fn=graphRef.current?.getNode(String(e.from)), tn=graphRef.current?.getNode(String(e.to))
-                return <div key={e.id} onClick={()=>{setSelectedEdge(e.id);setSelectedNode(null)}} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 10px', borderRadius:8, cursor:'pointer', marginBottom:4 }} onMouseEnter={el=>el.currentTarget.style.background='var(--surface)'} onMouseLeave={el=>el.currentTarget.style.background='transparent'}>
-                  <span style={{ fontSize:13 }}>{fn?._label||e.from} → {tn?._label||e.to}</span>
-                  <span style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.06em', color:'var(--text-3)' }}>{e.label}</span>
-                </div>
-              })}
+              <div className={styles.searchResultsScroll}>
+                {searchResults.nodes.length === 0 && searchResults.edges.length === 0 && (
+                  <p className={styles.searchResultEmpty}>No results</p>
+                )}
+                {searchResults.nodes.map(n => (
+                  <div
+                    key={n.id}
+                    onClick={() => { setSelectedNode(String(n.id)); setSelectedEdge(null); graphRef.current?.focusNode(String(n.id)) }}
+                    className={styles.searchResultItem}
+                  >
+                    <span className={styles.searchResultName}>{n._label || n.label}</span>
+                    <span className={styles.searchResultType}>{n.title || 'node'}</span>
+                  </div>
+                ))}
+                {searchResults.edges.map(e => {
+                  const fn = graphRef.current?.getNode(String(e.from)), tn = graphRef.current?.getNode(String(e.to))
+                  return (
+                    <div
+                      key={e.id}
+                      onClick={() => { setSelectedEdge(e.id); setSelectedNode(null) }}
+                      className={styles.searchResultItem}
+                    >
+                      <span className={styles.searchResultName}>{fn?._label || e.from} → {tn?._label || e.to}</span>
+                      <span className={styles.searchResultType}>{e.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
             </Section>
           )}
 
           {selectedNodeData && (
             <Section label="Node">
-              <DR k="Name" v={selectedNodeData._label||selectedNodeData.label||'—'} />
-              {selectedNodeData.title && <DR k="Type" v={<span style={{ color:typeColor(selectedNodeData.title) }}>{selectedNodeData.title}</span>} />}
-              <div style={{ marginTop:12 }}>
-                <button style={{ ...S.btn, background:'#fff1f2', borderColor:'#fecdd3', color:'#e11d48', width:'100%', justifyContent:'center' }} onClick={doDeleteNode}>Delete Node</button>
+              <DR k="Name" v={selectedNodeData._label || selectedNodeData.label || '—'} />
+              {selectedNodeData.title && (
+                <DR k="Type" v={<span style={{ color: typeColor(selectedNodeData.title) }}>{selectedNodeData.title}</span>} />
+              )}
+              <div className={styles.detailActions}>
+                <button
+                  className={`${styles.btn} ${styles.btnFlex}`}
+                  onClick={() => { setEditNodeName(selectedNodeData._label || selectedNodeData.label || ''); setModal('editNode') }}
+                >Edit</button>
+                <button
+                  className={`${styles.btn} ${styles.btnDanger} ${styles.btnFlex}`}
+                  onClick={doDeleteNode}
+                >Delete</button>
               </div>
             </Section>
           )}
 
           {selectedEdgeData && (
             <Section label="Relationship">
-              <DR k="Type" v={selectedEdgeData.label||'—'} />
-              <DR k="From" v={graphRef.current?.getNode(String(selectedEdgeData.from))?._label||selectedEdgeData.from} />
-              <DR k="To" v={graphRef.current?.getNode(String(selectedEdgeData.to))?._label||selectedEdgeData.to} />
-              <div style={{ marginTop:12 }}>
-                <button style={{ ...S.btn, background:'#fff1f2', borderColor:'#fecdd3', color:'#e11d48', width:'100%', justifyContent:'center' }} onClick={doDeleteEdge}>Delete Relationship</button>
+              <DR k="Type" v={selectedEdgeData.label || '—'} />
+              <DR k="From" v={graphRef.current?.getNode(String(selectedEdgeData.from))?._label || selectedEdgeData.from} />
+              <DR k="To" v={graphRef.current?.getNode(String(selectedEdgeData.to))?._label || selectedEdgeData.to} />
+              <div className={styles.detailActionsEdge}>
+                <button
+                  className={`${styles.btn} ${styles.btnDanger} ${styles.btnFull}`}
+                  onClick={doDeleteEdge}
+                >Delete Relationship</button>
               </div>
             </Section>
           )}
 
           <Section label="Add">
-            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-              <button style={{ ...S.btn, justifyContent:'center' }} onClick={()=>{ setNodeForm({label:'',name:'',props:''}); setModal('addNode') }}>+ Node</button>
-              <button style={{ ...S.btn, justifyContent:'center' }} onClick={()=>{ setEdgeForm({from:selectedNode||'',type:'',to:''}); setModal('addEdge') }}>+ Relationship</button>
+            <div className={styles.addBtns}>
+              <button
+                className={`${styles.btn} ${styles.btnFull}`}
+                onClick={() => { setNodeForm({ label:'', name:'', props:'' }); setModal('addNode') }}
+              >+ Node</button>
+              <button
+                className={`${styles.btn} ${styles.btnFull}`}
+                onClick={() => { setEdgeForm({ from: selectedNode || '', type:'', to:'' }); setModal('addEdge') }}
+              >+ Relationship</button>
             </div>
           </Section>
 
-          <div style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)' }}>
-            <style>{`
-              @keyframes shapeTicker { from { transform:translateX(0) } to { transform:translateX(-50%) } }
-              .shape-strip:hover { animation-play-state: paused !important; }
-            `}</style>
-            <div style={{ overflow:'hidden', width:'100%', maskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)', WebkitMaskImage:'linear-gradient(to right, transparent, black 12%, black 88%, transparent)' }}>
-              <div className="shape-strip" style={{ display:'flex', gap:2, animation:'shapeTicker 20s linear infinite', width:'max-content' }}>
-                {[...SHAPE_STRIP, ...SHAPE_STRIP].map((s,i) => (
-                  <button key={i} title={s.label} onClick={() => {
-                    if (shapeMode?.shape === s.shape) { setShapeMode(null); graphRef.current?.setShape(null) }
-                    else { setShapeMode(s); graphRef.current?.setShape(s.shape) }
-                  }}
-                    style={{ display:'flex', alignItems:'center', justifyContent:'center', width:28, height:28, background: shapeMode?.shape===s.shape&&i<SHAPE_STRIP.length ? 'var(--surface)' : 'transparent', border:'none', cursor:'pointer', borderRadius:6, flexShrink:0, outline:'none', color: shapeMode?.shape===s.shape&&i<SHAPE_STRIP.length ? 'var(--text)' : 'var(--text-3)', transition:'color 0.15s,background 0.15s' }}>
-                    {s.icon}
-                  </button>
-                ))}
-              </div>
+          <div className={styles.shapeStrip}>
+            <div className={styles.shapeStripTrack}>
+              {[...SHAPES, ...SHAPES].map((s, i) => (
+                <button
+                  key={i}
+                  onClick={() => applyShape(activeShape === s ? -1 : SHAPES.indexOf(s))}
+                  className={`${styles.shapeChip} ${activeShape === s ? styles.shapeChipActive : ''}`}
+                  title={s}
+                >
+                  <ShapeIcon shape={s} />
+                </button>
+              ))}
             </div>
           </div>
 
           {pendingCount > 0 && (
             <Section label="Pending">
-              {Object.entries(pending.nodes).map(([id,c])=><ChangeItem key={id} text={`+ Node: ${c.name}`} />)}
-              {Object.entries(pending.edges).map(([id,c])=><ChangeItem key={id} text={`+ Rel: ${c.relType}`} />)}
-              {pending.deletedNodes.map(id=><ChangeItem key={id} text={`− Node: ${id}`} del />)}
-              {pending.deletedEdges.map(id=><ChangeItem key={id} text={`− Rel: ${id}`} del />)}
-              <div style={{ display:'flex', gap:6, marginTop:10 }}>
-                <button style={{ ...S.btn, flex:1, justifyContent:'center', background:'#0000ee', color:'#fff', border:'none', fontWeight:600 }} onClick={()=>setModal('commit')}>Commit</button>
-                <button style={{ ...S.btn, flex:1, justifyContent:'center', color:'var(--text-2)' }} onClick={doReset}>Revert</button>
+              <div className={styles.pendingScroll}>
+                {Object.entries(pending.nodes).map(([id, c]) => <ChangeItem key={id} text={`+ Node: ${c.name}`} />)}
+                {Object.entries(pending.edges).map(([id, c]) => <ChangeItem key={id} text={`+ Rel: ${c.relType}`} />)}
+                {pending.deletedNodes.map(id => <ChangeItem key={id} text={`− Node: ${id}`} del />)}
+                {pending.deletedEdges.map(id => <ChangeItem key={id} text={`− Rel: ${id}`} del />)}
+              </div>
+              <div className={styles.pendingActions}>
+                <button
+                  className={`${styles.btn} ${styles.btnFlex} ${styles.btnCommit}`}
+                  onClick={() => setModal('commit')}
+                >Commit</button>
+                <button
+                  className={`${styles.btn} ${styles.btnFlex} ${styles.btnRevert}`}
+                  onClick={doReset}
+                >Revert</button>
               </div>
             </Section>
           )}
         </div>
       </div>
 
-      {/* Modals */}
       {modal && (
-        <div onClick={e=>{ if(e.target===e.currentTarget) setModal(null) }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', backdropFilter:'blur(4px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
-          <div style={{ background:'var(--modal-bg)', border:'1px solid var(--border)', borderRadius:16, padding:28, width:'90%', maxWidth:460, maxHeight:'80vh', overflowY:'auto' }}>
-            {modal==='addNode' && <>
-              <h3 style={{ fontSize:18, fontWeight:800, letterSpacing:'-0.02em', marginBottom:6 }}>Add Node</h3>
-              <p style={{ fontSize:13, color:'var(--text-2)', marginBottom:20, lineHeight:1.5 }}>Create a new node and link it to your profile.</p>
-              <MInput label="Label" placeholder="Skill, Value, Goal…" value={nodeForm.label} onChange={v=>setNodeForm(f=>({...f,label:v}))} />
-              <MInput label="Name" placeholder="e.g. Python, Discipline…" value={nodeForm.name} onChange={v=>setNodeForm(f=>({...f,name:v}))} />
-              <MInput label='Properties (JSON, optional)' placeholder='{"level":"expert"}' value={nodeForm.props} onChange={v=>setNodeForm(f=>({...f,props:v}))} textarea />
-              <div style={{ display:'flex', gap:8, marginTop:20 }}>
-                <button style={{ ...S.btn, flex:1, justifyContent:'center' }} onClick={()=>setModal(null)}>Cancel</button>
-                <button style={{ ...S.btn, ...S.btnPrimary, flex:1, justifyContent:'center' }} onClick={doAddNode}>Add Node</button>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setModal(null) }}
+          className={styles.modalOverlay}
+        >
+          <div className={styles.modalBox}>
+            {modal === 'addNode' && <>
+              <h3 className={styles.modalTitle}>Add Node</h3>
+              <p className={styles.modalSub}>Create a new node and link it to your profile.</p>
+              <MInput label="Label" placeholder="Skill, Value, Goal…" value={nodeForm.label} onChange={v => setNodeForm(f => ({ ...f, label: v }))} />
+              <MInput label="Name" placeholder="e.g. Python, Discipline…" value={nodeForm.name} onChange={v => setNodeForm(f => ({ ...f, name: v }))} />
+              <MInput label='Properties (JSON, optional)' placeholder='{"level":"expert"}' value={nodeForm.props} onChange={v => setNodeForm(f => ({ ...f, props: v }))} textarea />
+              <div className={styles.modalActions}>
+                <button className={`${styles.btn} ${styles.btnFlex}`} onClick={() => setModal(null)}>Cancel</button>
+                <button className={`${styles.btn} ${styles.btnPrimary} ${styles.btnFlex}`} onClick={doAddNode}>Add Node</button>
               </div>
             </>}
-            {modal==='addEdge' && <>
-              <h3 style={{ fontSize:18, fontWeight:800, letterSpacing:'-0.02em', marginBottom:6 }}>Add Relationship</h3>
-              <p style={{ fontSize:13, color:'var(--text-2)', marginBottom:20, lineHeight:1.5 }}>Connect two nodes with a relationship.</p>
-              <MInput label="From (node ID)" placeholder="node-id" value={edgeForm.from} onChange={v=>setEdgeForm(f=>({...f,from:v}))} />
-              <MInput label="Relationship Type" placeholder="HAS_SKILL, HOLDS_VALUE…" value={edgeForm.type} onChange={v=>setEdgeForm(f=>({...f,type:v}))} />
-              <MInput label="To (node ID)" placeholder="node-id" value={edgeForm.to} onChange={v=>setEdgeForm(f=>({...f,to:v}))} />
-              <div style={{ display:'flex', gap:8, marginTop:20 }}>
-                <button style={{ ...S.btn, flex:1, justifyContent:'center' }} onClick={()=>setModal(null)}>Cancel</button>
-                <button style={{ ...S.btn, ...S.btnPrimary, flex:1, justifyContent:'center' }} onClick={doAddEdge}>Add</button>
+            {modal === 'addEdge' && <>
+              <h3 className={styles.modalTitle}>Add Relationship</h3>
+              <p className={styles.modalSub}>Connect two nodes with a relationship.</p>
+              <MInput label="From (node ID)" placeholder="node-id" value={edgeForm.from} onChange={v => setEdgeForm(f => ({ ...f, from: v }))} />
+              <MInput label="Relationship Type" placeholder="HAS_SKILL, HOLDS_VALUE…" value={edgeForm.type} onChange={v => setEdgeForm(f => ({ ...f, type: v }))} />
+              <MInput label="To (node ID)" placeholder="node-id" value={edgeForm.to} onChange={v => setEdgeForm(f => ({ ...f, to: v }))} />
+              <div className={styles.modalActions}>
+                <button className={`${styles.btn} ${styles.btnFlex}`} onClick={() => setModal(null)}>Cancel</button>
+                <button className={`${styles.btn} ${styles.btnPrimary} ${styles.btnFlex}`} onClick={doAddEdge}>Add</button>
               </div>
             </>}
-            {modal==='commit' && <>
-              <h3 style={{ fontSize:18, fontWeight:800, letterSpacing:'-0.02em', marginBottom:6 }}>Confirm Changes</h3>
-              <p style={{ fontSize:13, color:'var(--text-2)', marginBottom:16, lineHeight:1.5 }}>The following changes will be saved to the graph:</p>
-              <div style={{ maxHeight:200, overflowY:'auto', marginBottom:8 }}>
-                {Object.entries(pending.nodes).map(([id,c])=><ChangeItem key={id} text={`+ Add node: ${c.name}`} />)}
-                {Object.entries(pending.edges).map(([id,c])=><ChangeItem key={id} text={`+ Add rel: ${c.relType}`} />)}
-                {pending.deletedNodes.map(id=><ChangeItem key={id} text="− Remove node" del />)}
-                {pending.deletedEdges.map(id=><ChangeItem key={id} text="− Remove rel" del />)}
+            {modal === 'editNode' && <>
+              <h3 className={styles.modalTitle}>Edit Node Name</h3>
+              <MInput label="Name" placeholder="New name…" value={editNodeName} onChange={setEditNodeName} />
+              <div className={styles.modalActions}>
+                <button className={`${styles.btn} ${styles.btnFlex}`} onClick={() => setModal(null)}>Cancel</button>
+                <button className={`${styles.btn} ${styles.btnPrimary} ${styles.btnFlex}`} onClick={doEditNode}>Save</button>
               </div>
-              <div style={{ display:'flex', gap:8, marginTop:20 }}>
-                <button style={{ ...S.btn, flex:1, justifyContent:'center' }} onClick={()=>setModal(null)}>Cancel</button>
-                <button style={{ ...S.btn, ...S.btnPrimary, flex:1, justifyContent:'center' }} onClick={doCommit}>Confirm & Save</button>
+            </>}
+            {modal === 'commit' && <>
+              <h3 className={styles.modalTitle}>Confirm Changes</h3>
+              <p className={styles.modalSub}>The following changes will be saved to the graph:</p>
+              <div className={styles.commitScroll}>
+                {Object.entries(pending.nodes).map(([id, c]) => <ChangeItem key={id} text={`+ Add node: ${c.name}`} />)}
+                {Object.entries(pending.edges).map(([id, c]) => <ChangeItem key={id} text={`+ Add rel: ${c.relType}`} />)}
+                {pending.deletedNodes.map(id => <ChangeItem key={id} text="− Remove node" del />)}
+                {pending.deletedEdges.map(id => <ChangeItem key={id} text="− Remove rel" del />)}
+              </div>
+              <div className={styles.modalActions}>
+                <button className={`${styles.btn} ${styles.btnFlex}`} onClick={() => setModal(null)}>Cancel</button>
+                <button className={`${styles.btn} ${styles.btnPrimary} ${styles.btnFlex}`} onClick={doCommit}>Confirm & Save</button>
               </div>
             </>}
           </div>
         </div>
       )}
 
-      {/* Confirm dialog */}
       {confirmDialog && (
-        <div onClick={e=>{ if(e.target===e.currentTarget){ setConfirmDialog(null) } }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(6px)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300 }}>
-          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:16, padding:28, width:'90%', maxWidth:380, boxShadow:'0 24px 60px rgba(0,0,0,0.4)' }}>
-            <p style={{ fontSize:16, fontWeight:700, letterSpacing:'-0.02em', marginBottom: confirmDialog.hint ? 8 : 24 }}>{confirmDialog.message}</p>
-            {confirmDialog.hint && <p style={{ fontSize:13, color:'var(--text-2)', marginBottom:24, lineHeight:1.5 }}>{confirmDialog.hint}</p>}
-            <div style={{ display:'flex', gap:8 }}>
-              <button style={{ ...S.btn, flex:1, justifyContent:'center' }} onClick={()=>setConfirmDialog(null)}>Cancel</button>
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setConfirmDialog(null) }}
+          className={styles.confirmOverlay}
+        >
+          <div className={styles.confirmBox}>
+            <p className={`${styles.confirmMsg} ${confirmDialog.hint ? styles.confirmMsgWithHint : styles.confirmMsgNoHint}`}>
+              {confirmDialog.message}
+            </p>
+            {confirmDialog.hint && <p className={styles.confirmHint}>{confirmDialog.hint}</p>}
+            <div className={styles.confirmActions}>
+              <button className={`${styles.btn} ${styles.btnFlex}`} onClick={() => setConfirmDialog(null)}>Cancel</button>
               <button
-                style={{ ...S.btn, flex:1, justifyContent:'center', border:'none', background: confirmDialog.danger?'#e11d48':'var(--text)', color:'#fff' }}
-                onClick={()=>{ confirmDialog.onConfirm(); setConfirmDialog(null) }}
+                className={`${styles.btn} ${styles.btnFlex} ${styles.confirmActionBtn} ${confirmDialog.danger ? styles.confirmActionBtnDanger : styles.confirmActionBtnNormal}`}
+                onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null) }}
               >
                 {confirmDialog.danger ? 'Delete' : 'Confirm'}
               </button>
@@ -414,18 +488,23 @@ export default function Graph() {
 
 function MenuItem({ label, icon, onClick, disabled, danger }) {
   return (
-    <button onClick={disabled?undefined:onClick} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', padding:'8px 10px', borderRadius:7, border:'none', background:'transparent', cursor:disabled?'not-allowed':'pointer', fontSize:13, fontWeight:500, color:danger?'#e11d48':disabled?'var(--text-3)':'var(--text)', fontFamily:'Inter,sans-serif', textAlign:'left', opacity:disabled?0.4:1 }}>
-      <span style={{ opacity:0.6, fontSize:14 }}>{icon}</span>{label}
+    <button
+      onClick={disabled ? undefined : onClick}
+      className={`${styles.menuItem} ${danger ? styles.menuItemDanger : ''} ${disabled ? styles.menuItemDisabled : ''}`}
+      style={disabled ? { opacity: 0.4 } : undefined}
+    >
+      <span className={styles.menuIcon}>{icon}</span>{label}
     </button>
   )
 }
+
 function ThemeMenuItem() {
-  const [theme, setTheme] = useState(()=>localStorage.getItem('identiti-theme')||'dark')
-  function toggle() { const n=theme==='dark'?'light':'dark'; localStorage.setItem('identiti-theme',n); document.documentElement.setAttribute('data-theme',n); setTheme(n) }
+  const [theme, setTheme] = useState(() => localStorage.getItem('identiti-theme') || 'dark')
+  function toggle() { const n = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('identiti-theme', n); document.documentElement.setAttribute('data-theme', n); setTheme(n) }
   return (
-    <button onClick={toggle} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', padding:'8px 10px', borderRadius:7, border:'none', background:'transparent', cursor:'pointer', fontSize:13, fontWeight:500, color:'var(--text)', fontFamily:'Inter,sans-serif', textAlign:'left' }}>
-      <span style={{ opacity:0.6, display:'flex', alignItems:'center' }}>
-        {theme==='dark' ? (
+    <button onClick={toggle} className={styles.menuItem}>
+      <span className={styles.menuIconSvg}>
+        {theme === 'dark' ? (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
             <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
@@ -437,567 +516,85 @@ function ThemeMenuItem() {
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
           </svg>
         )}
-      </span>{theme==='dark'?'Light mode':'Dark mode'}
+      </span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}
     </button>
   )
 }
 
 function Section({ label, children }) {
-  return <div style={{ padding:'20px 18px', borderBottom:'1px solid var(--border)' }}>
-    <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:12 }}>{label}</div>
-    {children}
-  </div>
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionLabel}>{label}</div>
+      {children}
+    </div>
+  )
 }
+
 function StatRow({ k, v }) {
-  return <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 12px', background:'var(--surface)', borderRadius:8, marginBottom:6 }}>
-    <span style={{ fontSize:13, color:'var(--text-2)' }}>{k}</span>
-    <span style={{ fontSize:13, fontWeight:600 }}>{v}</span>
-  </div>
+  return (
+    <div className={styles.statRow}>
+      <span className={styles.statKey}>{k}</span>
+      <span className={styles.statVal}>{v}</span>
+    </div>
+  )
 }
+
 function DR({ k, v }) {
-  return <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', padding:'7px 0', borderBottom:'1px solid var(--surface)' }}>
-    <span style={{ fontSize:12, color:'var(--text-3)' }}>{k}</span>
-    <span style={{ fontSize:12, fontWeight:500, textAlign:'right', maxWidth:'60%', wordBreak:'break-word' }}>{v}</span>
-  </div>
+  return (
+    <div className={styles.dr}>
+      <span className={styles.drKey}>{k}</span>
+      <span className={styles.drVal}>{v}</span>
+    </div>
+  )
 }
+
 function ChangeItem({ text, del }) {
-  return <div style={{ padding:'8px 10px', borderRadius:8, fontSize:12, marginBottom:5, background: del?'rgba(225,29,72,0.1)':'rgba(0,0,238,0.08)', border:`1px solid ${del?'rgba(225,29,72,0.25)':'rgba(0,0,238,0.2)'}` }}>{text}</div>
+  return (
+    <div className={`${styles.changeItem} ${del ? styles.changeItemDel : styles.changeItemAdd}`}>{text}</div>
+  )
 }
+
 function MInput({ label, placeholder, value, onChange, textarea }) {
-  const style = { width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', fontFamily:'Inter,sans-serif', fontSize:14, padding:'10px 14px', outline:'none', ...(textarea?{resize:'vertical',minHeight:80}:{}) }
-  return <div style={{ marginBottom:14 }}>
-    <label style={{ display:'block', fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:6 }}>{label}</label>
-    {textarea ? <textarea value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={style} /> : <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={style} />}
-  </div>
+  return (
+    <div className={styles.minputWrap}>
+      <label className={styles.minputLabel}>{label}</label>
+      {textarea
+        ? <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className={`${styles.minputField} ${styles.minputTextarea}`} />
+        : <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className={styles.minputField} />
+      }
+    </div>
+  )
 }
 
-// ── Canvas graph engine ──
-function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, setSelectedEdge) {
-  const ctx = canvas.getContext('2d')
-  let rafId = null, destroyed = false
-
-  class DS {
-    constructor() { this._d = new Map() }
-    add(items) { [].concat(items).forEach(i=>{ if(i&&i.id!=null) this._d.set(String(i.id),{...i}) }) }
-    remove(id) { this._d.delete(String(id)) }
-    get(q) { if(q===undefined) return [...this._d.values()]; if(typeof q==='object'&&q.filter) return [...this._d.values()].filter(q.filter); return this._d.get(String(q))||null }
-    getIds() { return [...this._d.keys()] }
-    get length() { return this._d.size }
-    update(items) { [].concat(items).forEach(i=>{ const ex=this._d.get(String(i.id)); if(ex) this._d.set(String(i.id),{...ex,...i}) }) }
-    clear() { this._d.clear() }
+function ShapeIcon({ shape }) {
+  const icons = {
+    heart:     <path d="M8 13C3 10 2 7 2 5.5a3 3 0 0 1 6-1 3 3 0 0 1 6 1c0 1.5-1 4.5-6 7.5z" fill="currentColor" stroke="none"/>,
+    diamond:   <polygon points="8,1.5 14,8 8,14.5 2,8"/>,
+    ring:      <circle cx="8" cy="8" r="5" strokeWidth="2.5"/>,
+    cross:     <><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></>,
+    infinity:  <path d="M4.5 8c0-1.7 1.2-2.5 2.5-2.5 1.5 0 2 2.5 2 2.5s.5 2.5 2 2.5 2.5-.8 2.5-2.5-1.2-2.5-2.5-2.5c-1.5 0-2 2.5-2 2.5s-.5-2.5-2-2.5S2.5 6.3 2.5 8z"/>,
+    crown:     <><polyline points="2.5,12 4,7 7,10 8,4 9,10 12,7 13.5,12"/><line x1="2.5" y1="12" x2="13.5" y2="12"/></>,
+    snowflake: <><line x1="8" y1="1.5" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="14.5" y2="8"/><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></>,
+    wave:      <path d="M1 8c2-4 3-4 4.5 0s2.5 4 4 0 2.5-4 4 0"/>,
+    mountain:  <polyline points="1.5,14 6,5 9,10 11.5,5 14.5,14"/>,
+    flower:    <><ellipse cx="8" cy="3.5" rx="1.5" ry="2.5"/><ellipse cx="8" cy="12.5" rx="1.5" ry="2.5"/><ellipse cx="3.5" cy="8" rx="2.5" ry="1.5"/><ellipse cx="12.5" cy="8" rx="2.5" ry="1.5"/><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none"/></>,
+    tree:      <><polygon points="8,2 14,13 2,13"/><line x1="8" y1="13" x2="8" y2="15" strokeWidth="2"/></>,
+    fish:      <><ellipse cx="7" cy="8" rx="4" ry="2.5"/><polyline points="11,5.5 14.5,8 11,10.5"/><circle cx="5.5" cy="7.5" r="0.7" fill="currentColor" stroke="none"/></>,
+    bird:      <path d="M2 10c3-6 6-5.5 7.5-3C11 5 13.5 5 15 6c-2 .5-3.5 2-4 4.5C9 9 6 9 2 10z"/>,
+    galaxy:    <path d="M8 8c3-1 5 0 5 1.5s-3.5 3.5-8 2.5-4-4-1-5 7-1 6 2.5-4 4-7 2-2-5 2-5 5 1 4.5 4"/>,
+    dna:       <><path d="M5.5 2c0 4.5 5 6.5 5 10.5"/><path d="M10.5 2c0 4.5-5 6.5-5 10.5"/><line x1="6" y1="5.5" x2="10" y2="5.5"/><line x1="6" y1="8" x2="10" y2="8"/><line x1="6" y1="10.5" x2="10" y2="10.5"/></>,
+    butterfly: <><path d="M8 8.5c-1-3.5-3.5-4-5-3S2 8 3.5 9.5 8 8.5 8 8.5z"/><path d="M8 8.5c1-3.5 3.5-4 5-3s1 2.5-.5 4S8 8.5 8 8.5z"/><path d="M8 8.5c-1 2 -3 2.5-4 2S2.5 9.5 3.5 9.5 8 8.5 8 8.5z"/><path d="M8 8.5c1 2 3 2.5 4 2s1-1.5 0-1.5-4 1-4 1z"/><line x1="8" y1="6" x2="8" y2="13"/></>,
+    whale:     <><path d="M2 8.5c0 0 2.5-4.5 7-3.5s5 3 4.5 4.5-2.5 2-5.5 1.5S2 8.5 2 8.5z"/><polyline points="13.5,6.5 15.5,4.5 13.5,9.5"/></>,
+    jellyfish: <><path d="M3.5 8C3.5 5 5.5 3 8 3s4.5 2 4.5 5"/><path d="M5.5 8c-.5 3-1 5-1.5 5.5"/><line x1="8" y1="8" x2="8" y2="14"/><path d="M10.5 8c.5 3 1 5 1.5 5.5"/></>,
+    octopus:   <><circle cx="8" cy="6" r="3.5"/><path d="M4.5 9c-.5 3-1.5 4.5-1.5 5"/><path d="M6.5 9.5c0 3-.5 4 0 4.5"/><line x1="8" y1="9.5" x2="8" y2="14"/><path d="M9.5 9.5c0 3 .5 4 0 4.5"/><path d="M11.5 9c.5 3 1.5 4.5 1.5 5"/></>,
+    starfish:  <polygon points="8,1 9.5,6.5 15,6.5 10.5,9.5 12.5,15 8,12 3.5,15 5.5,9.5 1,6.5 6.5,6.5"/>,
+    snake:     <path d="M2 13c2.5.5 4-1.5 3.5-3.5S3 5.5 5 4.5s4 .5 4 2.5-1.5 4.5.5 5.5 4.5-1 4-3.5"/>,
+    crescent:  <path d="M10.5 13A5.5 5.5 0 0 1 10.5 3a5.5 5.5 0 0 0 0 10z" fill="currentColor" stroke="none"/>,
+    spiral:    <path d="M8 8c0 0 .5-2 2-2s2 1.5 2 3-1.5 3-3 3-4-2-4-4.5S7.5 3 10 3s6 2.5 6 6"/>,
   }
-
-  const nodes = new DS(), edges = new DS()
-  const animNodes = new Map()
-  const cam = { x:0, y:0, scale:1, tx:0, ty:0, ts:1 }
-  const mouse = { sx:-9999, sy:-9999, wx:-9999, wy:-9999, radius:130 }
-  let dragging=false, dragStartSX=0, dragStartSY=0, camStartX=0, camStartY=0
-  let draggedNode=null, dragOffX=0, dragOffY=0, didDrag=false
-  let hoveredNode=null, hoveredEdge=null
-  let selNode=null, selEdge=null
-  let searchHL=new Set()
-  let shiftHeld=false
-  let zoomTimer=null
-
-  function resize() {
-    const r=canvas.parentElement.getBoundingClientRect()
-    const dpr=window.devicePixelRatio||1
-    canvas.width=r.width*dpr; canvas.height=r.height*dpr
-    canvas.style.width=r.width+'px'; canvas.style.height=r.height+'px'
-  }
-  const ro = new ResizeObserver(resize)
-  ro.observe(canvas.parentElement)
-  resize()
-
-  function cssW() { return canvas.width/(window.devicePixelRatio||1)||800 }
-  function cssH() { return canvas.height/(window.devicePixelRatio||1)||600 }
-  function authH() { return { 'Content-Type':'application/json','Authorization':`Bearer ${sessionRef.current?.access_token}` } }
-  function sToW(sx,sy) { return { x:(sx-cam.x)/cam.scale, y:(sy-cam.y)/cam.scale } }
-
-  function hitNode(wx,wy) {
-    const r=10/Math.pow(cam.scale,0.5)
-    for(const [id,an] of animNodes){ const dx=an.x-wx,dy=an.y-wy; if(dx*dx+dy*dy<r*r) return id }
-    return null
-  }
-  function hitEdge(wx,wy) {
-    const th=7/cam.scale
-    for(const eid of edges.getIds()){
-      const e=edges.get(eid),a=animNodes.get(String(e.from)),b=animNodes.get(String(e.to)); if(!a||!b) continue
-      const dx=b.x-a.x,dy=b.y-a.y,l2=dx*dx+dy*dy; if(!l2) continue
-      const t=Math.max(0,Math.min(1,((wx-a.x)*dx+(wy-a.y)*dy)/l2))
-      const px=a.x+t*dx-wx,py=a.y+t*dy-wy
-      if(px*px+py*py<th*th) return eid
-    }
-    return null
-  }
-
-  // 350-iteration force layout with cooling + velocity damping (matches old HTML)
-  function computeLayout(nl,el) {
-    const W=cssW(),H=cssH()
-    const pos=new Map()
-    nl.forEach((n,i)=>{
-      const a=(i/nl.length)*Math.PI*2, r=Math.min(W,H)*0.3
-      pos.set(String(n.id),{ x:W/2+Math.cos(a)*r+(Math.random()-.5)*50, y:H/2+Math.sin(a)*r+(Math.random()-.5)*50, vx:0, vy:0 })
-    })
-    for(let iter=0;iter<350;iter++){
-      const cool=Math.max(0.05,1-iter/250)
-      const ids=[...pos.keys()]
-      // Repulsion
-      for(let i=0;i<ids.length;i++){
-        for(let j=i+1;j<ids.length;j++){
-          const a=pos.get(ids[i]),b=pos.get(ids[j])
-          const dx=a.x-b.x,dy=a.y-b.y,dist=Math.sqrt(dx*dx+dy*dy)||0.1
-          const f=(6000/(dist*dist))*cool
-          a.vx+=(dx/dist)*f; a.vy+=(dy/dist)*f
-          b.vx-=(dx/dist)*f; b.vy-=(dy/dist)*f
-        }
-      }
-      // Spring attraction
-      el.forEach(e=>{
-        const a=pos.get(String(e.from)),b=pos.get(String(e.to)); if(!a||!b) return
-        const dx=b.x-a.x,dy=b.y-a.y,dist=Math.sqrt(dx*dx+dy*dy)||0.1
-        const f=(dist-170)*0.006*cool
-        a.vx+=(dx/dist)*f; a.vy+=(dy/dist)*f
-        b.vx-=(dx/dist)*f; b.vy-=(dy/dist)*f
-      })
-      // Center gravity
-      pos.forEach(p=>{ p.vx+=(W/2-p.x)*0.003; p.vy+=(H/2-p.y)*0.003 })
-      // Integrate + dampen
-      pos.forEach(p=>{ p.x+=p.vx*0.6; p.y+=p.vy*0.6; p.vx*=0.82; p.vy*=0.82 })
-    }
-    return pos
-  }
-
-  function makeAnimNode(id,x,y) {
-    return { x, y, baseX:x, baseY:y, angle:Math.random()*Math.PI*2, av:(Math.random()-.5)*.01, phase:Math.random()*Math.PI*2, ar:10+Math.random()*8 }
-  }
-
-  // ── Shape generators — produce exactly n well-defined points ──
-  function generateShapePoints(shape, n) {
-    const W=cssW(), H=cssH(), cx=W/2, cy=H/2
-    const R=Math.min(W,H)*0.32
-    const pts=[]
-
-    if (shape==='octopus') {
-      // Tight head cluster
-      const headN=Math.max(6, Math.floor(n*0.22))
-      for(let i=0;i<headN;i++){
-        const a=(i/headN)*Math.PI*2, r=R*0.18*(0.4+Math.sqrt(Math.random())*0.6)
-        pts.push({ x:cx+Math.cos(a)*r, y:cy-R*0.05+Math.sin(a)*r*0.9 })
-      }
-      // 8 distinct arms — tight, long, curved
-      const armN=n-headN, nArms=8
-      for(let arm=0;arm<nArms;arm++){
-        const count=arm<armN%nArms ? Math.ceil(armN/nArms) : Math.floor(armN/nArms)
-        const baseA=(arm/nArms)*Math.PI*2 - Math.PI/2
-        for(let j=0;j<count;j++){
-          const t=(j+1)/(count+1)
-          const curve=Math.sin(t*Math.PI)*R*0.12*(arm%2===0?1:-1)
-          const perp=baseA+Math.PI/2
-          pts.push({
-            x:cx+Math.cos(baseA)*R*1.15*t + Math.cos(perp)*curve,
-            y:cy+Math.sin(baseA)*R*1.15*t + Math.sin(perp)*curve
-          })
-        }
-      }
-    } else if (shape==='jellyfish') {
-      // Bell — tight dome
-      const bellN=Math.floor(n*0.35)
-      for(let i=0;i<bellN;i++){
-        const a=Math.PI*(0.1+0.8*(i/bellN)) // upper arc only
-        const r=R*(0.55+Math.sqrt(Math.random())*0.45)
-        pts.push({ x:cx+Math.cos(a)*r, y:cy-R*0.2+Math.sin(a)*r*0.5 })
-      }
-      // Long straight tentacles
-      const tentN=n-bellN, nTent=7
-      for(let i=0;i<tentN;i++){
-        const ti=i%nTent
-        const depth=(Math.floor(i/nTent)+1)/Math.ceil(tentN/nTent)
-        const bx=cx+(-0.5+ti/(nTent-1))*R*1.1
-        const wave=Math.sin(depth*Math.PI*4+ti)*12
-        pts.push({ x:bx+wave, y:cy+R*0.28+depth*R*1.5 })
-      }
-    } else if (shape==='fish') {
-      // Ellipse body
-      const bodyN=Math.floor(n*0.72)
-      for(let i=0;i<bodyN;i++){
-        const a=(i/bodyN)*Math.PI*2
-        const taper=0.55+0.45*Math.cos(a) // tapers toward tail
-        const r=Math.sqrt(Math.random())*taper
-        pts.push({ x:cx-R*0.05+Math.cos(a)*R*0.9*r, y:cy+Math.sin(a)*R*0.42*r })
-      }
-      // Forked tail
-      const tailN=n-bodyN
-      for(let i=0;i<tailN;i++){
-        const t=Math.random()
-        const side=(i<tailN/2?1:-1)
-        pts.push({ x:cx+R*0.88+t*R*0.38, y:cy+side*(R*0.06+t*R*0.48) })
-      }
-    } else if (shape==='whale') {
-      // Long tapered body
-      const bodyN=Math.floor(n*0.78)
-      for(let i=0;i<bodyN;i++){
-        const a=(i/bodyN)*Math.PI*2
-        const taper=0.4+0.6*Math.abs(Math.cos(a*0.5)) // fatter in middle
-        const r=Math.sqrt(Math.random())*taper
-        pts.push({ x:cx+Math.cos(a)*R*1.2*r, y:cy+Math.sin(a)*R*0.3*r })
-      }
-      // Tail flukes — two lobes
-      const flukeN=n-bodyN
-      for(let i=0;i<flukeN;i++){
-        const side=(i<flukeN/2?1:-1)
-        const t=Math.random()
-        pts.push({ x:cx+R*1.1+t*R*0.3, y:cy+side*(R*0.12+t*R*0.38) })
-      }
-    } else if (shape==='starfish') {
-      // 5 arms radiating cleanly
-      const nArms=5, perArm=n/nArms
-      for(let arm=0;arm<nArms;arm++){
-        const baseA=(arm/nArms)*Math.PI*2-Math.PI/2
-        const count=arm<n%nArms?Math.ceil(perArm):Math.floor(perArm)
-        for(let j=0;j<count;j++){
-          const t=(j+1)/(count+1)
-          const spread=R*0.08*(1-t)
-          pts.push({
-            x:cx+Math.cos(baseA)*R*1.05*t+(Math.random()-.5)*spread*2,
-            y:cy+Math.sin(baseA)*R*1.05*t+(Math.random()-.5)*spread*2
-          })
-        }
-      }
-    } else if (shape==='butterfly') {
-      const bodyN=Math.max(3,Math.floor(n*0.07))
-      for(let i=0;i<bodyN;i++) pts.push({ x:cx+(Math.random()-.5)*R*0.08, y:cy-R*0.3+i*(R*0.6/bodyN) })
-      const wingN=n-bodyN, pw=Math.floor(wingN/2)
-      for(let i=0;i<pw;i++){
-        const a=(i/pw)*Math.PI*2, r=Math.sqrt(Math.random())
-        const bx=Math.cos(a)*R*0.52*r, by=Math.sin(a)*R*0.35*r
-        pts.push({ x:cx-R*0.42+bx*Math.cos(-0.35)-by*Math.sin(-0.35), y:cy-R*0.08+bx*Math.sin(-0.35)+by*Math.cos(-0.35) })
-      }
-      for(let i=0;i<wingN-pw;i++){
-        const a=(i/(wingN-pw))*Math.PI*2, r=Math.sqrt(Math.random())
-        const bx=Math.cos(a)*R*0.52*r, by=Math.sin(a)*R*0.35*r
-        pts.push({ x:cx+R*0.42+bx*Math.cos(0.35)-by*Math.sin(0.35), y:cy-R*0.08+bx*Math.sin(0.35)+by*Math.cos(0.35) })
-      }
-    } else if (shape==='heart') {
-      for(let i=0;i<n;i++){
-        const t=(i/n)*Math.PI*2
-        const hx=R*0.65*Math.pow(Math.sin(t),3)
-        const hy=-R*0.55*(0.8125*Math.cos(t)-0.3125*Math.cos(2*t)-0.125*Math.cos(3*t)-0.0625*Math.cos(4*t))
-        const j=R*0.08*(Math.random()-.5)
-        pts.push({ x:cx+hx+j, y:cy+hy+R*0.08+j })
-      }
-    } else if (shape==='bird') {
-      const bodyN=Math.max(3,Math.floor(n*0.08))
-      for(let i=0;i<bodyN;i++) pts.push({ x:cx+(Math.random()-.5)*R*0.1, y:cy+(Math.random()-.5)*R*0.1 })
-      const wingN=n-bodyN, pw=Math.floor(wingN/2)
-      for(let i=0;i<pw;i++){
-        const t=(i+1)/(pw+1), arc=Math.sin(t*Math.PI)*R*0.18
-        pts.push({ x:cx-R*0.08-t*R*0.92, y:cy-arc-t*R*0.28+(Math.random()-.5)*R*0.06 })
-      }
-      for(let i=0;i<wingN-pw;i++){
-        const t=(i+1)/(wingN-pw+1), arc=Math.sin(t*Math.PI)*R*0.18
-        pts.push({ x:cx+R*0.08+t*R*0.92, y:cy-arc-t*R*0.28+(Math.random()-.5)*R*0.06 })
-      }
-    } else if (shape==='spiral') {
-      const turns=3.2, tMax=turns*Math.PI*2
-      for(let i=0;i<n;i++){
-        const theta=(i/n)*tMax, r=(theta/tMax)*R*1.1
-        pts.push({ x:cx+r*Math.cos(theta)+(Math.random()-.5)*R*0.04, y:cy+r*Math.sin(theta)+(Math.random()-.5)*R*0.04 })
-      }
-    } else if (shape==='snowflake') {
-      const nArms=6, perArm=n/nArms
-      for(let arm=0;arm<nArms;arm++){
-        const baseA=(arm/nArms)*Math.PI*2, count=arm<n%nArms?Math.ceil(perArm):Math.floor(perArm)
-        for(let j=0;j<count;j++){
-          const t=(j+1)/(count+1), sp=R*0.05*(1-t)
-          pts.push({ x:cx+Math.cos(baseA)*R*t+(Math.random()-.5)*sp*2, y:cy+Math.sin(baseA)*R*t+(Math.random()-.5)*sp*2 })
-        }
-      }
-    } else if (shape==='flower') {
-      const nP=6, cN=Math.max(4,Math.floor(n*0.1)), pN=n-cN, perP=pN/nP
-      for(let i=0;i<cN;i++){ const a=Math.random()*Math.PI*2,r=Math.random()*R*0.14; pts.push({ x:cx+Math.cos(a)*r, y:cy+Math.sin(a)*r }) }
-      for(let p=0;p<nP;p++){
-        const baseA=(p/nP)*Math.PI*2, pcx=cx+Math.cos(baseA)*R*0.52, pcy=cy+Math.sin(baseA)*R*0.52
-        const count=p<pN%nP?Math.ceil(perP):Math.floor(perP)
-        for(let j=0;j<count;j++){ const a=Math.random()*Math.PI*2,r=Math.sqrt(Math.random())*R*0.28; pts.push({ x:pcx+Math.cos(a)*r, y:pcy+Math.sin(a)*r }) }
-      }
-    } else if (shape==='tree') {
-      const trunkN=Math.max(3,Math.floor(n*0.07))
-      for(let i=0;i<trunkN;i++) pts.push({ x:cx+(Math.random()-.5)*R*0.1, y:cy+R*0.38+i*(R*0.38/trunkN) })
-      const cN=n-trunkN
-      for(let i=0;i<cN;i++){
-        const lv=Math.sqrt(Math.random()), y=cy-R*0.85+lv*R*1.15, hw=R*0.72*lv
-        pts.push({ x:cx+(Math.random()*2-1)*hw, y })
-      }
-    } else if (shape==='snake') {
-      const sp=R*0.09
-      for(let i=0;i<n;i++){
-        const t=i/n, y=cy+R*1.1*(t-0.5)
-        const x=cx+R*0.45*Math.sin(t*Math.PI*3.5)
-        pts.push({ x:x+(Math.random()-.5)*sp, y:y+(Math.random()-.5)*sp })
-      }
-    } else if (shape==='crescent') {
-      let att=0
-      while(pts.length<n&&att<n*30){
-        att++; const a=Math.random()*Math.PI*2,r=Math.sqrt(Math.random())*R
-        const px=cx+Math.cos(a)*r, py=cy+Math.sin(a)*r
-        const idx=px-(cx+R*0.32), idy=py-cy
-        if(idx*idx+idy*idy>(R*0.72)*(R*0.72)) pts.push({ x:px, y:py })
-      }
-    } else if (shape==='diamond') {
-      for(let i=0;i<n;i++){
-        const rx=R*0.72, ry=R*0.98
-        let x,y
-        do{ x=(Math.random()*2-1)*rx; y=(Math.random()*2-1)*ry }while(Math.abs(x)/rx+Math.abs(y)/ry>1)
-        pts.push({ x:cx+x, y:cy+y })
-      }
-    }
-
-    while(pts.length<n) pts.push({ x:cx+(Math.random()-.5)*80, y:cy+(Math.random()-.5)*80 })
-    return pts.slice(0,n)
-  }
-
-  function activateShape(shapeName) {
-    const nl=nodes.get()
-    const pts=generateShapePoints(shapeName, nl.length)
-    // Nearest-point assignment — each node flows to its closest shape point
-    const used=new Set()
-    // Sort nodes by distance from center so central nodes get central points
-    const sorted=[...nl].map(node=>{ const an=animNodes.get(String(node.id)); return { node, an, dx:an?an.baseX-cssW()/2:0, dy:an?an.baseY-cssH()/2:0 } })
-    sorted.forEach(({ node, an })=>{
-      if(!an) return
-      let best=-1, bestDist=Infinity
-      pts.forEach((pt,i)=>{ if(used.has(i)) return; const dx=an.baseX-pt.x,dy=an.baseY-pt.y; const d=dx*dx+dy*dy; if(d<bestDist){bestDist=d;best=i} })
-      if(best>=0){ used.add(best); an.shapeTarget={ x:pts[best].x, y:pts[best].y } }
-    })
-  }
-
-  function deactivateShape() {
-    for(const an of animNodes.values()) delete an.shapeTarget
-  }
-
-  function rebuildAnimNodes() {
-    const nl=nodes.get(), el=edges.get()
-    const pos=computeLayout(nl,el)
-    animNodes.clear()
-    pos.forEach((p,id)=>animNodes.set(id,makeAnimNode(id,p.x,p.y)))
-  }
-
-  // Node animation: orbital float + mouse repulsion + optional shape attraction
-  function updateAnimNode(an) {
-    an.angle+=an.av; an.phase+=0.011
-    const ax=Math.cos(an.angle)*an.ar
-    const ay=Math.sin(an.angle)*an.ar+Math.cos(an.phase)*5
-    // Shape attraction: gently pull baseX/baseY toward shape target
-    if(an.shapeTarget){
-      an.baseX+=(an.shapeTarget.x-an.baseX)*0.05
-      an.baseY+=(an.shapeTarget.y-an.baseY)*0.05
-    }
-    if(!shiftHeld){
-      const dx=mouse.wx-an.x, dy=mouse.wy-an.y
-      const dist=Math.sqrt(dx*dx+dy*dy)
-      if(dist<mouse.radius&&mouse.wx>-9000){
-        const force=(mouse.radius-dist)/mouse.radius
-        const angle=Math.atan2(dy,dx)
-        an.x-=Math.cos(angle)*force*12
-        an.y-=Math.sin(angle)*force*12
-        return
-      }
-    }
-    an.x+=(an.baseX+ax-an.x)*0.05
-    an.y+=(an.baseY+ay-an.y)*0.05
-  }
-
-  function fitAll() {
-    const anl=[...animNodes.values()]; if(!anl.length) return
-    const xs=anl.map(a=>a.baseX), ys=anl.map(a=>a.baseY)
-    const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys)
-    const pad=80,cw=cssW(),ch=cssH()
-    const sc=Math.min((cw-pad*2)/(maxX-minX||1),(ch-pad*2)/(maxY-minY||1),2)
-    cam.ts=Math.max(0.1,Math.min(sc,2))
-    cam.tx=cw/2-(minX+maxX)/2*cam.ts
-    cam.ty=ch/2-(minY+maxY)/2*cam.ts
-    cam.x=cam.tx; cam.y=cam.ty; cam.scale=cam.ts
-  }
-
-  const NODE_PALETTE = {
-    'Person':{fill:'#4a7fa8',glow:'rgba(74,127,168,0.5)'},'Skill':{fill:'#4a8c62',glow:'rgba(74,140,98,0.5)'},
-    'Value':{fill:'#a07840',glow:'rgba(160,120,64,0.5)'},'Goal':{fill:'#9a4a52',glow:'rgba(154,74,82,0.5)'},
-    'Trait':{fill:'#7c5a9e',glow:'rgba(124,90,158,0.5)'},'Identity':{fill:'#4a8a9e',glow:'rgba(74,138,158,0.5)'},
-    'Project':{fill:'#9a8840',glow:'rgba(154,136,64,0.5)'},'Behavior':{fill:'#a05858',glow:'rgba(160,88,88,0.5)'},
-    'Constraint':{fill:'#7a6a52',glow:'rgba(122,106,82,0.5)'},'Belief':{fill:'#3a7a9e',glow:'rgba(58,122,158,0.5)'},
-  }
-  let shapeColorOverride = null
-  const dynPalCache = new Map()
-  function palFor(type) {
-    if (shapeColorOverride) return shapeColorOverride
-    if (NODE_PALETTE[type]) return NODE_PALETTE[type]
-    if (dynPalCache.has(type)) return dynPalCache.get(type)
-    // Hash the label string to a hue, then pick a vivid HSL color
-    let h = 0
-    for (let i = 0; i < type.length; i++) h = (h * 31 + type.charCodeAt(i)) & 0xffff
-    const hue = h % 360
-    const fill = `hsl(${hue},80%,62%)`
-    const glow = `hsla(${hue},80%,62%,0.75)`
-    const pal = { fill, glow }
-    dynPalCache.set(type, pal)
-    return pal
-  }
-  function isDark() { return document.documentElement.getAttribute('data-theme')!=='light' }
-
-  function render() {
-    if(destroyed) return
-    const dpr=window.devicePixelRatio||1
-    const W=cssW(),H=cssH()
-    ctx.setTransform(dpr,0,0,dpr,0,0)
-    ctx.clearRect(0,0,W,H)
-    ctx.fillStyle=isDark()?'#0f0f13':'#f5f5f7'
-    ctx.fillRect(0,0,W,H)
-
-    cam.x+=(cam.tx-cam.x)*0.1; cam.y+=(cam.ty-cam.y)*0.1; cam.scale+=(cam.ts-cam.scale)*0.1
-    ctx.save(); ctx.translate(cam.x,cam.y); ctx.scale(cam.scale,cam.scale)
-
-    // Edges
-    for(const eid of edges.getIds()){
-      const e=edges.get(eid),a=animNodes.get(String(e.from)),b=animNodes.get(String(e.to)); if(!a||!b) continue
-      const isSel=eid===selEdge,isHov=eid===hoveredEdge
-      ctx.save(); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y)
-      if(isSel||isHov){ ctx.shadowBlur=10;ctx.shadowColor='rgba(41,151,255,0.6)';ctx.strokeStyle='rgba(96,184,255,0.9)';ctx.lineWidth=2/cam.scale }
-      else { const dx=a.x-b.x,dy=a.y-b.y,dist=Math.sqrt(dx*dx+dy*dy),op=Math.max(0.04,0.35-dist/1400); ctx.strokeStyle=`rgba(41,151,255,${op})`;ctx.lineWidth=1/cam.scale }
-      ctx.stroke(); ctx.restore()
-      if((isSel||isHov)&&e.label){ ctx.font=`${11/cam.scale}px Inter,sans-serif`;ctx.fillStyle='rgba(134,134,139,0.9)';ctx.textAlign='center';ctx.fillText(e.label,(a.x+b.x)/2,(a.y+b.y)/2-7/cam.scale) }
-    }
-
-    // Nodes
-    for(const [id,an] of animNodes){
-      if(id!==draggedNode) updateAnimNode(an)
-      const node=nodes.get(id); if(!node) continue
-      const isSel=id===selNode,isHov=id===hoveredNode,isHL=searchHL.has(id)
-      const type=node.title||'Node',pal=palFor(type)
-      const r=(type==='Person'?(isSel?11:9):(isSel?8:6))/Math.pow(cam.scale,0.5)
-      const alpha=isSel?1:isHov?0.95:0.75
-      ctx.save()
-      ctx.shadowBlur=isSel?28:isHov?18:isHL?22:10
-      ctx.shadowColor=isHL?'rgba(255,214,10,0.8)':pal.glow
-      ctx.fillStyle=pal.fill+(alpha<1?Math.round(alpha*255).toString(16).padStart(2,'0'):'')
-      ctx.strokeStyle=isSel?(isDark()?'#fff':'#1a1a1a'):isHL?'#ffd60a':pal.fill
-      ctx.lineWidth=(isSel?2.5:1.5)/cam.scale
-      ctx.beginPath(); ctx.arc(an.x,an.y,r,0,Math.PI*2); ctx.fill(); ctx.stroke()
-      ctx.restore()
-      if(isSel||isHov||isHL){ const label=node._label||node.label||''; const fs=Math.max(9,12/cam.scale); ctx.font=`600 ${fs}px Inter,sans-serif`; ctx.fillStyle=isDark()?'#f5f5f7':'#1a1a1a'; ctx.textAlign='center'; ctx.fillText(label,an.x,an.y-r-6/cam.scale) }
-    }
-    ctx.restore()
-    rafId=requestAnimationFrame(render)
-  }
-
-  // Mouse events — shift to select/drag nodes, no-shift = pan + repulsion
-  function onMouseMove(e) {
-    const rect=canvas.getBoundingClientRect()
-    const sx=e.clientX-rect.left, sy=e.clientY-rect.top
-    mouse.sx=sx; mouse.sy=sy
-    const w=sToW(sx,sy); mouse.wx=w.x; mouse.wy=w.y
-    if(draggedNode){ const an=animNodes.get(draggedNode); if(an){an.x=w.x+dragOffX;an.y=w.y+dragOffY;an.baseX=an.x;an.baseY=an.y} didDrag=true; return }
-    if(dragging&&!shiftHeld){ cam.tx=camStartX+(sx-dragStartSX); cam.ty=camStartY+(sy-dragStartSY); didDrag=true; return }
-    hoveredNode=hitNode(w.x,w.y); hoveredEdge=hoveredNode?null:hitEdge(w.x,w.y)
-    canvas.style.cursor=(hoveredNode||hoveredEdge)?'pointer':'grab'
-  }
-  function onMouseLeave() { mouse.wx=-9999; mouse.wy=-9999; hoveredNode=null; hoveredEdge=null }
-  function onMouseDown(e) {
-    if(e.button!==0) return
-    const rect=canvas.getBoundingClientRect()
-    const sx=e.clientX-rect.left, sy=e.clientY-rect.top
-    const w=sToW(sx,sy); didDrag=false
-    if(e.shiftKey){
-      const hn=hitNode(w.x,w.y)
-      if(hn){ draggedNode=hn; const an=animNodes.get(hn); dragOffX=an.x-w.x; dragOffY=an.y-w.y; return }
-    }
-    dragging=true; dragStartSX=sx; dragStartSY=sy; camStartX=cam.tx; camStartY=cam.ty
-    canvas.style.cursor='grabbing'
-  }
-  function onMouseUp(e) {
-    if(e.button!==0) return
-    const rect=canvas.getBoundingClientRect()
-    const w=sToW(e.clientX-rect.left, e.clientY-rect.top)
-    if(!didDrag&&e.shiftKey){
-      const hn=hitNode(w.x,w.y), he=hn?null:hitEdge(w.x,w.y)
-      if(hn){ selNode=hn===selNode?null:hn; selEdge=null }
-      else if(he){ selEdge=he===selEdge?null:he; selNode=null }
-      else { selNode=null; selEdge=null }
-      setSelectedNode(selNode); setSelectedEdge(selEdge)
-    }
-    draggedNode=null; dragging=false; didDrag=false
-    canvas.style.cursor=hoveredNode?'pointer':'grab'
-  }
-  function onWheel(e) {
-    e.preventDefault()
-    const rect=canvas.getBoundingClientRect()
-    const sx=e.clientX-rect.left, sy=e.clientY-rect.top
-    const factor=e.deltaY>0?0.88:1.14
-    const ns=Math.max(0.1,Math.min(cam.ts*factor,6))
-    const wx=(sx-cam.tx)/cam.ts, wy=(sy-cam.ty)/cam.ts
-    cam.tx=sx-wx*ns; cam.ty=sy-wy*ns; cam.ts=ns
-    // Brightness flash on zoom
-    clearTimeout(zoomTimer)
-    canvas.style.filter='brightness(1.35)'
-    zoomTimer=setTimeout(()=>{ canvas.style.filter='brightness(1)' },220)
-  }
-  function onKeyDown(e) { if(e.key==='Shift'){ shiftHeld=true; canvas.style.cursor=hoveredNode?'pointer':'crosshair' } }
-  function onKeyUp(e) { if(e.key==='Shift'){ shiftHeld=false; canvas.style.cursor=hoveredNode?'pointer':'grab' } }
-
-  canvas.addEventListener('mousemove',onMouseMove)
-  canvas.addEventListener('mouseleave',onMouseLeave)
-  canvas.addEventListener('mousedown',onMouseDown)
-  canvas.addEventListener('mouseup',onMouseUp)
-  canvas.addEventListener('wheel',onWheel,{passive:false})
-  window.addEventListener('keydown',onKeyDown)
-  window.addEventListener('keyup',onKeyUp)
-
-  async function loadGraph() {
-    const resp=await fetch('/api/graph',{headers:authH()}); if(!resp.ok) return
-    const data=await resp.json()
-    nodes.clear(); edges.clear()
-    nodes.add(data.nodes.map(n=>({...n,_label:n.label,label:' '})))
-    edges.add(data.edges)
-    rebuildAnimNodes()
-    setStats({ nodes:nodes.length, edges:edges.length })
-    setTimeout(fitAll,50)
-  }
-
-  return {
-    start() { render(); loadGraph() },
-    destroy() {
-      destroyed=true; if(rafId) cancelAnimationFrame(rafId); ro.disconnect()
-      canvas.removeEventListener('mousemove',onMouseMove)
-      canvas.removeEventListener('mouseleave',onMouseLeave)
-      canvas.removeEventListener('mousedown',onMouseDown)
-      canvas.removeEventListener('mouseup',onMouseUp)
-      canvas.removeEventListener('wheel',onWheel)
-      window.removeEventListener('keydown',onKeyDown)
-      window.removeEventListener('keyup',onKeyUp)
-    },
-    reload() { loadGraph() },
-    getAllNodes() { return nodes.get() },
-    getAllEdges() { return edges.get() },
-    getNode(id) { return nodes.get(id) },
-    getEdge(id) { return edges.get(id) },
-    addNode(id,name,label) {
-      nodes.add({id,_label:name,label:' ',title:label})
-      const cx=cssW()/2, cy=cssH()/2, w=sToW(cx,cy)
-      animNodes.set(id,makeAnimNode(id,w.x+(Math.random()-.5)*100,w.y+(Math.random()-.5)*100))
-    },
-    addEdge(id,from,to,label) { edges.add({id,from,to,label}) },
-    deleteNode(id) {
-      const connected=edges.get({filter:e=>String(e.from)===id||String(e.to)===id})
-      connected.forEach(e=>edges.remove(e.id)); nodes.remove(id); animNodes.delete(id)
-      return connected.map(e=>e.id)
-    },
-    deleteEdge(id) { edges.remove(id) },
-    focusNode(id) {
-      const an=animNodes.get(id)
-      if(an){ cam.ts=1.5; cam.tx=cssW()/2-an.baseX*1.5; cam.ty=cssH()/2-an.baseY*1.5 }
-    },
-    setHighlight(set) { searchHL=set },
-    clearHighlight() { searchHL=new Set() },
-    setShape(name) { shapeColorOverride = name ? (SHAPE_COLORS[name]||null) : null; if(name) activateShape(name); else deactivateShape() },
-  }
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      {icons[shape]}
+    </svg>
+  )
 }
