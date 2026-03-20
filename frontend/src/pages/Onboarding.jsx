@@ -133,7 +133,7 @@ function WelcomeScreen({ onBuild, onImport }) {
           <h1 style={{ fontSize: 'clamp(48px,10vw,88px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, textAlign: 'left', color: 'var(--text)', marginBottom: 10, width: '100%' }}>Identiti.</h1>
           <p style={{ fontSize: 16, color: 'var(--text-2)', textAlign: 'left', lineHeight: 1.6, marginBottom: 20, width: '100%' }}>Your context is with you.</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, width: '100%', maxWidth: 580 }}>
-            <Card icon="↗" title="Import from AI" desc="Bring that over." onClick={onImport} />
+            <Card icon="↗" title="Import from AI." desc="Bring that over." onClick={onImport} />
             <Card icon="✦" title="Chat with our AI." desc="Your profile builds itself as you talk." onClick={onBuild} primary />
           </div>
         </div>
