@@ -108,7 +108,7 @@ export default function Chat() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <ThemeToggle />
           <BtnSm onClick={() => setByokOpen(true)}>
-            {localStorage.getItem('byok_key') ? '🔑 Key set' : 'API Key'}
+            {localStorage.getItem('byok_key') ? 'Key set' : 'API Key'}
           </BtnSm>
           <BtnSm onClick={saveTranscript}>Save</BtnSm>
           <BtnPrimary onClick={signOut}>Sign out</BtnPrimary>

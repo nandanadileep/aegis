@@ -471,11 +471,17 @@ def chat():
     history = [{"role": "system", "content": system_prompt}, *conversation_history]
     history.append({"role": "user", "content": user_message})
 
-    completion = litellm.completion(
-        messages=history,
-        temperature=0.5,
-        **llm_kwargs(LLM_MODEL),
-    )
+    try:
+        completion = litellm.completion(
+            messages=history,
+            temperature=0.5,
+            **llm_kwargs(LLM_MODEL),
+        )
+    except Exception as e:
+        err = str(e)
+        if "api_key" in err.lower() or "401" in err or "authentication" in err.lower():
+            return jsonify({"error": "Invalid API key. Check your key in the API Key settings."}), 400
+        return jsonify({"error": f"LLM error: {err}"}), 502
     reply = completion.choices[0].message.content or ""
 
     try:
@@ -698,11 +704,17 @@ def onboard_chat():
     if user_message:
         messages.append({"role": "user", "content": user_message})
 
-    completion = litellm.completion(
-        messages=messages,
-        temperature=0.7,
-        **llm_kwargs(LLM_MODEL),
-    )
+    try:
+        completion = litellm.completion(
+            messages=messages,
+            temperature=0.7,
+            **llm_kwargs(LLM_MODEL),
+        )
+    except Exception as e:
+        err = str(e)
+        if "api_key" in err.lower() or "401" in err or "authentication" in err.lower():
+            return jsonify({"error": "Invalid API key. Check your key in the API Key settings."}), 400
+        return jsonify({"error": f"LLM error: {err}"}), 502
     reply = completion.choices[0].message.content or ""
 
     profile = None
