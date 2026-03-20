@@ -245,7 +245,12 @@ def build_system_prompt(memory_context: str) -> str:
     has_memory = memory_context and memory_context != "No stored memory yet."
     if not has_memory:
         return "You are a helpful assistant."
-    return f"You have access to the following memory about this person:\n\n{memory_context}"
+    return (
+        "You are a helpful assistant talking TO the user. "
+        "Never speak as the user or pretend to be them. "
+        "The following is background context about the user that you can use to give relevant responses:\n\n"
+        + memory_context
+    )
 
 
 
