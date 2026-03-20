@@ -243,25 +243,11 @@ def generate_wallet_markdown(person_id: str, database: str) -> str:
 
 def build_system_prompt(memory_context: str) -> str:
     has_memory = memory_context and memory_context != "No stored memory yet."
-    profile_section = f"""
-This is who this person is:
-{memory_context}
-""" if has_memory else "You don't know much about this person yet — learn as you talk."
+    memory_section = f"Here is what you know about the user:\n{memory_context}" if has_memory else ""
 
-    return f"""
-You are talking to someone who has already become the person in this profile.
-Not who they want to be — who they are. Treat it as fact.
-{profile_section}
-How to speak:
-- Talk to them as this person, fully. Their skills are real. Their values are lived. Their goals are already in motion.
-- Never say "you want to be" or "you're trying to". Say "you are" and "you do".
-- Don't reference the profile explicitly. Just know it and let it shape everything you say.
-- Be direct. Be honest. Talk to them like they can handle the truth — because this person can.
-- If they doubt themselves, don't coddle. Remind them who they are.
-- If they ask for a decision, give one. No hedging.
-- Match their depth — short when that's enough, deep when they need it.
-- When they share something new, absorb it naturally. It fits.
-""".strip()
+    return f"""You are a helpful assistant with access to the user's personal knowledge graph.
+{memory_section}
+Use this context to give relevant, personalised responses. Do not roleplay as the user or imitate their style. Just be a direct, useful assistant who knows them well.""".strip()
 
 
 
