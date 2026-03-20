@@ -189,7 +189,7 @@ export default function Graph() {
   async function downloadWallet() {
     const resp = await fetch('/api/wallet', { headers:authH() })
     const blob = await resp.blob()
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='twin_card.md'; a.click()
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='memory_card.md'; a.click()
     URL.revokeObjectURL(a.href)
   }
 
@@ -234,7 +234,7 @@ export default function Graph() {
             <button onClick={()=>setMenuOpen(o=>!o)} style={{ width:34, height:34, borderRadius:8, background:'var(--surface)', border:'1px solid var(--border)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, color:'var(--text-2)', fontFamily:'Inter,sans-serif' }}>···</button>
             {menuOpen && (
               <div style={{ position:'absolute', top:'calc(100% + 8px)', right:0, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:6, minWidth:180, boxShadow:'0 8px 24px rgba(0,0,0,0.18)', zIndex:200 }}>
-                <MenuItem label="Download Twin Card" icon="⬇" onClick={()=>{ downloadWallet(); setMenuOpen(false) }} />
+                <MenuItem label="Download Memory Card" icon="⬇" onClick={()=>{ downloadWallet(); setMenuOpen(false) }} />
                 <div style={{ height:1, background:'var(--border)', margin:'4px 0' }} />
                 <ThemeMenuItem />
                 <div style={{ height:1, background:'var(--border)', margin:'4px 0' }} />
@@ -247,12 +247,12 @@ export default function Graph() {
 
       <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
         {/* Canvas */}
-        <div style={{ flex:1, position:'relative', background:'var(--surface-2)', overflow:'hidden', borderRight:'1px solid var(--border)' }}>
+        <div style={{ flex:1, minWidth:0, position:'relative', background:'var(--surface-2)', overflow:'hidden', borderRight:'1px solid var(--border)' }}>
           <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block', cursor:'grab' }} />
         </div>
 
         {/* Sidebar */}
-        <div style={{ width:280, flexShrink:0, background:'var(--bg)', borderLeft:'1px solid var(--border)', display:'flex', flexDirection:'column', overflowY:'auto' }}>
+        <div style={{ width:280, flexShrink:0, background:'var(--bg)', borderLeft:'1px solid var(--border)', display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
           <div style={{ padding:'14px 16px', borderBottom:'1px solid var(--border)' }}>
             <input value={searchQ} onChange={e=>setSearchQ(e.target.value)}
               onKeyDown={e=>{ if(e.key==='Enter') runSearch(); if(e.key==='Escape'){setSearchQ('');setSearchResults(null);graphRef.current?.clearHighlight()} }}

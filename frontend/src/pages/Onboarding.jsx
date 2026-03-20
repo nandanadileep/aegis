@@ -110,7 +110,7 @@ export default function Onboarding() {
     const resp = await fetch('/api/wallet', { headers: authHeaders(session) })
     const blob = await resp.blob()
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob); a.download = 'twin_card.md'; a.click()
+    a.href = URL.createObjectURL(blob); a.download = 'memory_card.md'; a.click()
     URL.revokeObjectURL(a.href)
   }
 
@@ -228,7 +228,7 @@ function Import2Screen({ value, onChange, onBack, onImport, importing, error }) 
       <textarea value={value} onChange={e => onChange(e.target.value)} rows={10}
         placeholder='Paste your memory export here…'
         style={{ width: '100%', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)', fontFamily: 'monospace', fontSize: 12.5, padding: '14px 16px', outline: 'none', resize: 'none', lineHeight: 1.5, marginBottom: 16 }} />
-      <BtnFill onClick={onImport} disabled={importing}>{importing ? 'Importing…' : 'Import twin'}</BtnFill>
+      <BtnFill onClick={onImport} disabled={importing}>{importing ? 'Importing…' : 'Import'}</BtnFill>
       {error && <p style={{ color: '#ff3b30', fontSize: 13, textAlign: 'center', marginTop: 12 }}>{error}</p>}
     </ImportLayout>
   )
@@ -256,11 +256,11 @@ function SuccessScreen({ onGraph, onCard }) {
       <Blobs />
       <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
         <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'var(--surface)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, marginBottom: 24 }}>✓</div>
-        <h2 style={{ fontSize: 'clamp(28px,5vw,48px)', fontWeight: 900, letterSpacing: '-0.04em', color: 'var(--text)', marginBottom: 12, textAlign: 'center' }}>Your twin is built.</h2>
-        <p style={{ fontSize: 15, color: 'var(--text-2)', textAlign: 'center', lineHeight: 1.6, marginBottom: 40, maxWidth: 400 }}>Your profile is live in the graph. Download your Twin Card and paste it into any AI.</p>
+        <h2 style={{ fontSize: 'clamp(28px,5vw,48px)', fontWeight: 900, letterSpacing: '-0.04em', color: 'var(--text)', marginBottom: 12, textAlign: 'center' }}>Your profile is built.</h2>
+        <p style={{ fontSize: 15, color: 'var(--text-2)', textAlign: 'center', lineHeight: 1.6, marginBottom: 40, maxWidth: 400 }}>Your profile is live in the graph. Download your Memory Card and paste it into any AI.</p>
         <div style={{ display: 'flex', gap: 12 }}>
           <Btn onClick={onGraph}>View graph</Btn>
-          <BtnFill onClick={onCard}>Download Twin Card</BtnFill>
+          <BtnFill onClick={onCard}>Download Memory Card</BtnFill>
         </div>
       </div>
     </div>

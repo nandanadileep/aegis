@@ -10,10 +10,54 @@ const BYOK_PROVIDERS = [
   { label: 'Custom',    model: '',                                ph: 'API key' },
 ]
 
+const GREETINGS = {
+  dawn: [
+    { g: 'Good morning.', s: 'The day is yours. Make it count.' },
+    { g: 'Early bird.', s: 'Most people are still asleep. You\'re already here.' },
+    { g: 'Up before the world.', s: 'This is the time that separates the serious ones.' },
+    { g: 'Good morning.', s: 'Fresh start. Fresh thinking.' },
+    { g: 'Rise and build.', s: 'The best work happens before the noise begins.' },
+  ],
+  morning: [
+    { g: 'Good morning.', s: 'What are you working on today?' },
+    { g: 'Morning.', s: 'Let\'s make today useful.' },
+    { g: 'Good morning.', s: 'Something on your mind? Let\'s get into it.' },
+    { g: 'Hey, good morning.', s: 'You showed up. That\'s already a win.' },
+    { g: 'Morning energy.', s: 'Channel it. Talk to me.' },
+  ],
+  afternoon: [
+    { g: 'Good afternoon.', s: 'Midday check-in. How\'s the momentum?' },
+    { g: 'Afternoon.', s: 'Still going strong?' },
+    { g: 'Good afternoon.', s: 'What\'s been on your mind since this morning?' },
+    { g: 'Hey there.', s: 'Deep work hours. Let\'s not waste them.' },
+    { g: 'Good afternoon.', s: 'Half the day done. What matters now?' },
+  ],
+  evening: [
+    { g: 'Good evening.', s: 'How did today go?' },
+    { g: 'Evening.', s: 'Time to reflect. What happened today?' },
+    { g: 'Good evening.', s: 'The best ideas come at this hour.' },
+    { g: 'Hey, good evening.', s: 'Wind down or keep building — you decide.' },
+    { g: 'Good evening.', s: 'What did you learn today?' },
+  ],
+  night: [
+    { g: 'Hey, night owl.', s: 'Late night thinking hits different. Let\'s capture it.' },
+    { g: 'Still up?', s: 'The best clarity comes when the world goes quiet.' },
+    { g: 'Burning the midnight oil.', s: 'I\'m here. Talk to me.' },
+    { g: 'Late night mode.', s: 'What\'s keeping you up?' },
+    { g: 'Hey.', s: 'It\'s late. Something must be on your mind.' },
+  ],
+}
+
 export default function Chat() {
   const [session, setSession] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
+  const [greeting] = useState(() => {
+    const h = new Date().getHours()
+    const bucket = h >= 5 && h < 9 ? 'dawn' : h >= 9 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : h >= 17 && h < 21 ? 'evening' : 'night'
+    const options = GREETINGS[bucket]
+    return options[Math.floor(Math.random() * options.length)]
+  })
   const [sending, setSending] = useState(false)
   const [byokOpen, setByokOpen] = useState(false)
   const [byokProvider, setByokProvider] = useState(0)
@@ -188,7 +232,7 @@ export default function Chat() {
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '48px 0 24px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative', zIndex: 10 }}>
-        {messages.length === 0 && <EmptyState />}
+        {messages.length === 0 && <EmptyState greeting={greeting} />}
         {messages.map((m, i) => <Message key={i} msg={m} />)}
         <div ref={bottomRef} />
       </div>
@@ -229,49 +273,7 @@ export default function Chat() {
   )
 }
 
-const GREETINGS = {
-  dawn: [
-    { g: 'Good morning.', s: 'The day is yours. Make it count.' },
-    { g: 'Early bird.', s: 'Most people are still asleep. You\'re already here.' },
-    { g: 'Up before the world.', s: 'This is the time that separates the serious ones.' },
-    { g: 'Good morning.', s: 'Fresh start. Fresh thinking.' },
-    { g: 'Rise and build.', s: 'The best work happens before the noise begins.' },
-  ],
-  morning: [
-    { g: 'Good morning.', s: 'What are you working on today?' },
-    { g: 'Morning.', s: 'Let\'s make today useful.' },
-    { g: 'Good morning.', s: 'Something on your mind? Let\'s get into it.' },
-    { g: 'Hey, good morning.', s: 'You showed up. That\'s already a win.' },
-    { g: 'Morning energy.', s: 'Channel it. Talk to me.' },
-  ],
-  afternoon: [
-    { g: 'Good afternoon.', s: 'Midday check-in. How\'s the momentum?' },
-    { g: 'Afternoon.', s: 'Still going strong?' },
-    { g: 'Good afternoon.', s: 'What\'s been on your mind since this morning?' },
-    { g: 'Hey there.', s: 'Deep work hours. Let\'s not waste them.' },
-    { g: 'Good afternoon.', s: 'Half the day done. What matters now?' },
-  ],
-  evening: [
-    { g: 'Good evening.', s: 'How did today go?' },
-    { g: 'Evening.', s: 'Time to reflect. What happened today?' },
-    { g: 'Good evening.', s: 'The best ideas come at this hour.' },
-    { g: 'Hey, good evening.', s: 'Wind down or keep building — you decide.' },
-    { g: 'Good evening.', s: 'What did you learn today?' },
-  ],
-  night: [
-    { g: 'Hey, night owl.', s: 'Late night thinking hits different. Let\'s capture it.' },
-    { g: 'Still up?', s: 'The best clarity comes when the world goes quiet.' },
-    { g: 'Burning the midnight oil.', s: 'I\'m here. Talk to me.' },
-    { g: 'Late night mode.', s: 'What\'s keeping you up?' },
-    { g: 'Hey.', s: 'It\'s late. Something must be on your mind.' },
-  ],
-}
-
-function EmptyState() {
-  const h = new Date().getHours()
-  const bucket = h >= 5 && h < 9 ? 'dawn' : h >= 9 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : h >= 17 && h < 21 ? 'evening' : 'night'
-  const options = GREETINGS[bucket]
-  const { g, s } = options[Math.floor(Math.random() * options.length)]
+function EmptyState({ greeting: { g, s } }) {
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, pointerEvents: 'none' }}>
       <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>{g}</p>
