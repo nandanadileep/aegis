@@ -183,16 +183,8 @@ export default function Graph() {
           </div>
         </div>
 
-        {/* Right: commit + overflow */}
+        {/* Right: overflow */}
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <button
-            onClick={()=>setModal('commit')}
-            disabled={pendingCount===0}
-            style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 14px', borderRadius:8, fontSize:13, fontWeight:600, cursor:pendingCount===0?'not-allowed':'pointer', border:'none', fontFamily:'Inter,sans-serif', background:pendingCount>0?'#0000ee':'var(--surface)', color:pendingCount>0?'#fff':'var(--text-3)', transition:'all .15s' }}
-          >
-            {pendingCount>0 && <span style={{ background:'rgba(255,255,255,0.25)', borderRadius:4, padding:'1px 6px', fontSize:11, fontWeight:700 }}>{pendingCount}</span>}
-            Commit
-          </button>
 
           {/* ··· menu */}
           <div style={{ position:'relative' }} ref={menuRef}>
@@ -200,7 +192,6 @@ export default function Graph() {
             {menuOpen && (
               <div style={{ position:'absolute', top:'calc(100% + 8px)', right:0, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:6, minWidth:180, boxShadow:'0 8px 24px rgba(0,0,0,0.18)', zIndex:200 }}>
                 <MenuItem label="Download Twin Card" icon="⬇" onClick={()=>{ downloadWallet(); setMenuOpen(false) }} />
-                <MenuItem label="Reset changes" icon="↺" onClick={()=>{ doReset(); setMenuOpen(false) }} disabled={pendingCount===0} />
                 <div style={{ height:1, background:'var(--border)', margin:'4px 0' }} />
                 <ThemeMenuItem />
                 <div style={{ height:1, background:'var(--border)', margin:'4px 0' }} />
