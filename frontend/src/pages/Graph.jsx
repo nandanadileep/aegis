@@ -283,6 +283,10 @@ export default function Graph() {
               {Object.entries(pending.edges).map(([id,c])=><ChangeItem key={id} text={`+ Rel: ${c.relType}`} />)}
               {pending.deletedNodes.map(id=><ChangeItem key={id} text={`− Node: ${id}`} del />)}
               {pending.deletedEdges.map(id=><ChangeItem key={id} text={`− Rel: ${id}`} del />)}
+              <div style={{ display:'flex', gap:6, marginTop:10 }}>
+                <button style={{ ...S.btn, flex:1, justifyContent:'center', background:'#0000ee', color:'#fff', border:'none', fontWeight:600 }} onClick={()=>setModal('commit')}>Commit</button>
+                <button style={{ ...S.btn, flex:1, justifyContent:'center', color:'var(--text-2)' }} onClick={doReset}>Revert</button>
+              </div>
             </Section>
           )}
         </div>
