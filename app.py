@@ -2,6 +2,7 @@ import os
 import re
 import json
 import base64
+import random
 from urllib.parse import urlparse, urlunparse, quote
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -11,6 +12,15 @@ import jwt as pyjwt
 import litellm
 from flask import Flask, request, jsonify, send_from_directory, Response, redirect, g
 from neo4j import GraphDatabase
+
+try:
+    from scripts.crypto import enc, dec, node_hash, dec_props
+except ImportError:
+    # Fallback no-ops if crypto module is unavailable
+    def enc(v, u): return v  # type: ignore
+    def dec(v, u): return v  # type: ignore
+    def node_hash(v, u): return v  # type: ignore
+    def dec_props(p, u): return p  # type: ignore
 
 # Ensure we're in the right directory for .env
 os.chdir(Path(__file__).parent)
@@ -32,6 +42,63 @@ except ImportError:
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
 LLM_FAST = os.getenv("LLM_FAST", "groq/qwen3-32b")
+DAILY_MSG_LIMIT = int(os.getenv("DAILY_MSG_LIMIT", "30"))
+
+# Canonical label → relationship type used by all write paths
+LABEL_TO_REL: Dict[str, str] = {
+    "Skill":       "HAS_SKILL",
+    "Value":       "HAS_VALUE",
+    "Goal":        "HAS_GOAL",
+    "Trait":       "HAS_TRAIT",
+    "Belief":      "HAS_BELIEF",
+    "Identity":    "HAS_IDENTITY",
+    "Project":     "WORKS_ON",
+    "Behavior":    "HAS_BEHAVIOR",
+    "Constraint":  "HAS_CONSTRAINT",
+}
+
+# Fallback chain tried in order when the primary model hits rate limits
+_MODEL_FALLBACKS = [
+    "groq/llama-3.3-70b-versatile",
+    "groq/qwen3-32b",
+    "groq/llama3-70b-8192",
+    "groq/mixtral-8x7b-32768",
+    "groq/gemma2-9b-it",
+    "groq/llama3-8b-8192",
+]
+
+# Multiple Groq API keys — add GROQ_API_KEY_2, GROQ_API_KEY_3, etc. for extra capacity
+_GROQ_KEYS = [k for k in [
+    os.getenv("GROQ_API_KEY"),
+    os.getenv("GROQ_API_KEY_2"),
+    os.getenv("GROQ_API_KEY_3"),
+] if k]
+
+
+# ---------------------------
+# Cypher injection guards
+# ---------------------------
+_LABEL_RE = re.compile(r'^[A-Za-z][A-Za-z0-9]*$')
+_REL_RE   = re.compile(r'^[A-Z][A-Z0-9_]*$')
+
+def _safe_label(raw: str) -> str:
+    """Strip any non-alphanumeric characters and enforce leading alpha.
+    Raises ValueError if the result is empty or structurally invalid."""
+    s = re.sub(r'[^A-Za-z0-9]', '', raw)
+    if not s or not s[0].isalpha():
+        raise ValueError(f"Invalid node label: {raw!r}")
+    if not _LABEL_RE.match(s):
+        raise ValueError(f"Invalid node label after sanitization: {s!r}")
+    return s
+
+def _safe_rel_type(raw: str) -> str:
+    """Validate relationship type: uppercase letters, digits, underscores only.
+    Raises ValueError on anything that doesn't match — prevents Cypher injection
+    through relationship type interpolation."""
+    s = raw.strip().upper()
+    if not _REL_RE.match(s):
+        raise ValueError(f"Invalid relationship type: {raw!r}")
+    return s
 
 
 # ---------------------------
@@ -44,6 +111,49 @@ def llm_kwargs(base_model: str) -> dict:
     if user_key and user_model:
         return {"model": user_model, "api_key": user_key}
     return {"model": base_model}
+
+
+class AllModelsRateLimited(Exception):
+    """Raised when every model in the fallback chain has hit a rate limit."""
+
+
+def _check_daily_limit(person_id: str) -> bool:
+    """Increment today's message counter and return True if within limit."""
+    from datetime import date
+    try:
+        rc = get_redis_client()
+        key = f"msg_count:{person_id}:{date.today().isoformat()}"
+        count = rc.incr(key)
+        if count == 1:
+            rc.expire(key, 86400)
+        return count <= DAILY_MSG_LIMIT
+    except Exception:
+        return True  # Redis unavailable — let it through
+
+
+def llm_complete_with_fallback(primary_model: str, **kwargs):
+    """Call litellm with fallback models on rate-limit errors."""
+    user_key = request.headers.get("X-LLM-Key", "").strip()
+    user_model = request.headers.get("X-LLM-Model", "").strip()
+    # If user provided BYOK, no fallback logic — use their key/model directly
+    if user_key and user_model:
+        return litellm.completion(model=user_model, api_key=user_key, **kwargs)
+
+    chain = [primary_model] + [m for m in _MODEL_FALLBACKS if m != primary_model]
+    keys = _GROQ_KEYS if _GROQ_KEYS else [None]
+    last_err = None
+    for model in chain:
+        for api_key in keys:
+            try:
+                kw = {**kwargs, "api_key": api_key} if api_key else kwargs
+                return litellm.completion(model=model, **kw)
+            except Exception as e:
+                err = str(e)
+                if "429" in err or "rate_limit" in err.lower() or "rate limit" in err.lower():
+                    last_err = e
+                    continue
+                raise
+    raise AllModelsRateLimited(str(last_err))
 
 
 def load_env(path: str = ".env") -> None:
@@ -132,6 +242,11 @@ def fetch_memory_summary(person_id: str, database: str) -> List[Dict[str, Any]]:
     """
     with NEO4J_DRIVER.session(database=database) as session:
         data = session.run(query, person_id=person_id).data()
+    for row in data:
+        row["key"] = dec(row.get("key", ""), person_id)
+        row["value"] = dec(row.get("value", ""), person_id)
+        if row.get("props"):
+            row["props"] = dec_props(row["props"], person_id)
     return data
 
 
@@ -149,27 +264,10 @@ _GREETING = re.compile(
 )
 
 def fetch_relevant_memory(person_id: str, database: str, message: str) -> List[Dict[str, Any]]:
-    """Return only memory nodes relevant to the user message. Empty for greetings."""
+    """Return memory nodes relevant to the user message. Empty for greetings."""
     if _GREETING.match(message.strip()):
         return []
-    terms = [w for w in re.findall(r'\b[a-z]{3,}\b', message.lower()) if w not in _STOP_WORDS]
-    if not terms:
-        return []
-    query = """
-    MATCH (p:Person {id: $person_id})-[r]->(n)
-    WHERE ANY(term IN $terms WHERE
-        toLower(coalesce(n.name, '')) CONTAINS term OR
-        toLower(coalesce(n.key,  '')) CONTAINS term OR
-        toLower(coalesce(n.value,'')) CONTAINS term
-    )
-    RETURN type(r) AS rel, labels(n) AS labels,
-           properties(n) AS props,
-           coalesce(n.key, n.name, '') AS key,
-           coalesce(n.value, n.name, '') AS value
-    """
-    with NEO4J_DRIVER.session(database=database) as session:
-        data = session.run(query, person_id=person_id, terms=terms).data()
-    return data
+    return fetch_memory_summary(person_id, database)
 
 
 def format_memory_context(records: List[Dict[str, Any]]) -> str:
@@ -211,7 +309,20 @@ def fetch_wallet_data(person_id: str, database: str) -> Dict[str, Any]:
         row = session.run(query, person_id=person_id).single()
     if not row:
         return {"person_name": person_id, "person_id": person_id, "facts": []}
-    return dict(row)
+    result = dict(row)
+    result["person_name"] = dec(result.get("person_name") or "", person_id)
+    decrypted_facts = []
+    for fact in (result.get("facts") or []):
+        if not fact:
+            continue
+        f = dict(fact)
+        f["key"] = dec(f.get("key", ""), person_id)
+        f["value"] = dec(f.get("value", ""), person_id)
+        if f.get("props"):
+            f["props"] = dec_props(f["props"], person_id)
+        decrypted_facts.append(f)
+    result["facts"] = decrypted_facts
+    return result
 
 
 def generate_wallet_markdown(person_id: str, database: str) -> str:
@@ -249,7 +360,7 @@ def generate_wallet_markdown(person_id: str, database: str) -> str:
             groups.setdefault(section, []).append(entry)
 
     lines = [
-        f"# Digital Twin — {person_name}",
+        f"# Memory Profile — {person_name}",
         "",
         f"You are talking to **{person_name}**.",
         "Adopt this profile immediately. Do not introduce yourself, do not ask who they are.",
@@ -272,10 +383,105 @@ def generate_wallet_markdown(person_id: str, database: str) -> str:
 
     lines += [
         "---",
-        f"*Twin Card generated by Identiti · {person_id}*",
+        f"*Memory Card generated by Identiti · {person_id}*",
     ]
 
     return "\n".join(lines)
+
+
+_WALLET_STAMPS = [
+    '🪷','🌸','🌿','🍃','🦋','🌙','🔮','🪐','🌊','🌻',
+    '🍀','🦚','🌺','🫧','🌼','✨','💫','🌠','🪸','🐚',
+    '🎴','🧿','🪄','🌈','🫐','🌑','🪬','🎐','🌾','🦩',
+]
+
+def generate_wallet_html(person_id: str, database: str) -> str:
+    md = generate_wallet_markdown(person_id, database)
+    stamp = random.choice(_WALLET_STAMPS)
+    md_escaped = (md
+        .replace('&', '&amp;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory Card</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0 }}
+  body {{
+    background: #0f0f13;
+    color: #c8c8d4;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    min-height: 100vh;
+    padding: 64px 20px 80px;
+  }}
+  .wrap {{ max-width: 660px; margin: 0 auto }}
+  .header {{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 36px;
+  }}
+  .stamp {{
+    font-size: 52px;
+    filter: drop-shadow(0 0 28px rgba(255,255,255,0.12));
+    user-select: none;
+    line-height: 1;
+  }}
+  .copy-btn {{
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 50%;
+    color: #e8e8ed;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+  }}
+  .copy-btn:hover {{ background: rgba(255,255,255,0.13) }}
+  .copy-btn.copied {{ color: #30d158; border-color: rgba(48,209,88,0.28) }}
+  pre {{
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 32px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #b0b0bc;
+  }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="stamp">{stamp}</div>
+    <button class="copy-btn" onclick="copy()" title="Copy markdown">⎘</button>
+  </div>
+  <pre id="md">{md_escaped}</pre>
+</div>
+<script>
+function copy() {{
+  navigator.clipboard.writeText(document.getElementById('md').textContent)
+  const btn = document.querySelector('.copy-btn')
+  btn.textContent = '✓'
+  btn.classList.add('copied')
+  setTimeout(() => {{ btn.textContent = '⎘'; btn.classList.remove('copied') }}, 2000)
+}}
+</script>
+</body>
+</html>"""
 
 
 def needs_retrieval(message: str) -> bool:
@@ -283,8 +489,8 @@ def needs_retrieval(message: str) -> bool:
     if _GREETING.match(message.strip()):
         return False
     try:
-        result = litellm.completion(
-            model=LLM_FAST,
+        result = llm_complete_with_fallback(
+            LLM_FAST,
             messages=[{"role": "user", "content": (
                 "Does answering this message require personal context about the user "
                 "(their skills, projects, goals, values, interests, etc.)? "
@@ -295,7 +501,7 @@ def needs_retrieval(message: str) -> bool:
         )
         return result.choices[0].message.content.strip().upper().startswith("Y")
     except Exception:
-        return False
+        return True  # default to fetching memory if the check fails
 
 
 
@@ -442,7 +648,7 @@ def me():
                 pid=person_id,
             ).single()
         if result:
-            return jsonify({"exists": True, "name": result["name"], "username": result["username"]})
+            return jsonify({"exists": True, "name": dec(result["name"] or "", person_id), "username": result["username"]})
         return jsonify({"exists": False})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -461,13 +667,8 @@ def context():
 @require_auth
 def export_wallet():
     person_id = resolve_person_id()
-    md = generate_wallet_markdown(person_id, DATABASE)
-    filename = f"identiti_wallet_{person_id}.md"
-    return Response(
-        md,
-        mimetype="text/markdown",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    html = generate_wallet_html(person_id, DATABASE)
+    return Response(html, mimetype="text/html")
 
 
 @app.route("/health", methods=["GET"])
@@ -506,16 +707,36 @@ def chat():
         except Exception:
             pass
 
+    # Per-user daily limit — skip for BYOK users (they use their own tokens)
+    byok = request.headers.get("X-LLM-Key", "").strip()
+    if not byok and not _check_daily_limit(person_id):
+        return jsonify({
+            "reply": f"You've hit the {DAILY_MSG_LIMIT}-message daily limit. Come back tomorrow, or add your own API key in settings to keep going.",
+            "added_nodes": [],
+        }), 200
+
     # Build message with context injected into user turn if needed
     augmented_message = f"{context_block}\n\n{user_message}".strip() if context_block else user_message
-    history = [*conversation_history, {"role": "user", "content": augmented_message}]
+    system_msg = {
+        "role": "system",
+        "content": (
+            "You are a sharp, direct assistant. Keep responses short and conversational — "
+            "a few sentences at most unless the user explicitly asks for detail. "
+            "Never use numbered lists or bullet points unless asked. "
+            "Never ask multiple follow-up questions at once. "
+            "Match the energy of the user's message."
+        ),
+    }
+    history = [system_msg, *conversation_history, {"role": "user", "content": augmented_message}]
 
     try:
-        completion = litellm.completion(
+        completion = llm_complete_with_fallback(
+            LLM_MODEL,
             messages=history,
             temperature=0.5,
-            **llm_kwargs(LLM_MODEL),
         )
+    except AllModelsRateLimited:
+        return jsonify({"reply": "I've hit my daily token limit across all models. Come back tomorrow, or add your own API key in the settings — it takes 30 seconds.", "added_nodes": []}), 200
     except Exception as e:
         err = str(e)
         if "api_key" in err.lower() or "401" in err or "authentication" in err.lower():
@@ -532,8 +753,24 @@ def chat():
         else:
             storage_warning = f"redis write failed: {e}"
 
-    # Extract entities from conversation and add to graph
-    added_nodes = _extract_and_add_nodes(person_id, user_message, reply)
+    # Route through staging pipeline — confidence scoring prevents noisy direct writes
+    added_nodes = []
+    try:
+        rc = get_redis_client()
+        pipeline_result = run_pipeline(
+            f"User: {user_message}\nAssistant: {reply}",
+            person_id=person_id,
+            redis_client=rc,
+            neo4j_driver=NEO4J_DRIVER,
+            llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+        )
+        added_nodes = [
+            {"key": item.get("key"), "value": item.get("value"), "category": cat}
+            for cat, items in pipeline_result.get("ready", {}).items()
+            for item in items
+        ]
+    except Exception:
+        pass
 
     response: Dict[str, Any] = {"reply": reply, "added_nodes": added_nodes}
     if storage_warning:
@@ -541,71 +778,6 @@ def chat():
     return jsonify(response)
 
 
-def _extract_and_add_nodes(person_id: str, user_message: str, reply: str) -> list:
-    """Extract entities from conversation turn and add them to the graph."""
-    KNOWN_LABELS = ["Skill", "Value", "Goal", "Trait", "Identity", "Project", "Behavior", "Constraint", "Belief"]
-    try:
-        extraction = litellm.completion(
-            messages=[{
-                "role": "user",
-                "content": (
-                    "Extract concrete, specific facts about the user from this message to store in their personal knowledge graph.\n"
-                    "Rules:\n"
-                    "- ONLY extract if the user states something concrete and specific about themselves (e.g. 'I use Rust', 'I run a startup called Aegis', 'I value honesty').\n"
-                    "- The name must be a specific noun — a real skill, tool, value, project name, trait, belief. NOT a vague concept or process description.\n"
-                    "- Reject anything generic, abstract, or process-like (e.g. 'context aware thing', 'building something', 'learning stuff', 'working on it').\n"
-                    "- Do NOT extract things the assistant says. Do NOT infer. Do NOT paraphrase.\n"
-                    "- If the user says 'I use Python' → {\"name\": \"Python\", \"label\": \"Skill\"}. If they say 'I think about building' → [].\n"
-                    f"Known labels: {', '.join(KNOWN_LABELS)}\n"
-                    "Return a JSON array only, no explanation. Format: [{\"name\": \"Rust\", \"label\": \"Skill\"}, ...]\n"
-                    "When in doubt, return []. It is better to return nothing than to return noise.\n\n"
-                    f"User: {user_message}\n"
-                    f"Assistant: {reply}"
-                )
-            }],
-            temperature=0,
-            max_tokens=300,
-            **llm_kwargs(LLM_FAST),
-        )
-        raw = extraction.choices[0].message.content.strip()
-        # Strip markdown code fences if present
-        raw = re.sub(r'^```[a-z]*\n?', '', raw).rstrip('`').strip()
-        entities = json.loads(raw)
-        if not isinstance(entities, list):
-            return []
-    except Exception:
-        return []
-
-    added = []
-    with NEO4J_DRIVER.session(database=DATABASE) as session:
-        for e in entities:
-            name = str(e.get("name", "")).strip()
-            label = str(e.get("label", "Trait")).strip()
-            if not name:
-                continue
-            # Sanitize label
-            safe_label = ''.join(w.capitalize() for w in label.strip().split())
-            safe_label = re.sub(r'[^A-Za-z0-9]', '', safe_label) or 'Trait'
-            try:
-                # MERGE to avoid duplicates
-                result = session.run(
-                    f"MERGE (n:`{safe_label}` {{name: $name, person_id: $pid}}) "
-                    "ON CREATE SET n.key = $name "
-                    "RETURN id(n) as node_id, (n.key IS NULL OR n.key = $name) as is_new",
-                    name=name, pid=person_id
-                )
-                row = result.single()
-                if row:
-                    # Connect to Person if not already connected
-                    session.run(
-                        "MATCH (p:Person {id: $pid}), (n) WHERE id(n) = $nid "
-                        "MERGE (p)-[:KNOWS]->(n)",
-                        pid=person_id, nid=row["node_id"]
-                    )
-                    added.append({"name": name, "label": safe_label})
-            except Exception:
-                continue
-    return added
 
 
 @app.route("/v1/chat/completions", methods=["POST"])
@@ -629,11 +801,11 @@ def proxy_completions():
     non_system = [m for m in messages if m.get("role") != "system"]
     enriched = [{"role": "system", "content": system_prompt}, *non_system]
 
-    completion = litellm.completion(
+    completion = llm_complete_with_fallback(
+        model,
         messages=enriched,
         temperature=data.get("temperature", 0.5),
         stream=False,
-        **llm_kwargs(model),
     )
 
     user_messages = [m["content"] for m in non_system if m.get("role") == "user"]
@@ -717,23 +889,37 @@ def login_page():
 
 
 ONBOARD_SYSTEM_PROMPT = """
-You are a sharp, thoughtful person getting to know someone. Your job is to understand who they really are — not what they think sounds good, but what actually drives them.
+You are getting to know someone to build their knowledge profile. Your job is to understand who they really are — not what sounds good, but what actually drives them.
 
 Rules:
 - One question at a time. Short. Never numbered lists.
-- Don't validate or compliment what they say. Just listen and dig deeper.
-- Ask questions that reveal character, not just facts. "What do you spend time on that most people don't know about?" is better than "What are your hobbies?"
-- If they mention someone they admire, you know who that person is — use it.
-- Don't ask "what are your goals?" — let goals emerge from what they say.
-- Keep messages to 1-2 sentences. No filler. No "great answer!" or "interesting!".
+- Don't validate or compliment. Just listen and dig deeper.
+- Ask questions that reveal character, not just facts.
 - Start by asking their name naturally, then go from there.
+- Keep messages to 1-2 sentences. No filler. No "great answer!" or "interesting!".
 
-After several exchanges, once you have a real picture of who they are — their name, what drives them, how they think, what they're building — end your message with the profile block below and nothing after it.
+You MUST ask at least 8 questions and collect ALL of the following before wrapping up:
+- Their name
+- At least 3 distinct skills or areas of expertise
+- At least 3 values, beliefs, or personal principles
+- At least 2 goals or things they are actively working toward
+- At least 2 personality traits or characteristics
+- Their speaking/communication style
+
+Only once you have all of the above, end your final message with the profile block and nothing after it:
 
 <PROFILE>
-{"name": "...", "description": "...", "values": [...], "skills": [...], "personality": [...], "goals": [...], "speaking_style": "..."}
+{"name": "...", "description": "one sentence — who this person is", "values": [...], "skills": [...], "personality": [...], "goals": [...], "speaking_style": "...", "known_for": [...]}
 </PROFILE>
+
+If you don't have enough yet, keep asking. Do not output the profile early.
 """.strip()
+
+
+def _count_profile_nodes(profile: dict) -> int:
+    """Count how many graph nodes this profile will produce."""
+    array_fields = ["values", "skills", "personality", "goals", "known_for"]
+    return 1 + sum(len(profile.get(f, [])) for f in array_fields)
 
 
 @app.route("/api/onboard-chat", methods=["POST"])
@@ -757,11 +943,13 @@ def onboard_chat():
         messages.append({"role": "user", "content": user_message})
 
     try:
-        completion = litellm.completion(
+        completion = llm_complete_with_fallback(
+            LLM_MODEL,
             messages=messages,
             temperature=0.7,
-            **llm_kwargs(LLM_MODEL),
         )
+    except AllModelsRateLimited:
+        return jsonify({"reply": "I've hit my daily token limit. Come back tomorrow or add your own API key in settings.", "profile": None}), 200
     except Exception as e:
         err = str(e)
         if "api_key" in err.lower() or "401" in err or "authentication" in err.lower():
@@ -770,23 +958,44 @@ def onboard_chat():
     reply = completion.choices[0].message.content or ""
 
     profile = None
+    node_count = 0
     if "<PROFILE>" in reply and "</PROFILE>" in reply:
         start = reply.index("<PROFILE>") + len("<PROFILE>")
         end = reply.index("</PROFILE>")
         profile_text = reply[start:end].strip()
         display_reply = reply[:reply.index("<PROFILE>")].strip()
         try:
-            profile = json.loads(profile_text)
+            candidate = json.loads(profile_text)
         except Exception:
-            profile = None
-        if profile:
-            reply = display_reply
+            candidate = None
+        if candidate:
+            count = _count_profile_nodes(candidate)
+            if count >= 10:
+                profile = candidate
+                node_count = count
+                reply = display_reply
+            # If < 10 nodes, discard profile and let conversation continue
 
-    return jsonify({"reply": reply, "profile": profile})
+    return jsonify({"reply": reply, "profile": profile, "node_count": node_count})
 
+
+_TWIN_KEYS = {"name", "description", "values", "skills", "personality", "goals", "speaking_style", "known_for"}
 
 def _parse_raw_memory_to_twin(raw_text: str) -> dict:
-    """Use LLM to convert any memory export format into our structured profile dict."""
+    """Convert any memory export format into our structured profile dict.
+    If the input is already valid JSON matching our schema, use it directly
+    without calling the LLM.
+    """
+    # Try direct JSON parse first — avoids LLM call when user pastes our schema output
+    stripped = re.sub(r"^```(?:json)?\s*", "", raw_text.strip())
+    stripped = re.sub(r"\s*```$", "", stripped.strip())
+    try:
+        candidate = json.loads(stripped)
+        if isinstance(candidate, dict) and _TWIN_KEYS & candidate.keys():
+            return candidate
+    except Exception:
+        pass
+
     prompt = f"""You are given a profile or memory export. Extract structured data and output it as clean, minimal node labels for a knowledge graph.
 
 Rules for arrays (values, skills, personality, goals, known_for):
@@ -812,10 +1021,10 @@ Input:
 
 Respond with ONLY the JSON object, no explanation."""
 
-    completion = litellm.completion(
+    completion = llm_complete_with_fallback(
+        LLM_FAST,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
-        **llm_kwargs(LLM_FAST),
     )
     content = completion.choices[0].message.content or ""
     # Strip markdown code fences if present
@@ -867,7 +1076,11 @@ def import_twin():
                     p.description = $desc,
                     p.speaking_style = $style
                 """,
-                pid=person_id, name=name, username=username, desc=description, style=speaking_style,
+                pid=person_id,
+                name=enc(name, person_id),
+                username=username,
+                desc=enc(description, person_id),
+                style=enc(speaking_style, person_id),
             )
             for field, (label, rel) in field_map.items():
                 items = twin.get(field) or []
@@ -880,10 +1093,14 @@ def import_twin():
                     session.run(
                         f"""
                         MATCH (p:Person {{id: $pid}})
-                        MERGE (n:{label} {{name: $name, person_id: $pid}})
+                        MERGE (n:{label} {{_h: $h, person_id: $pid}})
+                        ON CREATE SET n.name = $enc_name
+                        ON MATCH SET n.name = $enc_name
                         MERGE (p)-[:{rel}]->(n)
                         """,
-                        pid=person_id, name=item,
+                        pid=person_id,
+                        h=node_hash(item, person_id),
+                        enc_name=enc(item, person_id),
                     )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -960,9 +1177,10 @@ def get_graph():
         
         for record in nodes_result:
             node_id = str(record["node_id"])
-            name = record.get("name") or record.get("key") or "Node"
+            raw_name = record.get("name") or record.get("key") or "Node"
+            name = dec(raw_name, person_id)
             labels = record.get("labels") or []
-            
+
             nodes_dict[node_id] = {
                 "id": node_id,
                 "label": name,
@@ -1004,7 +1222,8 @@ def create_node():
     KNOWN_LABELS = ["Person", "Skill", "Value", "Goal", "Trait", "Identity",
                     "Project", "Behavior", "Constraint", "Belief"]
     try:
-        norm = litellm.completion(
+        norm = llm_complete_with_fallback(
+            LLM_FAST,
             messages=[{
                 "role": "user",
                 "content": (
@@ -1019,41 +1238,63 @@ def create_node():
             }],
             temperature=0,
             max_tokens=20,
-            **llm_kwargs(LLM_FAST),
         )
-        safe_label = norm.choices[0].message.content.strip().strip('"').strip("'")
-        safe_label = re.sub(r'\s+(.)', lambda m: m.group(1).upper(), safe_label)
-        safe_label = re.sub(r'[^A-Za-z0-9]', '', safe_label)
+        raw_label = norm.choices[0].message.content.strip().strip('"').strip("'")
+        raw_label = re.sub(r'\s+(.)', lambda m: m.group(1).upper(), raw_label)
     except Exception:
-        safe_label = ''.join(w.capitalize() for w in label.strip().split())
-        safe_label = re.sub(r'[^A-Za-z0-9]', '', safe_label)
-
-    if not safe_label or not safe_label[0].isalpha():
-        safe_label = 'L_' + safe_label
+        raw_label = ''.join(w.capitalize() for w in label.strip().split())
 
     try:
+        safe_label = _safe_label(raw_label)
+    except ValueError:
+        return jsonify({"error": f"Invalid label: {label!r}"}), 400
+
+    try:
+        enc_name = enc(name, person_id)
+        h = node_hash(name, person_id)
         with NEO4J_DRIVER.session(database=DATABASE) as session:
-            # Create the node (backtick-escape label for safety)
             query = f"""
-            CREATE (n:`{safe_label}` {{name: $name, key: $name}})
+            CREATE (n:`{safe_label}` {{name: $enc_name, key: $enc_name, _h: $h, person_id: $pid}})
             SET n += $properties
             RETURN id(n) as node_id
             """
-            result = session.run(query, name=name, properties=properties)
+            result = session.run(query, enc_name=enc_name, h=h, pid=person_id, properties=properties)
             node_id = result.single()["node_id"]
             
-            # Connect to Person node
-            rel_query = """
-            MATCH (p:Person {id: $person_id})
-            MATCH (n)
-            WHERE id(n) = $node_id
-            CREATE (p)-[:KNOWS]->(n)
-            """
-            session.run(rel_query, person_id=person_id, node_id=node_id)
+            # Connect to Person with semantic relationship type
+            rel_type = LABEL_TO_REL.get(safe_label, "KNOWS")
+            session.run(
+                f"MATCH (p:Person {{id: $person_id}}) MATCH (n) WHERE id(n) = $node_id CREATE (p)-[:{rel_type}]->(n)",
+                person_id=person_id, node_id=node_id,
+            )
         
         return jsonify({"id": str(node_id), "label": safe_label, "name": name})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
+
+
+@app.route("/api/nodes/<node_id>", methods=["PATCH"])
+@require_auth
+def update_node(node_id):
+    """Rename a node."""
+    person_id = resolve_person_id()
+    data = parse_body_json()
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    try:
+        enc_name = enc(name, person_id)
+        h = node_hash(name, person_id)
+        with NEO4J_DRIVER.session(database=DATABASE) as session:
+            result = session.run(
+                "MATCH (n) WHERE id(n) = $nid AND n.person_id = $pid SET n.name = $enc_name, n.key = $enc_name, n._h = $h RETURN id(n) as node_id",
+                nid=int(node_id), pid=person_id, enc_name=enc_name, h=h
+            )
+            if not result.single():
+                return jsonify({"error": "node not found"}), 404
+        return jsonify({"id": node_id, "name": name})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/relationships", methods=["POST"])
@@ -1064,12 +1305,17 @@ def create_relationship():
     data = parse_body_json()
     
     from_id = data.get("from")
-    rel_type = data.get("type", "").strip().upper()
     to_id = data.get("to")
-    
-    if not from_id or not rel_type or not to_id:
+    raw_rel = data.get("type", "")
+
+    if not from_id or not raw_rel or not to_id:
         return jsonify({"error": "from, type, and to required"}), 400
-    
+
+    try:
+        rel_type = _safe_rel_type(raw_rel)
+    except ValueError:
+        return jsonify({"error": f"Invalid relationship type: {raw_rel!r}"}), 400
+
     try:
         with NEO4J_DRIVER.session(database=DATABASE) as session:
             query = f"""
@@ -1132,6 +1378,70 @@ def commit_changes():
         return jsonify({"status": "ok", "committed": len(added_nodes) + len(added_edges) + len(deleted_nodes) + len(deleted_edges)})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
+
+
+@app.route("/api/deduplicate", methods=["POST"])
+@require_auth
+def deduplicate_graph():
+    """Remove duplicate nodes within the same label for a user.
+
+    Strategy: within each label group, if node A's decrypted name is a
+    case-insensitive prefix/substring of node B's name (or vice-versa), treat
+    them as duplicates — keep the shortest/cleanest name and delete the rest,
+    reconnecting their relationships first.
+    """
+    person_id = resolve_person_id()
+    deleted = 0
+
+    try:
+        with NEO4J_DRIVER.session(database=DATABASE) as session:
+            # Fetch all non-Person nodes with their IDs and names
+            rows = session.run(
+                """
+                MATCH (p:Person {id: $pid})-[]->(n)
+                WHERE NOT n:Person
+                RETURN id(n) AS nid, labels(n) AS lbls, n.name AS name, n._h AS h
+                """,
+                pid=person_id,
+            ).data()
+
+        # Decrypt names and group by label
+        from collections import defaultdict
+        by_label = defaultdict(list)
+        for row in rows:
+            raw = row.get("name") or ""
+            name = dec(raw, person_id)
+            lbl = (row.get("lbls") or ["Unknown"])[0]
+            by_label[lbl].append({"nid": row["nid"], "name": name, "raw": raw})
+
+        to_delete = set()
+        for lbl, nodes in by_label.items():
+            # Sort shortest name first — keep the cleanest/shortest
+            nodes.sort(key=lambda x: len(x["name"]))
+            for i, keeper in enumerate(nodes):
+                if keeper["nid"] in to_delete:
+                    continue
+                k_norm = keeper["name"].lower().strip()
+                for dup in nodes[i + 1:]:
+                    if dup["nid"] in to_delete:
+                        continue
+                    d_norm = dup["name"].lower().strip()
+                    # Duplicate if one name contains the other or they share root word
+                    if k_norm and (k_norm in d_norm or d_norm in k_norm):
+                        to_delete.add(dup["nid"])
+
+        with NEO4J_DRIVER.session(database=DATABASE) as session:
+            for nid in to_delete:
+                session.run(
+                    "MATCH (n) WHERE id(n) = $nid DETACH DELETE n",
+                    nid=nid,
+                )
+                deleted += 1
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"deleted": deleted})
 
 
 # Catch-all: serve React SPA for any non-API path (e.g. /callback from OAuth)
