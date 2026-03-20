@@ -543,93 +543,116 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
     return { x, y, baseX:x, baseY:y, angle:Math.random()*Math.PI*2, av:(Math.random()-.5)*.01, phase:Math.random()*Math.PI*2, ar:10+Math.random()*8 }
   }
 
-  // ── Shape generators — all produce exactly n points ──
+  // ── Shape generators — produce exactly n well-defined points ──
   function generateShapePoints(shape, n) {
     const W=cssW(), H=cssH(), cx=W/2, cy=H/2
-    const pts=[], R=Math.min(W,H)*0.28
+    const R=Math.min(W,H)*0.32
+    const pts=[]
 
-    if (shape==='jellyfish') {
-      const dome=Math.floor(n*0.38)
-      for(let i=0;i<dome;i++){
-        const a=Math.PI+Math.random()*Math.PI // upper half
-        const r=R*(0.2+Math.sqrt(Math.random())*0.8)
-        pts.push({ x:cx+Math.cos(a)*r, y:cy-R*0.3+Math.sin(a)*r*0.55 })
+    if (shape==='octopus') {
+      // Tight head cluster
+      const headN=Math.max(6, Math.floor(n*0.22))
+      for(let i=0;i<headN;i++){
+        const a=(i/headN)*Math.PI*2, r=R*0.18*(0.4+Math.sqrt(Math.random())*0.6)
+        pts.push({ x:cx+Math.cos(a)*r, y:cy-R*0.05+Math.sin(a)*r*0.9 })
       }
-      const numTent=8, tentN=n-dome
-      for(let i=0;i<tentN;i++){
-        const tIdx=i%numTent
-        const depth=Math.floor(i/numTent)/Math.ceil(tentN/numTent)
-        const baseA=Math.PI+(tIdx/numTent)*Math.PI
-        const bx=cx+Math.cos(baseA)*R*0.7
-        const wave=Math.sin(depth*Math.PI*5)*(20+tIdx*3)
-        pts.push({ x:bx+wave, y:cy-R*0.3+R*0.3+depth*R*1.7 })
-      }
-    } else if (shape==='fish') {
-      const rx=R*1.1, ry=R*0.5, body=Math.floor(n*0.78)
-      for(let i=0;i<body;i++){
-        const a=Math.random()*Math.PI*2
-        const r=Math.sqrt(Math.random())
-        pts.push({ x:cx-R*0.1+Math.cos(a)*rx*r, y:cy+Math.sin(a)*ry*r })
-      }
-      for(let i=body;i<n;i++){
-        const t=Math.random(), side=(Math.random()>0.5?1:-1)
-        pts.push({ x:cx+rx*0.88+t*R*0.55, y:cy+side*(ry*0.2+t*ry*1.1) })
-      }
-    } else if (shape==='octopus') {
-      const head=Math.floor(n*0.28)
-      for(let i=0;i<head;i++){
-        const a=Math.random()*Math.PI*2, r=Math.sqrt(Math.random())*R*0.42
-        pts.push({ x:cx+Math.cos(a)*r, y:cy-R*0.18+Math.sin(a)*r*0.85 })
-      }
-      const arms=n-head, perArm=arms/8
-      for(let arm=0;arm<8;arm++){
-        const baseA=(arm/8)*Math.PI*2
-        const count=arm<arms%8?Math.ceil(perArm):Math.floor(perArm)
+      // 8 distinct arms — tight, long, curved
+      const armN=n-headN, nArms=8
+      for(let arm=0;arm<nArms;arm++){
+        const count=arm<armN%nArms ? Math.ceil(armN/nArms) : Math.floor(armN/nArms)
+        const baseA=(arm/nArms)*Math.PI*2 - Math.PI/2
         for(let j=0;j<count;j++){
           const t=(j+1)/(count+1)
-          const wave=Math.sin(t*Math.PI*3.5)*R*0.18*t
+          const curve=Math.sin(t*Math.PI)*R*0.12*(arm%2===0?1:-1)
           const perp=baseA+Math.PI/2
-          pts.push({ x:cx+Math.cos(baseA)*R*1.1*t+Math.cos(perp)*wave, y:cy+R*0.22+Math.sin(baseA)*R*1.1*t+Math.sin(perp)*wave })
+          pts.push({
+            x:cx+Math.cos(baseA)*R*1.15*t + Math.cos(perp)*curve,
+            y:cy+Math.sin(baseA)*R*1.15*t + Math.sin(perp)*curve
+          })
         }
       }
-    } else if (shape==='whale') {
-      const rx=R*1.35, ry=R*0.38, body=Math.floor(n*0.82)
-      for(let i=0;i<body;i++){
-        const a=Math.random()*Math.PI*2, r=Math.sqrt(Math.random())
-        pts.push({ x:cx+Math.cos(a)*rx*r, y:cy+Math.sin(a)*ry*r })
+    } else if (shape==='jellyfish') {
+      // Bell — tight dome
+      const bellN=Math.floor(n*0.35)
+      for(let i=0;i<bellN;i++){
+        const a=Math.PI*(0.1+0.8*(i/bellN)) // upper arc only
+        const r=R*(0.55+Math.sqrt(Math.random())*0.45)
+        pts.push({ x:cx+Math.cos(a)*r, y:cy-R*0.2+Math.sin(a)*r*0.5 })
       }
-      for(let i=body;i<n;i++){
-        const t=Math.random(), side=(Math.random()>0.5?1:-1)
-        pts.push({ x:cx+rx*0.87+t*R*0.45, y:cy+side*(ry*0.5+t*ry*0.95) })
+      // Long straight tentacles
+      const tentN=n-bellN, nTent=7
+      for(let i=0;i<tentN;i++){
+        const ti=i%nTent
+        const depth=(Math.floor(i/nTent)+1)/Math.ceil(tentN/nTent)
+        const bx=cx+(-0.5+ti/(nTent-1))*R*1.1
+        const wave=Math.sin(depth*Math.PI*4+ti)*12
+        pts.push({ x:bx+wave, y:cy+R*0.28+depth*R*1.5 })
+      }
+    } else if (shape==='fish') {
+      // Ellipse body
+      const bodyN=Math.floor(n*0.72)
+      for(let i=0;i<bodyN;i++){
+        const a=(i/bodyN)*Math.PI*2
+        const taper=0.55+0.45*Math.cos(a) // tapers toward tail
+        const r=Math.sqrt(Math.random())*taper
+        pts.push({ x:cx-R*0.05+Math.cos(a)*R*0.9*r, y:cy+Math.sin(a)*R*0.42*r })
+      }
+      // Forked tail
+      const tailN=n-bodyN
+      for(let i=0;i<tailN;i++){
+        const t=Math.random()
+        const side=(i<tailN/2?1:-1)
+        pts.push({ x:cx+R*0.88+t*R*0.38, y:cy+side*(R*0.06+t*R*0.48) })
+      }
+    } else if (shape==='whale') {
+      // Long tapered body
+      const bodyN=Math.floor(n*0.78)
+      for(let i=0;i<bodyN;i++){
+        const a=(i/bodyN)*Math.PI*2
+        const taper=0.4+0.6*Math.abs(Math.cos(a*0.5)) // fatter in middle
+        const r=Math.sqrt(Math.random())*taper
+        pts.push({ x:cx+Math.cos(a)*R*1.2*r, y:cy+Math.sin(a)*R*0.3*r })
+      }
+      // Tail flukes — two lobes
+      const flukeN=n-bodyN
+      for(let i=0;i<flukeN;i++){
+        const side=(i<flukeN/2?1:-1)
+        const t=Math.random()
+        pts.push({ x:cx+R*1.1+t*R*0.3, y:cy+side*(R*0.12+t*R*0.38) })
       }
     } else if (shape==='starfish') {
-      const perArm=n/5
-      for(let arm=0;arm<5;arm++){
-        const baseA=(arm/5)*Math.PI*2-Math.PI/2
-        const count=arm<n%5?Math.ceil(perArm):Math.floor(perArm)
+      // 5 arms radiating cleanly
+      const nArms=5, perArm=n/nArms
+      for(let arm=0;arm<nArms;arm++){
+        const baseA=(arm/nArms)*Math.PI*2-Math.PI/2
+        const count=arm<n%nArms?Math.ceil(perArm):Math.floor(perArm)
         for(let j=0;j<count;j++){
           const t=(j+1)/(count+1)
-          const spread=R*0.12*(1-t)
+          const spread=R*0.08*(1-t)
           pts.push({
-            x:cx+Math.cos(baseA)*R*1.1*t+(Math.random()-.5)*spread*2,
-            y:cy+Math.sin(baseA)*R*1.1*t+(Math.random()-.5)*spread*2
+            x:cx+Math.cos(baseA)*R*1.05*t+(Math.random()-.5)*spread*2,
+            y:cy+Math.sin(baseA)*R*1.05*t+(Math.random()-.5)*spread*2
           })
         }
       }
     }
-    // Pad/trim to exactly n
-    while(pts.length<n) pts.push({ x:cx+(Math.random()-.5)*R, y:cy+(Math.random()-.5)*R })
+
+    while(pts.length<n) pts.push({ x:cx+(Math.random()-.5)*80, y:cy+(Math.random()-.5)*80 })
     return pts.slice(0,n)
   }
 
   function activateShape(shapeName) {
     const nl=nodes.get()
     const pts=generateShapePoints(shapeName, nl.length)
-    // Shuffle pts for random assignment
-    for(let i=pts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1));[pts[i],pts[j]]=[pts[j],pts[i]] }
-    nl.forEach((node,i) => {
-      const an=animNodes.get(String(node.id))
-      if(an&&pts[i]) an.shapeTarget={ x:pts[i].x, y:pts[i].y }
+    // Nearest-point assignment — each node flows to its closest shape point
+    const used=new Set()
+    // Sort nodes by distance from center so central nodes get central points
+    const sorted=[...nl].map(node=>{ const an=animNodes.get(String(node.id)); return { node, an, dx:an?an.baseX-cssW()/2:0, dy:an?an.baseY-cssH()/2:0 } })
+    sorted.forEach(({ node, an })=>{
+      if(!an) return
+      let best=-1, bestDist=Infinity
+      pts.forEach((pt,i)=>{ if(used.has(i)) return; const dx=an.baseX-pt.x,dy=an.baseY-pt.y; const d=dx*dx+dy*dy; if(d<bestDist){bestDist=d;best=i} })
+      if(best>=0){ used.add(best); an.shapeTarget={ x:pts[best].x, y:pts[best].y } }
     })
   }
 
