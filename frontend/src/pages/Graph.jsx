@@ -18,6 +18,7 @@ export default function Graph() {
   const [searchQ, setSearchQ] = useState('')
   const [searchResults, setSearchResults] = useState(null)
   const [modal, setModal] = useState(null) // null | 'addNode' | 'addEdge' | 'commit'
+  const [shapeMode, setShapeMode] = useState(null)
   const [confirmDialog, setConfirmDialog] = useState(null) // { message, onConfirm, danger? }
   const [nodeForm, setNodeForm] = useState({ label:'', name:'', props:'' })
   const [edgeForm, setEdgeForm] = useState({ from:'', type:'', to:'' })
@@ -219,6 +220,39 @@ export default function Graph() {
           <Section label="Graph">
             <StatRow k="Nodes" v={stats.nodes} />
             <StatRow k="Relationships" v={stats.edges} />
+          </Section>
+
+          <Section label="Shape">
+            <button style={{ ...S.btn, width:'100%', justifyContent:'center', background: shapeMode ? 'var(--surface)' : 'transparent', letterSpacing:'0.02em' }}
+              onClick={() => {
+                const SHAPES = [
+                  { name:'jellyfish', icon:'🪼' },
+                  { name:'fish',      icon:'🐟' },
+                  { name:'octopus',   icon:'🐙' },
+                  { name:'whale',     icon:'🐋' },
+                  { name:'starfish',  icon:'⭐' },
+                ]
+                if (shapeMode) {
+                  setShapeMode(null)
+                  graphRef.current?.setShape(null)
+                } else {
+                  const s = SHAPES[Math.floor(Math.random() * SHAPES.length)]
+                  setShapeMode(s)
+                  graphRef.current?.setShape(s.name)
+                }
+              }}>
+              {shapeMode ? `${shapeMode.icon} ${shapeMode.name} · release` : '✦ Morph into shape'}
+            </button>
+            {shapeMode && (
+              <div style={{ display:'flex', gap:6, marginTop:6, flexWrap:'wrap' }}>
+                {[{name:'jellyfish',icon:'🪼'},{name:'fish',icon:'🐟'},{name:'octopus',icon:'🐙'},{name:'whale',icon:'🐋'},{name:'starfish',icon:'⭐'}].map(s => (
+                  <button key={s.name} onClick={() => { setShapeMode(s); graphRef.current?.setShape(s.name) }}
+                    style={{ ...S.btn, padding:'5px 10px', fontSize:12, background: shapeMode?.name===s.name ? 'var(--surface)' : 'transparent', border: shapeMode?.name===s.name ? '1px solid var(--border-strong)' : '1px solid transparent' }}>
+                    {s.icon}
+                  </button>
+                ))}
+              </div>
+            )}
           </Section>
 
           {searchResults && (
@@ -508,6 +542,101 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
   function makeAnimNode(id,x,y) {
     return { x, y, baseX:x, baseY:y, angle:Math.random()*Math.PI*2, av:(Math.random()-.5)*.01, phase:Math.random()*Math.PI*2, ar:10+Math.random()*8 }
   }
+
+  // ── Shape generators — all produce exactly n points ──
+  function generateShapePoints(shape, n) {
+    const W=cssW(), H=cssH(), cx=W/2, cy=H/2
+    const pts=[], R=Math.min(W,H)*0.28
+
+    if (shape==='jellyfish') {
+      const dome=Math.floor(n*0.38)
+      for(let i=0;i<dome;i++){
+        const a=Math.PI+Math.random()*Math.PI // upper half
+        const r=R*(0.2+Math.sqrt(Math.random())*0.8)
+        pts.push({ x:cx+Math.cos(a)*r, y:cy-R*0.3+Math.sin(a)*r*0.55 })
+      }
+      const numTent=8, tentN=n-dome
+      for(let i=0;i<tentN;i++){
+        const tIdx=i%numTent
+        const depth=Math.floor(i/numTent)/Math.ceil(tentN/numTent)
+        const baseA=Math.PI+(tIdx/numTent)*Math.PI
+        const bx=cx+Math.cos(baseA)*R*0.7
+        const wave=Math.sin(depth*Math.PI*5)*(20+tIdx*3)
+        pts.push({ x:bx+wave, y:cy-R*0.3+R*0.3+depth*R*1.7 })
+      }
+    } else if (shape==='fish') {
+      const rx=R*1.1, ry=R*0.5, body=Math.floor(n*0.78)
+      for(let i=0;i<body;i++){
+        const a=Math.random()*Math.PI*2
+        const r=Math.sqrt(Math.random())
+        pts.push({ x:cx-R*0.1+Math.cos(a)*rx*r, y:cy+Math.sin(a)*ry*r })
+      }
+      for(let i=body;i<n;i++){
+        const t=Math.random(), side=(Math.random()>0.5?1:-1)
+        pts.push({ x:cx+rx*0.88+t*R*0.55, y:cy+side*(ry*0.2+t*ry*1.1) })
+      }
+    } else if (shape==='octopus') {
+      const head=Math.floor(n*0.28)
+      for(let i=0;i<head;i++){
+        const a=Math.random()*Math.PI*2, r=Math.sqrt(Math.random())*R*0.42
+        pts.push({ x:cx+Math.cos(a)*r, y:cy-R*0.18+Math.sin(a)*r*0.85 })
+      }
+      const arms=n-head, perArm=arms/8
+      for(let arm=0;arm<8;arm++){
+        const baseA=(arm/8)*Math.PI*2
+        const count=arm<arms%8?Math.ceil(perArm):Math.floor(perArm)
+        for(let j=0;j<count;j++){
+          const t=(j+1)/(count+1)
+          const wave=Math.sin(t*Math.PI*3.5)*R*0.18*t
+          const perp=baseA+Math.PI/2
+          pts.push({ x:cx+Math.cos(baseA)*R*1.1*t+Math.cos(perp)*wave, y:cy+R*0.22+Math.sin(baseA)*R*1.1*t+Math.sin(perp)*wave })
+        }
+      }
+    } else if (shape==='whale') {
+      const rx=R*1.35, ry=R*0.38, body=Math.floor(n*0.82)
+      for(let i=0;i<body;i++){
+        const a=Math.random()*Math.PI*2, r=Math.sqrt(Math.random())
+        pts.push({ x:cx+Math.cos(a)*rx*r, y:cy+Math.sin(a)*ry*r })
+      }
+      for(let i=body;i<n;i++){
+        const t=Math.random(), side=(Math.random()>0.5?1:-1)
+        pts.push({ x:cx+rx*0.87+t*R*0.45, y:cy+side*(ry*0.5+t*ry*0.95) })
+      }
+    } else if (shape==='starfish') {
+      const perArm=n/5
+      for(let arm=0;arm<5;arm++){
+        const baseA=(arm/5)*Math.PI*2-Math.PI/2
+        const count=arm<n%5?Math.ceil(perArm):Math.floor(perArm)
+        for(let j=0;j<count;j++){
+          const t=(j+1)/(count+1)
+          const spread=R*0.12*(1-t)
+          pts.push({
+            x:cx+Math.cos(baseA)*R*1.1*t+(Math.random()-.5)*spread*2,
+            y:cy+Math.sin(baseA)*R*1.1*t+(Math.random()-.5)*spread*2
+          })
+        }
+      }
+    }
+    // Pad/trim to exactly n
+    while(pts.length<n) pts.push({ x:cx+(Math.random()-.5)*R, y:cy+(Math.random()-.5)*R })
+    return pts.slice(0,n)
+  }
+
+  function activateShape(shapeName) {
+    const nl=nodes.get()
+    const pts=generateShapePoints(shapeName, nl.length)
+    // Shuffle pts for random assignment
+    for(let i=pts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1));[pts[i],pts[j]]=[pts[j],pts[i]] }
+    nl.forEach((node,i) => {
+      const an=animNodes.get(String(node.id))
+      if(an&&pts[i]) an.shapeTarget={ x:pts[i].x, y:pts[i].y }
+    })
+  }
+
+  function deactivateShape() {
+    for(const an of animNodes.values()) delete an.shapeTarget
+  }
+
   function rebuildAnimNodes() {
     const nl=nodes.get(), el=edges.get()
     const pos=computeLayout(nl,el)
@@ -515,11 +644,16 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
     pos.forEach((p,id)=>animNodes.set(id,makeAnimNode(id,p.x,p.y)))
   }
 
-  // Node animation: orbital float + mouse repulsion when shift NOT held
+  // Node animation: orbital float + mouse repulsion + optional shape attraction
   function updateAnimNode(an) {
     an.angle+=an.av; an.phase+=0.011
     const ax=Math.cos(an.angle)*an.ar
     const ay=Math.sin(an.angle)*an.ar+Math.cos(an.phase)*5
+    // Shape attraction: gently pull baseX/baseY toward shape target
+    if(an.shapeTarget){
+      an.baseX+=(an.shapeTarget.x-an.baseX)*0.018
+      an.baseY+=(an.shapeTarget.y-an.baseY)*0.018
+    }
     if(!shiftHeld){
       const dx=mouse.wx-an.x, dy=mouse.wy-an.y
       const dist=Math.sqrt(dx*dx+dy*dy)
@@ -723,5 +857,6 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
     },
     setHighlight(set) { searchHL=set },
     clearHighlight() { searchHL=new Set() },
+    setShape(name) { if(name) activateShape(name); else deactivateShape() },
   }
 }
