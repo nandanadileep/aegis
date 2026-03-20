@@ -7,6 +7,24 @@ const S = {
   btnPrimary: { background:'var(--text)',border:'none',color:'var(--bg)' },
 }
 
+const SHAPE_COLORS = {
+  octopus:  {fill:'#9b5de5',glow:'rgba(155,93,229,0.8)'},
+  jellyfish:{fill:'#f15bb5',glow:'rgba(241,91,181,0.8)'},
+  fish:     {fill:'#00b4d8',glow:'rgba(0,180,216,0.8)'},
+  whale:    {fill:'#0077b6',glow:'rgba(0,119,182,0.8)'},
+  starfish: {fill:'#f77f00',glow:'rgba(247,127,0,0.8)'},
+  butterfly:{fill:'#e040fb',glow:'rgba(224,64,251,0.8)'},
+  heart:    {fill:'#e63946',glow:'rgba(230,57,70,0.8)'},
+  bird:     {fill:'#74c0fc',glow:'rgba(116,192,252,0.8)'},
+  spiral:   {fill:'#2ec4b6',glow:'rgba(46,196,182,0.8)'},
+  snowflake:{fill:'#a8dadc',glow:'rgba(168,218,220,0.8)'},
+  flower:   {fill:'#ff6b9d',glow:'rgba(255,107,157,0.8)'},
+  tree:     {fill:'#52b788',glow:'rgba(82,183,136,0.8)'},
+  snake:    {fill:'#6a994e',glow:'rgba(106,153,78,0.8)'},
+  crescent: {fill:'#f4d03f',glow:'rgba(244,208,63,0.8)'},
+  diamond:  {fill:'#00f5d4',glow:'rgba(0,245,212,0.8)'},
+}
+
 const SHAPE_STRIP = [
   {icon:'🐙',shape:'octopus',label:'Octopus'},
   {icon:'🪼',shape:'jellyfish',label:'Jellyfish'},
@@ -821,8 +839,10 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
     'Project':{fill:'#ffd60a',glow:'rgba(255,214,10,0.7)'},'Behavior':{fill:'#ff6961',glow:'rgba(255,105,97,0.7)'},
     'Constraint':{fill:'#ac8e68',glow:'rgba(172,142,104,0.7)'},'Belief':{fill:'#32ade6',glow:'rgba(50,173,230,0.7)'},
   }
+  let shapeColorOverride = null
   const dynPalCache = new Map()
   function palFor(type) {
+    if (shapeColorOverride) return shapeColorOverride
     if (NODE_PALETTE[type]) return NODE_PALETTE[type]
     if (dynPalCache.has(type)) return dynPalCache.get(type)
     // Hash the label string to a hue, then pick a vivid HSL color
@@ -990,6 +1010,6 @@ function initGraph(canvas, sessionRef, setStats, setPending, setSelectedNode, se
     },
     setHighlight(set) { searchHL=set },
     clearHighlight() { searchHL=new Set() },
-    setShape(name) { if(name) activateShape(name); else deactivateShape() },
+    setShape(name) { shapeColorOverride = name ? (SHAPE_COLORS[name]||null) : null; if(name) activateShape(name); else deactivateShape() },
   }
 }
