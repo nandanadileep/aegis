@@ -2,6 +2,13 @@
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "static",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/:path*",
+      "destination": "https://identity-0ved.onrender.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
