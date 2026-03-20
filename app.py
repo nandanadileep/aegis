@@ -37,6 +37,15 @@ LLM_FAST = os.getenv("LLM_FAST", "groq/qwen3-32b")
 # ---------------------------
 # Helpers
 # ---------------------------
+def llm_kwargs(base_model: str) -> dict:
+    """Return litellm.completion kwargs, preferring user-supplied key/model if present."""
+    user_key = request.headers.get("X-LLM-Key", "").strip()
+    user_model = request.headers.get("X-LLM-Model", "").strip()
+    if user_key and user_model:
+        return {"model": user_model, "api_key": user_key}
+    return {"model": base_model}
+
+
 def load_env(path: str = ".env") -> None:
     if load_dotenv:
         load_dotenv(path)
@@ -463,9 +472,9 @@ def chat():
     history.append({"role": "user", "content": user_message})
 
     completion = litellm.completion(
-        model=LLM_MODEL,
         messages=history,
         temperature=0.5,
+        **llm_kwargs(LLM_MODEL),
     )
     reply = completion.choices[0].message.content or ""
 
@@ -492,7 +501,6 @@ def _extract_and_add_nodes(person_id: str, user_message: str, reply: str) -> lis
     KNOWN_LABELS = ["Skill", "Value", "Goal", "Trait", "Identity", "Project", "Behavior", "Constraint", "Belief"]
     try:
         extraction = litellm.completion(
-            model=LLM_FAST,
             messages=[{
                 "role": "user",
                 "content": (
@@ -510,6 +518,7 @@ def _extract_and_add_nodes(person_id: str, user_message: str, reply: str) -> lis
             }],
             temperature=0,
             max_tokens=300,
+            **llm_kwargs(LLM_FAST),
         )
         raw = extraction.choices[0].message.content.strip()
         # Strip markdown code fences if present
@@ -574,10 +583,10 @@ def proxy_completions():
     enriched = [{"role": "system", "content": system_prompt}, *non_system]
 
     completion = litellm.completion(
-        model=model,
         messages=enriched,
         temperature=data.get("temperature", 0.5),
         stream=False,
+        **llm_kwargs(model),
     )
 
     user_messages = [m["content"] for m in non_system if m.get("role") == "user"]
@@ -644,6 +653,11 @@ def onboarding_page():
     return _spa()
 
 
+@app.route("/login")
+def login_page():
+    return _spa()
+
+
 ONBOARD_SYSTEM_PROMPT = """
 You are a sharp, thoughtful person getting to know someone. Your job is to understand who they really are — not what they think sounds good, but what actually drives them.
 
@@ -685,9 +699,9 @@ def onboard_chat():
         messages.append({"role": "user", "content": user_message})
 
     completion = litellm.completion(
-        model=LLM_MODEL,
         messages=messages,
         temperature=0.7,
+        **llm_kwargs(LLM_MODEL),
     )
     reply = completion.choices[0].message.content or ""
 
@@ -735,9 +749,9 @@ Input:
 Respond with ONLY the JSON object, no explanation."""
 
     completion = litellm.completion(
-        model=LLM_FAST,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
+        **llm_kwargs(LLM_FAST),
     )
     content = completion.choices[0].message.content or ""
     # Strip markdown code fences if present
@@ -927,7 +941,6 @@ def create_node():
                     "Project", "Behavior", "Constraint", "Belief"]
     try:
         norm = litellm.completion(
-            model=LLM_FAST,
             messages=[{
                 "role": "user",
                 "content": (
@@ -942,6 +955,7 @@ def create_node():
             }],
             temperature=0,
             max_tokens=20,
+            **llm_kwargs(LLM_FAST),
         )
         safe_label = norm.choices[0].message.content.strip().strip('"').strip("'")
         safe_label = re.sub(r'\s+(.)', lambda m: m.group(1).upper(), safe_label)

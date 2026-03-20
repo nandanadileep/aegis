@@ -10,8 +10,15 @@ export async function getSupabase() {
 }
 
 export function authHeaders(session) {
-  return {
+  const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${session.access_token}`,
   }
+  const key = localStorage.getItem('byok_key')
+  const model = localStorage.getItem('byok_model')
+  if (key && model) {
+    headers['X-LLM-Key'] = key
+    headers['X-LLM-Model'] = model
+  }
+  return headers
 }

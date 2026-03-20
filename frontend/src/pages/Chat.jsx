@@ -3,11 +3,22 @@ import { Link } from 'react-router-dom'
 import { getSupabase, authHeaders } from '../lib/supabase'
 import ThemeToggle from '../components/ThemeToggle'
 
+const BYOK_PROVIDERS = [
+  { label: 'Groq',      model: 'groq/llama-3.3-70b-versatile',  ph: 'gsk_...' },
+  { label: 'OpenAI',    model: 'openai/gpt-4o',                  ph: 'sk-...' },
+  { label: 'Anthropic', model: 'anthropic/claude-sonnet-4-6',    ph: 'sk-ant-...' },
+  { label: 'Custom',    model: '',                                ph: 'API key' },
+]
+
 export default function Chat() {
   const [session, setSession] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [byokOpen, setByokOpen] = useState(false)
+  const [byokProvider, setByokProvider] = useState(0)
+  const [byokModel, setByokModel] = useState('')
+  const [byokKey, setByokKey] = useState('')
   const transcript = useRef([])
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -25,6 +36,17 @@ export default function Chat() {
   }, [])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  useEffect(() => {
+    const k = localStorage.getItem('byok_key') || ''
+    const m = localStorage.getItem('byok_model') || ''
+    if (k) setByokKey(k)
+    if (m) {
+      setByokModel(m)
+      const pi = BYOK_PROVIDERS.findIndex(p => p.model === m)
+      setByokProvider(pi >= 0 ? pi : BYOK_PROVIDERS.length - 1)
+    }
+  }, [])
 
   async function signOut() {
     const sb = await getSupabase()
@@ -85,10 +107,70 @@ export default function Chat() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <ThemeToggle />
+          <BtnSm onClick={() => setByokOpen(true)}>
+            {localStorage.getItem('byok_key') ? '🔑 Key set' : 'API Key'}
+          </BtnSm>
           <BtnSm onClick={saveTranscript}>Save</BtnSm>
           <BtnPrimary onClick={signOut}>Sign out</BtnPrimary>
         </div>
       </header>
+
+      {byokOpen && (
+        <div style={{ position:'fixed', inset:0, zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(4px)' }}
+          onClick={e => { if(e.target===e.currentTarget) setByokOpen(false) }}>
+          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:16, padding:28, width:360, boxShadow:'0 24px 64px rgba(0,0,0,0.18)' }}>
+            <h3 style={{ fontSize:16, fontWeight:800, letterSpacing:'-0.02em', marginBottom:4, color:'var(--text)' }}>Your API Key</h3>
+            <p style={{ fontSize:12, color:'var(--text-3)', marginBottom:20, lineHeight:1.6 }}>Your key goes directly to the LLM provider. We never store it.</p>
+            <div style={{ marginBottom:14 }}>
+              <label style={{ display:'block', fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:6 }}>Provider</label>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                {BYOK_PROVIDERS.map((p,i) => (
+                  <button key={i} onClick={() => { setByokProvider(i); if(p.model) setByokModel(p.model) }}
+                    style={{ padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif',
+                      background: byokProvider===i ? 'var(--text)' : 'var(--surface)',
+                      color: byokProvider===i ? 'var(--bg)' : 'var(--text-2)',
+                      border: '1px solid var(--border-strong)', transition:'all 0.15s' }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {byokProvider === BYOK_PROVIDERS.length - 1 && (
+              <div style={{ marginBottom:14 }}>
+                <label style={{ display:'block', fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:6 }}>Model</label>
+                <input value={byokModel} onChange={e => setByokModel(e.target.value)}
+                  placeholder="e.g. openai/gpt-4o"
+                  style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', fontFamily:'Inter,sans-serif', fontSize:13, padding:'9px 12px', outline:'none', boxSizing:'border-box' }} />
+              </div>
+            )}
+            <div style={{ marginBottom:20 }}>
+              <label style={{ display:'block', fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:6 }}>API Key</label>
+              <input type="password" value={byokKey} onChange={e => setByokKey(e.target.value)}
+                placeholder={BYOK_PROVIDERS[byokProvider]?.ph || 'Your API key'}
+                style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', fontFamily:'Inter,sans-serif', fontSize:13, padding:'9px 12px', outline:'none', boxSizing:'border-box' }} />
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={() => {
+                const model = byokProvider === BYOK_PROVIDERS.length - 1 ? byokModel : BYOK_PROVIDERS[byokProvider].model
+                localStorage.setItem('byok_key', byokKey)
+                localStorage.setItem('byok_model', model)
+                setByokOpen(false)
+              }} style={{ flex:1, padding:'10px', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', background:'var(--text)', color:'var(--bg)', border:'none' }}>
+                Save
+              </button>
+              {localStorage.getItem('byok_key') && (
+                <button onClick={() => {
+                  localStorage.removeItem('byok_key')
+                  localStorage.removeItem('byok_model')
+                  setByokKey(''); setByokModel(''); setByokOpen(false)
+                }} style={{ padding:'10px 16px', borderRadius:10, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif', background:'var(--surface)', color:'var(--text-2)', border:'1px solid var(--border-strong)' }}>
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '48px 0 24px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative', zIndex: 10 }}>
