@@ -14,7 +14,7 @@ export default function Login() {
       const { data: { session } } = await sb.auth.getSession()
       if (session && !cancel) await redirect(sb, session)
       sb.auth.onAuthStateChange(async (event, s) => {
-        if (event === 'SIGNED_IN' && s && !cancel) await redirect(sb, s)
+        if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && s && !cancel) await redirect(sb, s)
       })
     }
     check()
