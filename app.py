@@ -243,11 +243,9 @@ def generate_wallet_markdown(person_id: str, database: str) -> str:
 
 def build_system_prompt(memory_context: str) -> str:
     has_memory = memory_context and memory_context != "No stored memory yet."
-    memory_section = f"Here is what you know about the user:\n{memory_context}" if has_memory else ""
-
-    return f"""You are a helpful assistant with access to the user's personal knowledge graph.
-{memory_section}
-Use this context to give relevant, personalised responses. Do not roleplay as the user or imitate their style. Just be a direct, useful assistant who knows them well.""".strip()
+    if not has_memory:
+        return "You are a helpful assistant."
+    return f"You have access to the following memory about this person:\n\n{memory_context}"
 
 
 

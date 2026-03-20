@@ -107,11 +107,11 @@ export default function Chat() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500, letterSpacing: '0.02em' }}>
-            {localStorage.getItem('byok_model') ? localStorage.getItem('byok_model').split('/').pop() : 'llama-3.3-70b'}
+            {byokModel ? byokModel.split('/').pop() : 'llama-3.3-70b'}
           </span>
           <ThemeToggle />
           <BtnSm onClick={() => setByokOpen(true)}>
-            {localStorage.getItem('byok_key') ? 'Key set' : 'API Key'}
+            {byokKey ? 'Key set' : 'API Key'}
           </BtnSm>
           <BtnSm onClick={saveTranscript}>Save</BtnSm>
           <BtnPrimary onClick={signOut}>Sign out</BtnPrimary>
@@ -157,11 +157,12 @@ export default function Chat() {
                 const model = byokProvider === BYOK_PROVIDERS.length - 1 ? byokModel : BYOK_PROVIDERS[byokProvider].model
                 localStorage.setItem('byok_key', byokKey)
                 localStorage.setItem('byok_model', model)
+                setByokModel(model)
                 setByokOpen(false)
               }} style={{ flex:1, padding:'10px', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', background:'var(--text)', color:'var(--bg)', border:'none' }}>
                 Save
               </button>
-              {localStorage.getItem('byok_key') && (
+              {byokKey && (
                 <button onClick={() => {
                   localStorage.removeItem('byok_key')
                   localStorage.removeItem('byok_model')
