@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { getSupabase, authHeaders } from '../lib/supabase'
-import ThemeToggle from '../components/ThemeToggle'
+import styles from './Chat.module.css'
 
 const BYOK_PROVIDERS = [
   { label: 'Groq',      model: 'groq/llama-3.3-70b-versatile',  ph: 'gsk_...' },
@@ -63,9 +62,17 @@ export default function Chat() {
   const [byokProvider, setByokProvider] = useState(0)
   const [byokModel, setByokModel] = useState('')
   const [byokKey, setByokKey] = useState('')
-  const transcript = useRef([])
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDown(e) { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [menuOpen])
 
   useEffect(() => {
     let cancel = false
@@ -105,7 +112,6 @@ export default function Chat() {
     setInput('')
     const userMsg = { role: 'user', text }
     setMessages(m => [...m, userMsg, { role: 'thinking' }])
-    transcript.current.push(`You: ${text}`)
 
     try {
       const res = await fetch('/chat', { method: 'POST', headers: authHeaders(session), body: JSON.stringify({ message: text }) })
@@ -116,7 +122,6 @@ export default function Chat() {
         text: data.reply || 'No response',
         addedNodes: data.added_nodes || [],
       }])
-      transcript.current.push(`Assistant: ${data.reply}`)
     } catch (e) {
       setMessages(m => [...m.filter(x => x.role !== 'thinking'), { role: 'assistant', text: `Error: ${e.message}` }])
     } finally {
@@ -130,98 +135,106 @@ export default function Chat() {
       await fetch('/clear-history', { method: 'POST', headers: authHeaders(session) })
     } catch {}
     setMessages([])
-    transcript.current = []
     inputRef.current?.focus()
   }
 
-  async function saveTranscript() {
-    if (!transcript.current.length || !session) return
-    try {
-      await fetch('/save', { method: 'POST', headers: authHeaders(session), body: JSON.stringify({ transcript: transcript.current.join('\n') }) })
-      transcript.current = []
-    } catch {}
-  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg)', overflow: 'hidden', position: 'relative' }}>
-      {/* Subtle gradient background */}
-      <div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
-        background: 'radial-gradient(ellipse 60% 50% at 0% 100%, rgba(255,107,53,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 100% 0%, rgba(34,211,238,0.07) 0%, transparent 60%)',
-      }} />
+    <div className={styles.root}>
+      <div className={styles.bgGradient} />
 
-      {/* Header */}
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 32px', height: 60, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg)', zIndex: 10, position: 'relative' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text)' }}>Identiti</span>
-          <nav style={{ display: 'flex', gap: 4 }}>
-            <NavLink to="/chat" active>Chat</NavLink>
-            <NavLink to="/memory">Graph</NavLink>
-          </nav>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500, letterSpacing: '0.02em' }}>
-            {byokModel ? byokModel.split('/').pop() : 'llama-3.3-70b'}
-          </span>
-          <ThemeToggle />
-          <BtnSm onClick={() => setByokOpen(true)}>
-            {byokKey ? 'Key set' : 'API Key'}
-          </BtnSm>
-          <BtnSm onClick={newChat}>New chat</BtnSm>
-          <BtnSm onClick={saveTranscript}>Save</BtnSm>
-          <BtnPrimary onClick={signOut}>Sign out</BtnPrimary>
+      <header className={styles.header}>
+        <span className={styles.brand}>Identiti</span>
+        <div className={styles.menuWrap} ref={menuRef}>
+          <button onClick={() => setMenuOpen(o => !o)} className={styles.menuTrigger}>···</button>
+          {menuOpen && (
+            <div className={styles.menuDropdown}>
+              <div className={styles.menuModelRow}>
+                <span className={styles.menuModelLabel}>{byokModel ? byokModel.split('/').pop() : 'llama-3.3-70b-versatile'}</span>
+              </div>
+              <div className={styles.menuDivider} />
+              <MenuItem label="New chat" onClick={() => { newChat(); setMenuOpen(false) }} />
+              <MenuItem label={byokKey ? 'API Key (set)' : 'API Key'} onClick={() => { setByokOpen(true); setMenuOpen(false) }} />
+              <MenuItem label="Import memory" onClick={() => { window.location.href = '/onboarding?import=true' }} />
+              <div className={styles.menuDivider} />
+              <ThemeMenuItem />
+              <div className={styles.menuDivider} />
+              <MenuItem label="Sign out" onClick={() => { signOut(); setMenuOpen(false) }} danger />
+            </div>
+          )}
         </div>
       </header>
 
+      <div className={styles.navToggle}>
+        <a href="/chat" className={`${styles.navToggleBtn} ${styles.navToggleBtnActive}`}>Chat</a>
+        <a href="/memory" className={styles.navToggleBtn}>Graph</a>
+      </div>
+
       {byokOpen && (
-        <div style={{ position:'fixed', inset:0, zIndex:100, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.4)', backdropFilter:'blur(4px)' }}
-          onClick={e => { if(e.target===e.currentTarget) setByokOpen(false) }}>
-          <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:16, padding:28, width:360, boxShadow:'0 24px 64px rgba(0,0,0,0.18)' }}>
-            <h3 style={{ fontSize:16, fontWeight:800, letterSpacing:'-0.02em', marginBottom:4, color:'var(--text)' }}>Your API Key</h3>
-            <p style={{ fontSize:12, color:'var(--text-3)', marginBottom:20, lineHeight:1.6 }}>Your key goes directly to the LLM provider. We never store it.</p>
-            <div style={{ marginBottom:14 }}>
-              <label style={{ display:'block', fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:6 }}>Provider</label>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                {BYOK_PROVIDERS.map((p,i) => (
-                  <button key={i} onClick={() => { setByokProvider(i); if(p.model) setByokModel(p.model) }}
-                    style={{ padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif',
-                      background: byokProvider===i ? 'var(--text)' : 'var(--surface)',
-                      color: byokProvider===i ? 'var(--bg)' : 'var(--text-2)',
-                      border: '1px solid var(--border-strong)', transition:'all 0.15s' }}>
+        <div
+          className={styles.modalOverlay}
+          onClick={e => { if (e.target === e.currentTarget) setByokOpen(false) }}
+        >
+          <div className={styles.modalBox}>
+            <h3 className={styles.modalTitle}>Your API Key</h3>
+            <p className={styles.modalSub}>Your key goes directly to the LLM provider. We never store it.</p>
+            <div className={styles.modalFieldGroup}>
+              <label className={styles.modalLabel}>Provider</label>
+              <div className={styles.providerBtns}>
+                {BYOK_PROVIDERS.map((p, i) => (
+                  <button
+                    key={i}
+                    onClick={() => { setByokProvider(i); if (p.model) setByokModel(p.model) }}
+                    className={`${styles.providerBtn} ${byokProvider === i ? styles.providerBtnActive : styles.providerBtnInactive}`}
+                  >
                     {p.label}
                   </button>
                 ))}
               </div>
             </div>
             {byokProvider === BYOK_PROVIDERS.length - 1 && (
-              <div style={{ marginBottom:14 }}>
-                <label style={{ display:'block', fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:6 }}>Model</label>
-                <input value={byokModel} onChange={e => setByokModel(e.target.value)}
+              <div className={styles.modalFieldGroup}>
+                <label className={styles.modalLabel}>Model</label>
+                <input
+                  value={byokModel}
+                  onChange={e => setByokModel(e.target.value)}
                   placeholder="e.g. openai/gpt-4o"
-                  style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', fontFamily:'Inter,sans-serif', fontSize:13, padding:'9px 12px', outline:'none', boxSizing:'border-box' }} />
+                  className={styles.modalInput}
+                />
               </div>
             )}
-            <div style={{ marginBottom:20 }}>
-              <label style={{ display:'block', fontSize:11, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:6 }}>API Key</label>
-              <input type="password" value={byokKey} onChange={e => setByokKey(e.target.value)}
+            <div className={styles.modalApiKeyGroup}>
+              <label className={styles.modalLabel}>API Key</label>
+              <input
+                type="password"
+                value={byokKey}
+                onChange={e => setByokKey(e.target.value)}
                 placeholder={BYOK_PROVIDERS[byokProvider]?.ph || 'Your API key'}
-                style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', fontFamily:'Inter,sans-serif', fontSize:13, padding:'9px 12px', outline:'none', boxSizing:'border-box' }} />
+                className={styles.modalInput}
+              />
             </div>
-            <div style={{ display:'flex', gap:8 }}>
-              <button onClick={() => {
-                const model = byokProvider === BYOK_PROVIDERS.length - 1 ? byokModel : BYOK_PROVIDERS[byokProvider].model
-                localStorage.setItem('byok_key', byokKey)
-                localStorage.setItem('byok_model', model)
-                setByokModel(model)
-                setByokOpen(false)
-              }} style={{ flex:1, padding:'10px', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'Inter,sans-serif', background:'var(--text)', color:'var(--bg)', border:'none' }}>
+            <div className={styles.modalActions}>
+              <button
+                onClick={() => {
+                  const model = byokProvider === BYOK_PROVIDERS.length - 1 ? byokModel : BYOK_PROVIDERS[byokProvider].model
+                  localStorage.setItem('byok_key', byokKey)
+                  localStorage.setItem('byok_model', model)
+                  setByokModel(model)
+                  setByokOpen(false)
+                }}
+                className={styles.modalSaveBtn}
+              >
                 Save
               </button>
               {byokKey && (
-                <button onClick={() => {
-                  localStorage.removeItem('byok_key')
-                  localStorage.removeItem('byok_model')
-                  setByokKey(''); setByokModel(''); setByokOpen(false)
-                }} style={{ padding:'10px 16px', borderRadius:10, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif', background:'var(--surface)', color:'var(--text-2)', border:'1px solid var(--border-strong)' }}>
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('byok_key')
+                    localStorage.removeItem('byok_model')
+                    setByokKey(''); setByokModel(''); setByokOpen(false)
+                  }}
+                  className={styles.modalRemoveBtn}
+                >
                   Remove
                 </button>
               )}
@@ -230,21 +243,16 @@ export default function Chat() {
         </div>
       )}
 
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '48px 0 24px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative', zIndex: 10 }}>
+      <div className={styles.messages}>
         {messages.length === 0 && <EmptyState greeting={greeting} />}
+        {messages.length > 0 && <div className={styles.messageSpacer} />}
         {messages.map((m, i) => <Message key={i} msg={m} />)}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <div style={{ flexShrink: 0, padding: '12px 24px 32px', maxWidth: 680, margin: '0 auto', width: '100%', position: 'relative', zIndex: 10 }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: 'var(--input-bg)', border: '1px solid var(--border)',
-          borderRadius: 26, padding: '8px 8px 8px 20px',
-          transition: 'border-color 0.2s, box-shadow 0.2s',
-        }}
+      <div className={styles.inputArea}>
+        <div
+          className={styles.inputBox}
           onFocus={e => { e.currentTarget.style.borderColor = 'var(--border-strong)'; e.currentTarget.style.boxShadow = '0 0 0 3px var(--focus-shadow)' }}
           onBlur={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none' }}
         >
@@ -255,17 +263,12 @@ export default function Chat() {
             onKeyDown={e => { if (e.key === 'Enter') sendMessage() }}
             placeholder="Message…"
             autoComplete="off"
-            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--text)', fontFamily: 'Inter, sans-serif', fontSize: 14, padding: '4px 0', minWidth: 0 }}
+            className={styles.inputField}
           />
           <button
             onClick={sendMessage}
             disabled={sending || !input.trim()}
-            style={{
-              width: 34, height: 34, borderRadius: '50%', background: sending ? 'var(--border)' : 'var(--send-bg)',
-              border: 'none', cursor: sending ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', flexShrink: 0, fontSize: 15, color: 'var(--send-text)', fontWeight: 700,
-              transition: 'opacity 0.15s, transform 0.15s',
-            }}
+            className={`${styles.sendBtn} ${sending ? styles.sendBtnSending : styles.sendBtnReady}`}
           >↑</button>
         </div>
       </div>
@@ -275,9 +278,11 @@ export default function Chat() {
 
 function EmptyState({ greeting: { g, s } }) {
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, pointerEvents: 'none' }}>
-      <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text)' }}>{g}</p>
-      <p style={{ fontSize: 14, color: 'var(--text-3)', textAlign: 'center', maxWidth: 260, lineHeight: 1.6 }}>{s}</p>
+    <div className={styles.emptyState}>
+      <div className={styles.emptyStateInner}>
+        <h2 className={styles.emptyStateHeading}>{g}</h2>
+        <p className={styles.emptyStateSub}>{s}</p>
+      </div>
     </div>
   )
 }
@@ -285,43 +290,36 @@ function EmptyState({ greeting: { g, s } }) {
 function Message({ msg }) {
   if (msg.role === 'thinking') {
     return (
-      <div style={{ display: 'flex', width: '100%', maxWidth: 680, margin: '0 auto', padding: '3px 24px', justifyContent: 'flex-start' }}>
-        <div style={{ background: 'transparent', color: 'var(--text-3)', fontSize: 13, padding: '4px 0' }}>
+      <div className={styles.thinkingRow}>
+        <div className={styles.thinkingInner}>
           <ThinkingDots />
         </div>
       </div>
     )
   }
   const isUser = msg.role === 'user'
+  const learned = !isUser && msg.addedNodes?.length > 0 ? msg.addedNodes : null
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 680, margin: '0 auto', padding: '3px 24px', alignItems: isUser ? 'flex-end' : 'flex-start' }}>
-      <div style={{
-        maxWidth: '72%', padding: '11px 16px', fontSize: 14, lineHeight: 1.6,
-        whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
-        background: isUser ? 'var(--user-bubble)' : 'var(--asst-bubble)',
-        color: isUser ? 'var(--user-bubble-text)' : 'var(--asst-bubble-text)',
-        borderRadius: isUser ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
-        backdropFilter: isUser ? 'none' : 'blur(8px)',
-        border: isUser ? 'none' : '1px solid var(--asst-bubble-border, transparent)',
-        boxShadow: isUser ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
-      }}
+    <div className={`${styles.messageRow} ${isUser ? styles.messageRowUser : styles.messageRowAssistant}`}>
+      <div
+        className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAssistant}`}
         dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
       />
+      {learned && (
+        <div className={styles.learned}>
+          <span className={styles.learnedLabel}>Saved to memory</span>
+          {learned.map((n, i) => (
+            <span key={i} className={styles.learnedChip}>{n.key || n.value}</span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
 function ThinkingDots() {
   return (
-    <>
-      <style>{`
-        @keyframes blink { 0%,80%,100%{opacity:.3} 40%{opacity:1} }
-        .td span { opacity:.3; animation: blink 1.4s infinite; display:inline-block; }
-        .td span:nth-child(2){animation-delay:.2s}
-        .td span:nth-child(3){animation-delay:.4s}
-      `}</style>
-      <span className="td"><span>●</span><span>●</span><span>●</span></span>
-    </>
+    <span className={styles.td}><span>●</span><span>●</span><span>●</span></span>
   )
 }
 
@@ -332,33 +330,20 @@ function renderMarkdown(text) {
     .replace(/`([^`\n]+)`/g, '<code style="font-family:monospace;font-size:0.88em;background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:4px">$1</code>')
 }
 
-function NavLink({ to, children, active }) {
+function MenuItem({ label, onClick, danger }) {
   return (
-    <a href={to} style={{
-      padding: '6px 14px', borderRadius: 80, fontSize: 13, fontWeight: 500,
-      color: active ? 'var(--text)' : 'var(--text-2)', textDecoration: 'none',
-      border: active ? '1px solid var(--border-strong)' : '1px solid transparent',
-      background: active ? 'var(--surface)' : 'transparent', transition: 'all 0.15s',
-    }}>{children}</a>
+    <button onClick={onClick} className={`${styles.menuItem} ${danger ? styles.menuItemDanger : ''}`}>
+      {label}
+    </button>
   )
 }
 
-function BtnSm({ onClick, children }) {
+function ThemeMenuItem() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('identiti-theme') || 'dark')
+  function toggle() { const n = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('identiti-theme', n); document.documentElement.setAttribute('data-theme', n); setTheme(n) }
   return (
-    <button onClick={onClick} style={{
-      padding: '7px 16px', borderRadius: 40, fontSize: 13, fontWeight: 600,
-      cursor: 'pointer', fontFamily: 'Inter, sans-serif', background: 'var(--bg)',
-      color: 'var(--text)', border: '1px solid var(--border-strong)', transition: 'all 0.15s',
-    }}>{children}</button>
-  )
-}
-
-function BtnPrimary({ onClick, children }) {
-  return (
-    <button onClick={onClick} style={{
-      padding: '7px 16px', borderRadius: 40, fontSize: 13, fontWeight: 600,
-      cursor: 'pointer', fontFamily: 'Inter, sans-serif', background: 'var(--text)',
-      color: 'var(--bg)', border: 'none', transition: 'all 0.15s',
-    }}>{children}</button>
+    <button onClick={toggle} className={styles.menuItem}>
+      {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+    </button>
   )
 }
