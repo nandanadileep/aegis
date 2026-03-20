@@ -8,21 +8,21 @@ const S = {
 }
 
 const SHAPE_COLORS = {
-  octopus:  {fill:'#9b5de5',glow:'rgba(155,93,229,0.8)'},
-  jellyfish:{fill:'#f15bb5',glow:'rgba(241,91,181,0.8)'},
-  fish:     {fill:'#00b4d8',glow:'rgba(0,180,216,0.8)'},
-  whale:    {fill:'#0077b6',glow:'rgba(0,119,182,0.8)'},
-  starfish: {fill:'#f77f00',glow:'rgba(247,127,0,0.8)'},
-  butterfly:{fill:'#e040fb',glow:'rgba(224,64,251,0.8)'},
-  heart:    {fill:'#e63946',glow:'rgba(230,57,70,0.8)'},
-  bird:     {fill:'#74c0fc',glow:'rgba(116,192,252,0.8)'},
-  spiral:   {fill:'#2ec4b6',glow:'rgba(46,196,182,0.8)'},
-  snowflake:{fill:'#a8dadc',glow:'rgba(168,218,220,0.8)'},
-  flower:   {fill:'#ff6b9d',glow:'rgba(255,107,157,0.8)'},
-  tree:     {fill:'#52b788',glow:'rgba(82,183,136,0.8)'},
-  snake:    {fill:'#6a994e',glow:'rgba(106,153,78,0.8)'},
-  crescent: {fill:'#f4d03f',glow:'rgba(244,208,63,0.8)'},
-  diamond:  {fill:'#00f5d4',glow:'rgba(0,245,212,0.8)'},
+  octopus:  {fill:'#7c5c9e',glow:'rgba(124,92,158,0.5)'},
+  jellyfish:{fill:'#a8607e',glow:'rgba(168,96,126,0.5)'},
+  fish:     {fill:'#4a8fa8',glow:'rgba(74,143,168,0.5)'},
+  whale:    {fill:'#3a6b8a',glow:'rgba(58,107,138,0.5)'},
+  starfish: {fill:'#b07840',glow:'rgba(176,120,64,0.5)'},
+  butterfly:{fill:'#8c5a9e',glow:'rgba(140,90,158,0.5)'},
+  heart:    {fill:'#a04a52',glow:'rgba(160,74,82,0.5)'},
+  bird:     {fill:'#5a8faa',glow:'rgba(90,143,170,0.5)'},
+  spiral:   {fill:'#3a8c84',glow:'rgba(58,140,132,0.5)'},
+  snowflake:{fill:'#6a9aa0',glow:'rgba(106,154,160,0.5)'},
+  flower:   {fill:'#a05878',glow:'rgba(160,88,120,0.5)'},
+  tree:     {fill:'#4a8464',glow:'rgba(74,132,100,0.5)'},
+  snake:    {fill:'#567a40',glow:'rgba(86,122,64,0.5)'},
+  crescent: {fill:'#9a8840',glow:'rgba(154,136,64,0.5)'},
+  diamond:  {fill:'#3a9a8e',glow:'rgba(58,154,142,0.5)'},
 }
 
 const SHAPE_STRIP = [
