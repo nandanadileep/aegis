@@ -199,7 +199,7 @@ export default function Chat() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') sendMessage() }}
-            placeholder="Message your twin…"
+            placeholder="Message…"
             autoComplete="off"
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: 'var(--text)', fontFamily: 'Inter, sans-serif', fontSize: 14, padding: '4px 0', minWidth: 0 }}
           />

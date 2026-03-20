@@ -278,16 +278,17 @@ def generate_wallet_markdown(person_id: str, database: str) -> str:
     return "\n".join(lines)
 
 
+_BASE_PROMPT = (
+    "You are a helpful assistant. "
+    "Answer what the user asks. Do not proactively mention or volunteer information about them. "
+    "Do not say things like 'I was thinking about you' or bring up their background unprompted."
+)
+
 def build_system_prompt(memory_context: str) -> str:
     has_memory = memory_context and memory_context != "No stored memory yet."
     if not has_memory:
-        return "You are a helpful assistant."
-    return (
-        "You are a helpful assistant talking TO the user. "
-        "Never speak as the user or pretend to be them. "
-        "The following is background context about the user that you can use to give relevant responses:\n\n"
-        + memory_context
-    )
+        return _BASE_PROMPT
+    return _BASE_PROMPT + "\n\nRelevant context about the user:\n" + memory_context
 
 
 
