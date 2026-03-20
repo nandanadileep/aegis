@@ -135,6 +135,43 @@ def fetch_memory_summary(person_id: str, database: str) -> List[Dict[str, Any]]:
     return data
 
 
+_STOP_WORDS = {
+    'the','and','for','are','you','can','how','what','when','where','why',
+    'with','that','this','have','from','they','will','been','more','your',
+    'its','about','some','just','get','got','did','does','was','has','had',
+    'but','not','use','using','used','our','their','there','here','want',
+    'need','also','like','make','made','into','out','all','any','would',
+    'could','should','tell','know','think','work','working','going','been',
+}
+_GREETING = re.compile(
+    r'^(hi+|hey+|hello|sup|yo|hiya|howdy|good\s*(morning|evening|afternoon|night)|'
+    r'what\'?s\s*up|how\s*are\s*(you|u)|greetings?)\W*$', re.I
+)
+
+def fetch_relevant_memory(person_id: str, database: str, message: str) -> List[Dict[str, Any]]:
+    """Return only memory nodes relevant to the user message. Empty for greetings."""
+    if _GREETING.match(message.strip()):
+        return []
+    terms = [w for w in re.findall(r'\b[a-z]{3,}\b', message.lower()) if w not in _STOP_WORDS]
+    if not terms:
+        return []
+    query = """
+    MATCH (p:Person {id: $person_id})-[r]->(n)
+    WHERE ANY(term IN $terms WHERE
+        toLower(coalesce(n.name, '')) CONTAINS term OR
+        toLower(coalesce(n.key,  '')) CONTAINS term OR
+        toLower(coalesce(n.value,'')) CONTAINS term
+    )
+    RETURN type(r) AS rel, labels(n) AS labels,
+           properties(n) AS props,
+           coalesce(n.key, n.name, '') AS key,
+           coalesce(n.value, n.name, '') AS value
+    """
+    with NEO4J_DRIVER.session(database=database) as session:
+        data = session.run(query, person_id=person_id, terms=terms).data()
+    return data
+
+
 def format_memory_context(records: List[Dict[str, Any]]) -> str:
     if not records:
         return "No stored memory yet."
@@ -444,7 +481,7 @@ def chat():
     person_id = resolve_person_id(data)
 
     try:
-        records = fetch_memory_summary(person_id, DATABASE)
+        records = fetch_relevant_memory(person_id, DATABASE, user_message)
     except Exception as e:
         return jsonify({"error": "memory unavailable", "detail": str(e)}), 503
 
