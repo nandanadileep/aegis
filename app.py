@@ -31,6 +31,7 @@ except ImportError:
     from memory_pipeline import run_pipeline
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
+LLM_FAST = os.getenv("LLM_FAST", "groq/llama-3.1-8b-instant")
 
 
 # ---------------------------
@@ -491,7 +492,7 @@ def _extract_and_add_nodes(person_id: str, user_message: str, reply: str) -> lis
     KNOWN_LABELS = ["Skill", "Value", "Goal", "Trait", "Identity", "Project", "Behavior", "Constraint", "Belief"]
     try:
         extraction = litellm.completion(
-            model=LLM_MODEL,
+            model=LLM_FAST,
             messages=[{
                 "role": "user",
                 "content": (
@@ -734,7 +735,7 @@ Input:
 Respond with ONLY the JSON object, no explanation."""
 
     completion = litellm.completion(
-        model=LLM_MODEL,
+        model=LLM_FAST,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
     )
@@ -926,7 +927,7 @@ def create_node():
                     "Project", "Behavior", "Constraint", "Belief"]
     try:
         norm = litellm.completion(
-            model=LLM_MODEL,
+            model=LLM_FAST,
             messages=[{
                 "role": "user",
                 "content": (
