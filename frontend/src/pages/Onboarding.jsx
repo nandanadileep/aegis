@@ -16,6 +16,7 @@ export default function Onboarding() {
   const [importJson, setImportJson] = useState('')
   const [importErr, setImportErr] = useState('')
   const [importing, setImporting] = useState(false)
+  const [initErr, setInitErr] = useState('')
   const chatHistory = useRef([])
   const fromChat = useRef(false)
   const bottomRef = useRef(null)
@@ -30,7 +31,7 @@ export default function Onboarding() {
         setAutoUsername(genUsername(s))
         sb.auth.onAuthStateChange((_e, ns) => { if (!ns) window.location.href = '/login'; else setSession(ns) })
       })
-    })
+    }).catch(e => setInitErr(e.message))
   }, [])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
@@ -118,8 +119,9 @@ export default function Onboarding() {
   async function downloadCard() {
     const resp = await fetch(`${API}/api/wallet`, { headers: authHeaders(session) })
     const html = await resp.text()
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-    window.open(url, '_blank')
+    const w = window.open('', '_blank')
+    w.document.write(html)
+    w.document.close()
   }
 
   if (screen === 'welcome') return <WelcomeScreen onBuild={startChat} onImport={() => setScreen('import1')} />
@@ -127,6 +129,12 @@ export default function Onboarding() {
   if (screen === 'import1') return <Import1Screen onBack={() => fromChat.current ? window.location.href = '/chat' : setScreen('welcome')} onNext={() => setScreen('import2')} />
   if (screen === 'import2') return <Import2Screen value={importJson} onChange={setImportJson} onBack={() => setScreen('import1')} onImport={importProfile} importing={importing} error={importErr} />
   if (screen === 'success') return <SuccessScreen onGraph={() => window.location.href = '/memory'} onCard={downloadCard} />
+  if (initErr) return (
+    <div style={{ minHeight:'100vh', background:'var(--bg)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, padding:24 }}>
+      <p style={{ color:'var(--text-2)', fontSize:15, textAlign:'center', maxWidth:320 }}>{initErr}</p>
+      <button onClick={() => window.location.reload()} style={{ padding:'10px 24px', borderRadius:40, border:'1px solid var(--border-strong)', background:'var(--bg)', color:'var(--text)', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:'Inter,sans-serif' }}>Retry</button>
+    </div>
+  )
   return null
 }
 

@@ -11,7 +11,8 @@ export default function Login() {
   useEffect(() => {
     let cancel = false
     async function check() {
-      const sb = await getSupabase()
+      let sb
+      try { sb = await getSupabase() } catch (e) { setStatus(e.message); return }
       const { data: { session } } = await sb.auth.getSession()
       if (session && !cancel) await redirect(sb, session)
       sb.auth.onAuthStateChange(async (event, s) => {

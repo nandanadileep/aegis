@@ -18,8 +18,16 @@ export async function getSupabase() {
   let cfg = null
   try { cfg = JSON.parse(localStorage.getItem(CFG_KEY)) } catch {}
   if (!cfg?.supabase_url) {
-    cfg = await fetch(`${API}/api/config`).then(r => r.json())
-    try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)) } catch {}
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 8000)
+    try {
+      cfg = await fetch(`${API}/api/config`, { signal: ctrl.signal }).then(r => r.json())
+      clearTimeout(t)
+      try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)) } catch {}
+    } catch {
+      clearTimeout(t)
+      throw new Error('Backend is starting up — please refresh in a moment.')
+    }
   }
   _sb = createClient(cfg.supabase_url, cfg.supabase_anon_key)
   return _sb
