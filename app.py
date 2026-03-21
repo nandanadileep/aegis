@@ -11,7 +11,6 @@ from functools import wraps
 import jwt as pyjwt
 import litellm
 from flask import Flask, request, jsonify, send_from_directory, Response, redirect, g
-from flask_cors import CORS
 from neo4j import GraphDatabase
 
 try:
@@ -629,8 +628,21 @@ def parse_body_json() -> Dict[str, Any]:
 load_env()
 app = Flask(__name__, static_folder="static", static_url_path="")
 
-_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
-CORS(app, origins=_allowed_origins or "*", supports_credentials=True)
+_allowed_origins = {o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()}
+
+@app.after_request
+def apply_cors(response):
+    origin = request.headers.get("Origin", "")
+    if not _allowed_origins or origin in _allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin or "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-LLM-Key, X-LLM-Model"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    return response
+
+@app.route("/api/<path:path>", methods=["OPTIONS"])
+def cors_preflight(path):
+    return "", 204
 
 DEFAULT_PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
 DATABASE = env_var("NEO4J_DATABASE")
