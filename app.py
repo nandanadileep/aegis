@@ -11,6 +11,7 @@ from functools import wraps
 import jwt as pyjwt
 import litellm
 from flask import Flask, request, jsonify, send_from_directory, Response, redirect, g
+from flask_cors import CORS
 from neo4j import GraphDatabase
 
 try:
@@ -627,6 +628,9 @@ def parse_body_json() -> Dict[str, Any]:
 # ---------------------------
 load_env()
 app = Flask(__name__, static_folder="static", static_url_path="")
+
+_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+CORS(app, origins=_allowed_origins or "*", supports_credentials=True)
 
 DEFAULT_PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
 DATABASE = env_var("NEO4J_DATABASE")
