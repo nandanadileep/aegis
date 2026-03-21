@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { getSupabase, authHeaders } from '../lib/supabase'
 import { API } from '../lib/api'
 import styles from './Chat.module.css'
@@ -49,6 +50,7 @@ const GREETINGS = {
 }
 
 export default function Chat() {
+  const navigate = useNavigate()
   const [session, setSession] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -83,7 +85,7 @@ export default function Chat() {
         if (!cancel) setSession(s)
         sb.auth.onAuthStateChange((_e, ns) => { if (!ns) window.location.href = '/login'; else setSession(ns) })
       })
-    })
+    }).catch(() => { window.location.href = '/login' })
     return () => { cancel = true }
   }, [])
 
@@ -156,7 +158,7 @@ export default function Chat() {
               <div className={styles.menuDivider} />
               <MenuItem label="New chat" onClick={() => { newChat(); setMenuOpen(false) }} />
               <MenuItem label={byokKey ? 'API Key (set)' : 'API Key'} onClick={() => { setByokOpen(true); setMenuOpen(false) }} />
-              <MenuItem label="Import memory" onClick={() => { window.location.href = '/onboarding?import=true' }} />
+              <MenuItem label="Import memory" onClick={() => { navigate('/onboarding?import=true'); setMenuOpen(false) }} />
               <div className={styles.menuDivider} />
               <ThemeMenuItem />
               <div className={styles.menuDivider} />
@@ -167,8 +169,8 @@ export default function Chat() {
       </header>
 
       <div className={styles.navToggle}>
-        <a href="/chat" className={`${styles.navToggleBtn} ${styles.navToggleBtnActive}`}>Chat</a>
-        <a href="/memory" className={styles.navToggleBtn}>Graph</a>
+        <Link to="/chat" className={`${styles.navToggleBtn} ${styles.navToggleBtnActive}`}>Chat</Link>
+        <Link to="/memory" className={styles.navToggleBtn}>Graph</Link>
       </div>
 
       {byokOpen && (

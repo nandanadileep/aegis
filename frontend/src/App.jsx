@@ -14,6 +14,7 @@ export default function App() {
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/memory" element={<Graph />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

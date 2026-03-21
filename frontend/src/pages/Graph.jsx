@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { getSupabase } from '../lib/supabase'
 import { API } from '../lib/api'
 import initGraph from '../lib/graphEngine'
@@ -39,7 +40,7 @@ export default function Graph() {
         setSession(s); sessionRef.current = s
         sb.auth.onAuthStateChange((_e, ns) => { if (!ns) window.location.href='/login'; else { setSession(ns); sessionRef.current = ns } })
       })
-    })
+    }).catch(() => { window.location.href = '/login' })
   }, [])
 
   useEffect(() => {
@@ -235,8 +236,8 @@ export default function Graph() {
       </header>
 
       <div className={`${styles.navToggle} ${sidebarOpen ? styles.navToggleHidden : ''}`}>
-        <a href="/chat" className={styles.navToggleBtn}>Chat</a>
-        <a href="/memory" className={`${styles.navToggleBtn} ${styles.navToggleBtnActive}`}>Graph</a>
+        <Link to="/chat" className={styles.navToggleBtn}>Chat</Link>
+        <Link to="/memory" className={`${styles.navToggleBtn} ${styles.navToggleBtnActive}`}>Graph</Link>
         <button className={styles.sidebarToggleBtn} onClick={() => setSidebarOpen(o => !o)}>≡</button>
       </div>
 
