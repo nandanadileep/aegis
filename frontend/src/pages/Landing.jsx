@@ -1,24 +1,14 @@
 import { useEffect, useState } from 'react'
-import { getSupabase } from '../lib/supabase'
 import ThemeToggle from '../components/ThemeToggle'
 import styles from './Landing.module.css'
 
 export default function Landing() {
   const [scrolled, setScrolled] = useState(false)
-  const [dest, setDest] = useState('/login')
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
     window.addEventListener('scroll', onScroll)
     return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    getSupabase().then(sb => {
-      sb.auth.getSession().then(({ data: { session } }) => {
-        if (session) setDest('/chat')
-      })
-    })
   }, [])
 
   return (
@@ -31,7 +21,7 @@ export default function Landing() {
         <span className={styles.brand}>Identiti.</span>
         <div className={styles.headerRight}>
           <ThemeToggle />
-          <a href={dest} className={styles.signInLink}>Sign in <ArrowIcon /></a>
+          <a href="/login" className={styles.signInLink}>Sign in <ArrowIcon /></a>
         </div>
       </header>
 
@@ -45,7 +35,7 @@ export default function Landing() {
             Searchable, editable, portable, and always ready to hand to any AI.
           </p>
           <div className={styles.heroCtas}>
-            <a href={dest} className={styles.ctaPrimary}>Get started free</a>
+            <a href="/login" className={styles.ctaPrimary}>Get started free</a>
             <a href="#features" className={styles.ctaSecondary}>See how it works</a>
           </div>
         </div>
@@ -94,7 +84,7 @@ export default function Landing() {
       <section className={styles.ctaSection}>
         <h2 className={styles.ctaHeading}>Start building your context.</h2>
         <p className={styles.ctaSub}>Free to use. No credit card required.</p>
-        <a href={dest} className={styles.ctaPrimary}>Get started</a>
+        <a href="/login" className={styles.ctaPrimary}>Get started</a>
       </section>
 
       <footer className={styles.footer}>
