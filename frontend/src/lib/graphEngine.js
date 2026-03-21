@@ -493,9 +493,10 @@ export default function initGraph(canvas, sessionRef, setStats, setPending, setS
       const r=(type==='Person'?(isSel?11:9):(isSel?8:6))/Math.pow(cam.scale,0.5)
       const alpha=isSel?1:isHov?0.95:0.75
       ctx.save()
+      ctx.globalAlpha=alpha
       ctx.shadowBlur=isSel?28:isHov?18:isHL?22:10
       ctx.shadowColor=isHL?'rgba(255,214,10,0.8)':pal.glow
-      ctx.fillStyle=pal.fill+(alpha<1?Math.round(alpha*255).toString(16).padStart(2,'0'):'')
+      ctx.fillStyle=pal.fill
       ctx.strokeStyle=isSel?(isDark()?'#fff':'#1a1a1a'):isHL?'#ffd60a':pal.fill
       ctx.lineWidth=(isSel?2.5:1.5)/cam.scale
       ctx.beginPath(); ctx.arc(an.x,an.y,r,0,Math.PI*2); ctx.fill(); ctx.stroke()
