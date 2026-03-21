@@ -7,14 +7,6 @@
       "destination": "https://identity-0ved.onrender.com/api/:path*"
     },
     {
-      "source": "/chat",
-      "destination": "https://identity-0ved.onrender.com/chat"
-    },
-    {
-      "source": "/clear-history",
-      "destination": "https://identity-0ved.onrender.com/clear-history"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
