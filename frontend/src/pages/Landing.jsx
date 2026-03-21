@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import ThemeToggle from '../components/ThemeToggle'
 import styles from './Landing.module.css'
 
@@ -21,7 +22,7 @@ export default function Landing() {
         <span className={styles.brand}>Identiti.</span>
         <div className={styles.headerRight}>
           <ThemeToggle />
-          <a href="/login" className={styles.signInLink}>Sign in <ArrowIcon /></a>
+          <Link to="/login" className={styles.signInLink}>Sign in <ArrowIcon /></Link>
         </div>
       </header>
 
@@ -34,7 +35,7 @@ export default function Landing() {
             Searchable, editable, portable context always ready to hand to any AI.
           </p>
           <div className={styles.heroCtas}>
-            <a href="/login" className={styles.ctaPrimary}>Get started free</a>
+            <Link to="/login" className={styles.ctaPrimary}>Get started free</Link>
             <a href="#features" className={styles.ctaSecondary}>See how it works</a>
           </div>
         </div>
@@ -83,7 +84,7 @@ export default function Landing() {
       <section className={styles.ctaSection}>
         <h2 className={styles.ctaHeading}>Start building your context.</h2>
         <p className={styles.ctaSub}>Free to use. No credit card required.</p>
-        <a href="/login" className={styles.ctaPrimary}>Get started</a>
+        <Link to="/login" className={styles.ctaPrimary}>Get started</Link>
       </section>
 
       <footer className={styles.footer}>
