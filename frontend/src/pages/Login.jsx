@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getSupabase } from '../lib/supabase'
+import { API } from '../lib/api'
 import ThemeToggle from '../components/ThemeToggle'
 import styles from './Login.module.css'
 
@@ -22,7 +23,7 @@ export default function Login() {
   }, [])
 
   async function redirect(sb, session) {
-    const res = await fetch('/api/me', { headers: { Authorization: `Bearer ${session.access_token}` } })
+    const res = await fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${session.access_token}` } })
     const d = await res.json()
     window.location.href = '/onboarding'
   }
