@@ -107,6 +107,11 @@ export default function Landing() {
             desc="You can edit or delete any node in your graph at any time. Nothing is permanent unless you commit it."
           />
           <SecurityCard
+            icon="🔐"
+            title="End-to-end encrypted"
+            desc="Your graph data is encrypted at rest. Only you can read it. Not us, not anyone else."
+          />
+          <SecurityCard
             icon="🔒"
             title="No model training"
             desc="Your personal data is never used to train models. What's in your graph stays in your graph."
