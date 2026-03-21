@@ -48,7 +48,7 @@ export default function Landing() {
           <FeatureCard
             icon="✦"
             title="Memory graph"
-            desc="Skills, goals, values, traits — every piece of you becomes a node. Relationships between them become edges. Your identity, mapped."
+            desc="Skills, goals, values, traitsevery piece of you becomes a node. Relationships between them become edges. Your identity, mapped."
           />
           <FeatureCard
             icon="◎"
@@ -68,12 +68,12 @@ export default function Landing() {
           <FeatureCard
             icon="⌘"
             title="Bring your own key"
-            desc="Use your own API key from Groq, OpenAI, or Anthropic. Your key goes directly to the provider — we never see it."
+            desc="Use your own API key from Groq, OpenAI, or Anthropic. Your key goes directly to the providerwe never see it."
           />
           <FeatureCard
             icon="◈"
             title="Shape your graph"
-            desc="Rearrange your nodes into any shape — a galaxy, a crown, a spiral. Because your identity should be beautiful too."
+            desc="Rearrange your nodes into any shapea galaxy, a crown, a spiral. Because your identity should be beautiful too."
           />
         </div>
       </section>
