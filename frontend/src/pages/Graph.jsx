@@ -172,7 +172,13 @@ export default function Graph() {
     const resp = await fetch(`${API}/api/wallet`, { headers:authH() })
     const html = await resp.text()
     const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-    window.open(url, '_blank')
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'memory-card.html'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const SHAPES = ['octopus','jellyfish','fish','whale','starfish','butterfly','heart','bird','spiral','snowflake','flower','tree','snake','crescent','diamond','ring','galaxy','dna','cross','infinity','crown','mountain','wave']
@@ -228,7 +234,7 @@ export default function Graph() {
         </div>
       </header>
 
-      <div className={styles.navToggle}>
+      <div className={`${styles.navToggle} ${sidebarOpen ? styles.navToggleHidden : ''}`}>
         <a href="/chat" className={styles.navToggleBtn}>Chat</a>
         <a href="/memory" className={`${styles.navToggleBtn} ${styles.navToggleBtnActive}`}>Graph</a>
         <button className={styles.sidebarToggleBtn} onClick={() => setSidebarOpen(o => !o)}>≡</button>
@@ -463,7 +469,7 @@ export default function Graph() {
       )}
 
       <button
-        className={styles.tourBtn}
+        className={`${styles.tourBtn} ${sidebarOpen ? styles.tourBtnHidden : ''}`}
         onClick={() => setTourOpen(true)}
         title="Quick tour"
       >?</button>

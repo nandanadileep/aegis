@@ -874,8 +874,27 @@
 /* Mobile sidebar toggle — hidden on desktop */
 .sidebarToggleBtn { display: none; }
 
+.navToggleHidden {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.tourBtnHidden {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
 /* ─── Responsive ─────────────────────────────── */
 @media (max-width: 768px) {
+  .menuDropdown {
+    position: fixed;
+    top: 56px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
   /* Sidebar becomes a bottom sheet */
   .sidebar {
     position: fixed;
