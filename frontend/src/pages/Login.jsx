@@ -10,24 +10,29 @@ export default function Login() {
 
   useEffect(() => {
     let cancel = false
+    let subscription = null
     async function check() {
       let sb
       try { sb = await getSupabase() } catch (e) { setStatus(e.message); return }
       const { data: { session } } = await sb.auth.getSession()
       if (session && !cancel) await redirect(sb, session)
-      sb.auth.onAuthStateChange(async (event, s) => {
+      const { data: { subscription: sub } } = sb.auth.onAuthStateChange(async (event, s) => {
         if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && s && !cancel) await redirect(sb, s)
       })
+      subscription = sub
     }
     check()
-    return () => { cancel = true }
+    return () => { cancel = true; subscription?.unsubscribe() }
   }, [])
 
   async function redirect(sb, session) {
     try {
-      await fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${session.access_token}` } })
-    } catch {}
-    window.location.href = '/onboarding'
+      const res = await fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${session.access_token}` } })
+      const data = await res.json()
+      window.location.href = data.exists ? '/chat' : '/onboarding'
+    } catch {
+      window.location.href = '/onboarding'
+    }
   }
 
   async function signIn() {
