@@ -41,6 +41,17 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Graph preview */}
+      <section className={styles.previewSection}>
+        <div className={styles.previewFrame}>
+          <img
+            src="/graph-preview.png"
+            alt="Identiti graph interface"
+            className={styles.previewImg}
+          />
+        </div>
+      </section>
+
       {/* Features */}
       <section className={styles.section} id="features">
         <p className={styles.sectionLabel}>Features</p>
