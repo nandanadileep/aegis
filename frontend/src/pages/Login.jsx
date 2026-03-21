@@ -24,8 +24,9 @@ export default function Login() {
   }, [])
 
   async function redirect(sb, session) {
-    const res = await fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${session.access_token}` } })
-    const d = await res.json()
+    try {
+      await fetch(`${API}/api/me`, { headers: { Authorization: `Bearer ${session.access_token}` } })
+    } catch {}
     window.location.href = '/onboarding'
   }
 
