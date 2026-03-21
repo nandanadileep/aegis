@@ -28,7 +28,7 @@ export default function Landing() {
       <section className={styles.hero}>
         <div className={styles.heroInner}>
           <p className={styles.eyebrow}>Your personal memory layer</p>
-          <h1 className={styles.heroHeading}>You are more than<br />a chat history.</h1>
+          <h1 className={styles.heroHeading}>You control<br />your context.</h1>
           <p className={styles.heroSub}>
             Identiti turns everything you know about yourself into a living knowledge graph —
             searchable, editable, portable, and always ready to hand to any AI.
