@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" id="favicon" href="/favicon.svg" type="image/svg+xml" />
     <title>Identiti.</title>
     <meta name="description" content="Identiti turns your personal context into a living knowledge graph. Searchable, editable, and portable. You own it, you control it." />
 
@@ -25,6 +25,18 @@
     <script>
       const t = localStorage.getItem('identiti-theme') || 'dark';
       document.documentElement.setAttribute('data-theme', t);
+
+      // Emoji favicon — canvas approach works on all browsers including Safari
+      const canvas = document.createElement('canvas');
+      canvas.width = 64; canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.font = '56px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🫆', 32, 36);
+      const link = document.getElementById('favicon');
+      link.type = 'image/png';
+      link.href = canvas.toDataURL();
     </script>
   </head>
   <body>
