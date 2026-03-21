@@ -182,6 +182,7 @@ export default function Graph() {
   function nextShape() { applyShape((shapeIdx + 1) % SHAPES.length) }
   function prevShape() { applyShape(shapeIdx <= 0 ? SHAPES.length - 1 : shapeIdx - 1) }
 
+  const [tourOpen, setTourOpen] = useState(() => !localStorage.getItem('identiti-tour-done'))
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
@@ -461,6 +462,14 @@ export default function Graph() {
         </div>
       )}
 
+      <button
+        className={styles.tourBtn}
+        onClick={() => setTourOpen(true)}
+        title="Quick tour"
+      >?</button>
+
+      {tourOpen && <Tour onClose={() => { localStorage.setItem('identiti-tour-done', '1'); setTourOpen(false) }} />}
+
       {confirmDialog && (
         <div
           onClick={e => { if (e.target === e.currentTarget) setConfirmDialog(null) }}
@@ -597,5 +606,67 @@ function ShapeIcon({ shape }) {
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       {icons[shape]}
     </svg>
+  )
+}
+
+const TOUR_STEPS = [
+  {
+    title: 'Your memory graph',
+    desc: 'Every dot is a piece of you — a skill, goal, value, or trait. The lines show how everything connects.',
+  },
+  {
+    title: 'Search your graph',
+    desc: 'Type anything in the search bar to instantly find and highlight matching nodes and relationships.',
+    hint: 'Try searching a skill or your name',
+  },
+  {
+    title: 'Add nodes & relationships',
+    desc: 'Use + Node and + Relationship to manually add anything to your graph. Hit Commit to save.',
+  },
+  {
+    title: 'Select, edit, or delete',
+    desc: 'Click any node on the canvas to select it. Rename or delete it from the panel on the right.',
+  },
+  {
+    title: 'Download your Memory Card',
+    desc: 'Open ··· in the top-right corner to download your Memory Card — paste it into any AI to give it full context about you.',
+  },
+  {
+    title: 'Now try something fun',
+    desc: 'Pick any icon in the strip below Add. Your nodes will rearrange into that shape.',
+    hint: 'Try a crown, a galaxy, or a spiral ✦',
+  },
+]
+
+function Tour({ onClose }) {
+  const [step, setStep] = useState(0)
+  const s = TOUR_STEPS[step]
+  const isLast = step === TOUR_STEPS.length - 1
+  return (
+    <div className={styles.tourCard}>
+      <div className={styles.tourTop}>
+        <span className={styles.tourCounter}>{step + 1} / {TOUR_STEPS.length}</span>
+        <button className={styles.tourClose} onClick={onClose}>×</button>
+      </div>
+      <h3 className={styles.tourTitle}>{s.title}</h3>
+      <p className={styles.tourDesc}>{s.desc}</p>
+      {s.hint && <p className={styles.tourHint}>{s.hint}</p>}
+      <div className={styles.tourDots}>
+        {TOUR_STEPS.map((_, i) => (
+          <div key={i} className={`${styles.tourDot} ${i === step ? styles.tourDotActive : ''}`} onClick={() => setStep(i)} />
+        ))}
+      </div>
+      <div className={styles.tourActions}>
+        {step > 0 && (
+          <button className={styles.tourPrev} onClick={() => setStep(s => s - 1)}>←</button>
+        )}
+        <button
+          className={styles.tourNext}
+          onClick={() => isLast ? onClose() : setStep(s => s + 1)}
+        >
+          {isLast ? 'Got it ✓' : 'Next →'}
+        </button>
+      </div>
+    </div>
   )
 }
