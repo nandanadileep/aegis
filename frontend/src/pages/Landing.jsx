@@ -89,7 +89,7 @@ export default function Landing() {
 
       <footer className={styles.footer}>
         <span className={styles.footerBrand}>Identiti.</span>
-        <span className={styles.footerNote}>Built by Nandana Dileep</span>
+        <span className={styles.footerNote}>Built by <a href="mailto:nandanadileep29@gmail.com" className={styles.footerLink}>Nandana Dileep</a></span>
       </footer>
     </div>
   )

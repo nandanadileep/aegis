@@ -376,6 +376,17 @@
   color: var(--text-3);
 }
 
+.footerLink {
+  color: var(--text-3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s;
+}
+
+.footerLink:hover {
+  color: var(--text);
+}
+
 /* ─── Responsive ─────────────────────────── */
 @media (max-width: 768px) {
   .header {
