@@ -1,7 +1,0 @@
-less session memory
-randomly inducing "indepedence" etc. not using properly
-browsing capability later
-current data tool
-
-
-MVP 2 is opening this to 10 to 20 people, learning where the schema breaks for different kinds of people, and building the edit interface so users can approve every memory update before it writes permanently. Trust is the product, not just memory.
