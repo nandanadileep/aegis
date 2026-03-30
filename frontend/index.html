@@ -6,23 +6,60 @@
     <link rel="preconnect" href="https://identity-0ved.onrender.com" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="icon" id="favicon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Identiti.</title>
-    <meta name="description" content="Identiti turns your personal context into a living knowledge graph. Searchable, editable, and portable. You own it, you control it." />
+    <title>Identiti — Your Personal Memory Layer for AI</title>
+    <meta name="description" content="Identiti turns your personal context into a living knowledge graph. Chat with an AI that builds your profile automatically. Searchable, editable, and portable — paste your Memory Card into any AI to give it instant context about you." />
+    <meta name="keywords" content="AI memory, personal knowledge graph, AI context, memory layer, identity graph, portable AI profile" />
+    <meta name="author" content="Nandana Dileep" />
+    <link rel="canonical" href="https://identiti.nandanadileep.com" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://identiti.nandanadileep.com" />
-    <meta property="og:title" content="Identiti." />
+    <meta property="og:title" content="Identiti — Your Personal Memory Layer for AI" />
     <meta property="og:description" content="Identiti turns your personal context into a living knowledge graph. Searchable, editable, and portable. You own it, you control it." />
     <meta property="og:image" content="https://identiti.nandanadileep.com/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:site_name" content="Identiti" />
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Identiti." />
+    <meta name="twitter:title" content="Identiti — Your Personal Memory Layer for AI" />
     <meta name="twitter:description" content="Identiti turns your personal context into a living knowledge graph. Searchable, editable, and portable. You own it, you control it." />
     <meta name="twitter:image" content="https://identiti.nandanadileep.com/og.png" />
+
+    <!-- Structured Data for Google -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Identiti",
+      "url": "https://identiti.nandanadileep.com",
+      "description": "Identiti is a personal AI memory layer that turns your context into a living knowledge graph. Chat with an AI that builds your profile — skills, goals, values, traits — into a searchable, editable, portable graph. Download your Memory Card and paste it into any AI.",
+      "applicationCategory": "Productivity",
+      "operatingSystem": "Web",
+      "author": {
+        "@type": "Person",
+        "name": "Nandana Dileep",
+        "url": "https://nandanadileep.com"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "AI-powered personal knowledge graph",
+        "Conversational onboarding — chat to build your profile",
+        "Neo4j graph database with field-level encryption",
+        "Fully editable nodes and relationships",
+        "Portable Memory Card export for any AI",
+        "Bring Your Own Key (Groq, OpenAI, Anthropic)",
+        "Google OAuth authentication",
+        "Import memory from ChatGPT or Claude"
+      ]
+    }
+    </script>
 
     <script>
       const t = localStorage.getItem('identiti-theme') || 'dark';
@@ -40,9 +77,107 @@
       link.type = 'image/png';
       link.href = canvas.toDataURL();
     </script>
+
+    <!-- Minimal inline styles so the static fallback content looks acceptable before React loads -->
+    <style>
+      .static-fallback { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; background: #080808; color: #fff; min-height: 100vh; margin: 0; padding: 0; }
+      .static-fallback header { display: flex; align-items: center; justify-content: space-between; padding: 0 40px; height: 60px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .static-fallback .brand { font-size: 15px; font-weight: 900; letter-spacing: -0.04em; }
+      .static-fallback .hero { max-width: 680px; padding: 120px 24px 80px; }
+      .static-fallback .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.25); margin-bottom: 20px; }
+      .static-fallback h1 { font-size: 64px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.02; margin-bottom: 24px; }
+      .static-fallback .sub { font-size: 17px; color: rgba(255,255,255,0.55); line-height: 1.7; max-width: 540px; margin-bottom: 40px; }
+      .static-fallback h2 { font-size: 36px; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 32px; }
+      .static-fallback .section { max-width: 800px; padding: 60px 24px; border-top: 1px solid rgba(255,255,255,0.08); }
+      .static-fallback h3 { font-size: 14px; font-weight: 800; margin-bottom: 8px; }
+      .static-fallback p { font-size: 13px; color: rgba(255,255,255,0.55); line-height: 1.65; }
+      .static-fallback .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; }
+      .static-fallback .feature { padding: 24px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
+      .static-fallback .cta { display: inline-block; padding: 14px 28px; background: #fff; color: #080808; border-radius: 40px; font-size: 14px; font-weight: 700; text-decoration: none; margin-top: 20px; }
+      .static-fallback footer { padding: 24px 40px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: rgba(255,255,255,0.25); }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      Static fallback content for crawlers/bots that don't execute JavaScript.
+      React will overwrite this entirely when the SPA boots.
+    -->
+    <div id="root">
+      <div class="static-fallback">
+        <header>
+          <span class="brand">Identiti.</span>
+          <a href="/login" style="color:rgba(255,255,255,0.55);text-decoration:none;font-size:13px;font-weight:600;">Sign in</a>
+        </header>
+
+        <div class="hero">
+          <p class="eyebrow">Your personal memory layer</p>
+          <h1>You control your context.</h1>
+          <p class="sub">Identiti turns your personal context into a living knowledge graph. Chat with an AI that knows who you are — it builds your profile automatically from conversation. Skills, goals, values, traits — everything becomes a searchable, editable node. Download your Memory Card and paste it into any AI to give it instant context about you.</p>
+          <a href="/login" class="cta">Get started free</a>
+        </div>
+
+        <div class="section">
+          <h2>How it works</h2>
+          <p>Identiti is an AI-powered personal knowledge graph. You chat with our AI, and it extracts your skills, values, goals, and personality traits into a Neo4j graph database with field-level encryption. You can search, edit, add, or delete any node. When you're ready, download your Memory Card — a portable markdown snapshot of your entire identity — and paste it into ChatGPT, Claude, or any AI to give it full context about who you are.</p>
+        </div>
+
+        <div class="section">
+          <h2>Features</h2>
+          <div class="features">
+            <div class="feature">
+              <h3>Memory Graph</h3>
+              <p>Skills, goals, values, traits — every piece of you becomes a node in a Neo4j knowledge graph. Relationships between them become edges. Your identity, mapped and visualized on an interactive canvas.</p>
+            </div>
+            <div class="feature">
+              <h3>Chat to Build</h3>
+              <p>Just talk. The AI asks the right questions and builds your graph from the conversation. No forms, no friction. Your profile builds itself as you chat.</p>
+            </div>
+            <div class="feature">
+              <h3>Fully Editable</h3>
+              <p>Add, rename, or delete any node or relationship. Search your entire graph instantly. It's your data — you have full control over every piece of it.</p>
+            </div>
+            <div class="feature">
+              <h3>Portable Memory Card</h3>
+              <p>Download a markdown snapshot of your entire profile. Paste it into ChatGPT, Claude, or any AI to give it instant, deep context about who you are, what you value, and how you think.</p>
+            </div>
+            <div class="feature">
+              <h3>Bring Your Own Key</h3>
+              <p>Use your own API key from Groq, OpenAI, or Anthropic. Your key goes directly to the provider — Identiti never stores it. Full transparency, zero vendor lock-in.</p>
+            </div>
+            <div class="feature">
+              <h3>End-to-End Encrypted</h3>
+              <p>All graph data is encrypted at rest with per-user Fernet keys derived via HKDF. Only you can read your data. Not us, not anyone else.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Tech Stack</h2>
+          <p>React + Vite frontend with interactive canvas graph renderer. Flask (Python) backend API. Supabase for Google OAuth authentication. Groq LLaMA 3.3 70B via LiteLLM for AI. Neo4j graph database for the knowledge graph. Redis for conversation history and staging pipeline. Field-level encryption with cryptography library (Fernet + HKDF). Deployed on Render (backend) and Vercel (frontend).</p>
+        </div>
+
+        <div class="section">
+          <h2>Privacy and Security</h2>
+          <p>Your data is encrypted at rest with per-user keys. BYOK users' API keys go directly to the LLM provider from the browser — they never touch Identiti's servers. Your personal data is never used to train models. You can edit or delete any node at any time. Nothing is permanent unless you commit it.</p>
+        </div>
+
+        <div class="section" style="text-align:center;">
+          <h2>Start building your context.</h2>
+          <p>Free to use. No credit card required.</p>
+          <a href="/login" class="cta">Get started</a>
+        </div>
+
+        <footer>
+          <span>Identiti. Built by Nandana Dileep — nandanadileep29@gmail.com</span>
+        </footer>
+      </div>
+    </div>
+
+    <noscript>
+      <style>.static-fallback { display: block !important; }</style>
+      <p style="padding:20px;text-align:center;color:#888;">Identiti requires JavaScript to run the full application. The product information above describes Identiti — an AI-powered personal knowledge graph that turns your context into searchable, editable, portable memory.</p>
+    </noscript>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
