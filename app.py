@@ -3,8 +3,9 @@ import re
 import json
 import base64
 import random
+import threading
 from urllib.parse import urlparse, urlunparse, quote
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from pathlib import Path
 from functools import wraps
 
@@ -263,11 +264,74 @@ _GREETING = re.compile(
     r'what\'?s\s*up|how\s*are\s*(you|u)|greetings?)\W*$', re.I
 )
 
-def fetch_relevant_memory(person_id: str, database: str, message: str) -> List[Dict[str, Any]]:
-    """Return memory nodes relevant to the user message. Empty for greetings."""
+def _message_tokens(message: str) -> Set[str]:
+    """Extract meaningful lowercase tokens from a message."""
+    return {
+        tok.lower()
+        for tok in re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", message)
+        if tok.lower() not in _STOP_WORDS and len(tok) > 2
+    }
+
+
+def _record_relevance(record: Dict[str, Any], message_tokens: Set[str]) -> float:
+    """Score how relevant a memory record is to the current message."""
+    labels = record.get("labels") or []
+    key = str(record.get("key", "")).lower()
+    value = str(record.get("value", "")).lower()
+    props = record.get("props") or {}
+
+    text_parts = [key, value]
+    text_parts.extend(str(v).lower() for v in props.values() if isinstance(v, str))
+    text_parts.extend(l.lower() for l in labels)
+    record_text = " ".join(text_parts)
+
+    record_tokens = _message_tokens(record_text)
+    if not record_tokens:
+        return 0.0
+
+    overlap = message_tokens & record_tokens
+    # Exact phrase match in the original message gets a big boost
+    phrase_bonus = 0.0
+    full_message = " ".join(message_tokens)
+    if key and len(key) > 3 and key in full_message:
+        phrase_bonus += 0.4
+    if value and len(value) > 3 and value in full_message:
+        phrase_bonus += 0.4
+
+    return (len(overlap) / max(len(message_tokens), 1)) + phrase_bonus
+
+
+def fetch_relevant_memory(person_id: str, database: str, message: str, top_k: int = 12) -> List[Dict[str, Any]]:
+    """Return the most relevant memory nodes for the current message.
+
+    Greetings get nothing. Otherwise we score every stored fact by token overlap
+    with the message and return the top_k most relevant ones. This keeps the
+    prompt small, cheap, and on-topic instead of dumping the whole graph.
+    """
     if _GREETING.match(message.strip()):
         return []
-    return fetch_memory_summary(person_id, database)
+
+    msg_tokens = _message_tokens(message)
+    if not msg_tokens:
+        return []
+
+    all_records = fetch_memory_summary(person_id, database)
+    scored = [
+        (rec, _record_relevance(rec, msg_tokens))
+        for rec in all_records
+    ]
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    # Always include the top memories that have any overlap, but require at
+    # least a small signal so we don't inject random facts.
+    relevant = [rec for rec, score in scored if score > 0.15][:top_k]
+
+    # Fallback: if nothing looks relevant, still give the LLM the 5 most
+    # recent/important-looking facts so it isn't flying blind.
+    if not relevant and scored:
+        relevant = [rec for rec, _ in scored[:5]]
+
+    return relevant
 
 
 def format_memory_context(records: List[Dict[str, Any]]) -> str:
@@ -288,6 +352,108 @@ def format_memory_context(records: List[Dict[str, Any]]) -> str:
     for label, items in groups.items():
         lines.append(f"{label}: {', '.join(items)}")
     return "\n".join(lines)
+
+
+def fetch_persona(person_id: str, database: str) -> Dict[str, str]:
+    """Fetch the user's stored persona/profile (name, speaking style, description)."""
+    query = """
+    MATCH (p:Person {id: $person_id})
+    RETURN p.name AS name, p.speaking_style AS speaking_style, p.description AS description
+    """
+    try:
+        with NEO4J_DRIVER.session(database=database) as session:
+            row = session.run(query, person_id=person_id).single()
+    except Exception:
+        return {}
+
+    if not row:
+        return {}
+
+    return {
+        "name": dec(row.get("name") or "", person_id),
+        "speaking_style": dec(row.get("speaking_style") or "", person_id),
+        "description": dec(row.get("description") or "", person_id),
+    }
+
+
+def _user_summary_key(person_id: str) -> str:
+    return f"user_summary:{person_id}"
+
+
+def invalidate_user_summary(person_id: str) -> None:
+    """Invalidate the cached user summary when memory changes."""
+    try:
+        REDIS_CLIENT.delete(_user_summary_key(person_id))
+    except Exception:
+        pass
+
+
+def generate_user_summary(person_id: str, database: str) -> str:
+    """Generate a narrative user summary from the entire memory graph.
+
+    This is Zep-style: an always-on baseline picture of who the user is,
+    regenerated whenever memory changes and cached in Redis.
+    """
+    records = fetch_memory_summary(person_id, database)
+    if not records:
+        return ""
+
+    # Build a dense text representation of the user's graph
+    fact_lines = []
+    for rec in records:
+        labels = rec.get("labels", [])
+        label = labels[0] if labels else "Memory"
+        key = rec.get("key", "")
+        value = rec.get("value", "")
+        if key and value and key != value:
+            fact_lines.append(f"- {label}: {key} = {value}")
+        elif value:
+            fact_lines.append(f"- {label}: {value}")
+        elif key:
+            fact_lines.append(f"- {label}: {key}")
+
+    if not fact_lines:
+        return ""
+
+    memory_text = "\n".join(fact_lines)
+    prompt = (
+        "Write a concise 2-3 sentence summary of who this person is. "
+        "Capture their identity, values, current focus, and any defining goals. "
+        "Write in the third person. Do not list facts verbatim; synthesize them into a narrative.\n\n"
+        "Stored facts:\n" + memory_text + "\n\nSummary:"
+    )
+
+    try:
+        completion = llm_complete_with_fallback(
+            LLM_FAST,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=200,
+        )
+        summary = completion.choices[0].message.content.strip()
+        # Strip stray quotes
+        summary = summary.strip('"').strip("'")
+        return summary
+    except Exception:
+        return ""
+
+
+def get_user_summary(person_id: str, database: str) -> str:
+    """Return cached user summary or generate and cache a new one."""
+    try:
+        cached = REDIS_CLIENT.get(_user_summary_key(person_id))
+        if cached:
+            return cached
+    except Exception:
+        pass
+
+    summary = generate_user_summary(person_id, database)
+    if summary:
+        try:
+            REDIS_CLIENT.set(_user_summary_key(person_id), summary, ex=3600)
+        except Exception:
+            pass
+    return summary
 
 
 def fetch_wallet_data(person_id: str, database: str) -> Dict[str, Any]:
@@ -495,23 +661,22 @@ function copy() {{
 
 
 def needs_retrieval(message: str) -> bool:
-    """Fast check: does this message need personal context from the user's graph?"""
+    """Cheap heuristic: does this message plausibly need personal context?
+
+    We used to call the LLM here, which added ~300-800ms to every message.
+    A simple keyword check is faster and surprisingly accurate.
+    """
     if _GREETING.match(message.strip()):
         return False
-    try:
-        result = llm_complete_with_fallback(
-            LLM_FAST,
-            messages=[{"role": "user", "content": (
-                "Does answering this message require personal context about the user "
-                "(their skills, projects, goals, values, interests, etc.)? "
-                "Answer only YES or NO.\n\nMessage: " + message
-            )}],
-            temperature=0,
-            max_tokens=3,
-        )
-        return result.choices[0].message.content.strip().upper().startswith("Y")
-    except Exception:
-        return True  # default to fetching memory if the check fails
+
+    msg_lower = message.lower()
+    personal_signals = {
+        "i ", "my ", "me ", "myself", "am ", "was ", "have ", "had ",
+        "want", "need", "like", "love", "hate", "prefer", "enjoy",
+        "build", "work", "project", "goal", "skill", "value", "belief",
+        "plan", "trying", "learning", "job", "career", "startup",
+    }
+    return any(sig in msg_lower for sig in personal_signals)
 
 
 
@@ -702,6 +867,99 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
+def _format_facts_zep(records: List[Dict[str, Any]]) -> str:
+    """Format memory records in Zep-style FACTS block with date ranges."""
+    lines = []
+    for rec in records:
+        labels = rec.get("labels", [])
+        label = labels[0] if labels else "Memory"
+        key = rec.get("key", "")
+        value = rec.get("value", "")
+
+        if key and value and key != value:
+            fact = f"{key} = {value}"
+        elif value:
+            fact = f"{value}"
+        elif key:
+            fact = f"{key}"
+        else:
+            continue
+
+        lines.append(f"- [{label}] {fact}")
+
+    return "\n".join(lines) if lines else "No relevant facts."
+
+
+def _format_recent_conversation(history: List[Dict[str, str]], max_turns: int = 4) -> str:
+    """Format the most recent conversation turns as a Zep-style episode block."""
+    recent = history[-max_turns * 2:] if len(history) > max_turns * 2 else history
+    if not recent:
+        return ""
+    lines = []
+    for msg in recent:
+        role = msg.get("role", "assistant").capitalize()
+        content = msg.get("content", "").strip()
+        if content:
+            lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
+def _build_chat_system_prompt(
+    persona: Dict[str, str],
+    user_summary: str,
+    memory_context: str,
+    recent_conversation: str,
+) -> str:
+    """Assemble a Zep-style system prompt for /chat."""
+    parts = [
+        "You are a sharp, direct, highly personalized assistant. "
+        "Keep responses short and conversational — a few sentences at most unless the user asks for detail. "
+        "Never use numbered lists or bullet points unless explicitly asked. "
+        "Never ask multiple follow-up questions at once. "
+        "Match the user's energy and speaking style.",
+        "",
+        "Rules for using memory:",
+        "- Use the context below to shape your reply naturally, but DO NOT repeat it verbatim.",
+        "- DO NOT start replies with 'Based on your profile...' or 'I know that you...'.",
+        "- If the user says something new, accept it. If it contradicts the profile, trust what they say now.",
+        "- Only reference a stored fact when it genuinely helps answer the current message.",
+    ]
+
+    if user_summary:
+        parts.extend([
+            "",
+            "<USER_SUMMARY>",
+            user_summary,
+            "</USER_SUMMARY>",
+        ])
+
+    name = persona.get("name")
+    if name:
+        parts.append(f"\nThe user's name is {name}. Address them naturally.")
+
+    speaking_style = persona.get("speaking_style")
+    if speaking_style:
+        parts.append(f"Their speaking style: {speaking_style}")
+
+    if recent_conversation:
+        parts.extend([
+            "",
+            "<RECENT_CONVERSATION>",
+            recent_conversation,
+            "</RECENT_CONVERSATION>",
+        ])
+
+    if memory_context and memory_context != "No stored memory yet.":
+        parts.extend([
+            "",
+            "<RELEVANT_FACTS>",
+            memory_context,
+            "</RELEVANT_FACTS>",
+        ])
+
+    return "\n".join(parts)
+
+
 @app.route("/chat", methods=["POST"])
 @require_auth
 def chat():
@@ -722,17 +980,6 @@ def chat():
         conversation_history = []
         storage_warning = f"redis read failed: {e}"
 
-    # Retrieval pipeline: only fetch graph context when the message actually needs it
-    context_block = ""
-    if needs_retrieval(user_message):
-        try:
-            records = fetch_relevant_memory(person_id, DATABASE, user_message)
-            ctx = format_memory_context(records)
-            if ctx and ctx != "No stored memory yet.":
-                context_block = f"[Context about the user from their knowledge graph:\n{ctx}]"
-        except Exception:
-            pass
-
     # Per-user daily limit — skip for BYOK users (they use their own tokens)
     byok = request.headers.get("X-LLM-Key", "").strip()
     if not byok and not _check_daily_limit(person_id):
@@ -741,25 +988,42 @@ def chat():
             "added_nodes": [],
         }), 200
 
-    # Build message with context injected into user turn if needed
-    augmented_message = f"{context_block}\n\n{user_message}".strip() if context_block else user_message
-    system_msg = {
-        "role": "system",
-        "content": (
-            "You are a sharp, direct assistant. Keep responses short and conversational — "
-            "a few sentences at most unless the user explicitly asks for detail. "
-            "Never use numbered lists or bullet points unless asked. "
-            "Never ask multiple follow-up questions at once. "
-            "Match the energy of the user's message."
-        ),
-    }
-    history = [system_msg, *conversation_history, {"role": "user", "content": augmented_message}]
+    # Fetch relevant context (cheap keyword filtering; no extra LLM call)
+    relevant_records: List[Dict[str, Any]] = []
+    memory_context = ""
+    persona: Dict[str, str] = {}
+    user_summary = ""
+    if needs_retrieval(user_message):
+        try:
+            relevant_records = fetch_relevant_memory(person_id, DATABASE, user_message)
+            memory_context = _format_facts_zep(relevant_records)
+        except Exception:
+            relevant_records = []
+            memory_context = ""
+        try:
+            persona = fetch_persona(person_id, DATABASE)
+        except Exception:
+            persona = {}
+        try:
+            user_summary = get_user_summary(person_id, DATABASE)
+        except Exception:
+            user_summary = ""
+
+    recent_conversation = _format_recent_conversation(conversation_history)
+    system_content = _build_chat_system_prompt(
+        persona,
+        user_summary,
+        memory_context,
+        recent_conversation,
+    )
+    system_msg = {"role": "system", "content": system_content}
+    history = [system_msg, *conversation_history, {"role": "user", "content": user_message}]
 
     try:
         completion = llm_complete_with_fallback(
             LLM_MODEL,
             messages=history,
-            temperature=0.5,
+            temperature=0.6,
         )
     except AllModelsRateLimited:
         return jsonify({"reply": "I've hit my daily token limit across all models. Come back tomorrow, or add your own API key in the settings — it takes 30 seconds.", "added_nodes": []}), 200
@@ -779,26 +1043,28 @@ def chat():
         else:
             storage_warning = f"redis write failed: {e}"
 
-    # Route through staging pipeline — confidence scoring prevents noisy direct writes
-    added_nodes = []
-    try:
-        rc = get_redis_client()
-        pipeline_result = run_pipeline(
-            f"User: {user_message}\nAssistant: {reply}",
-            person_id=person_id,
-            redis_client=rc,
-            neo4j_driver=NEO4J_DRIVER,
-            llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
-        )
-        added_nodes = [
-            {"key": item.get("key"), "value": item.get("value"), "category": cat}
-            for cat, items in pipeline_result.get("ready", {}).items()
-            for item in items
-        ]
-    except Exception:
-        pass
+    # Run memory extraction in the background so it doesn't block the reply.
+    # The frontend shows newly-saved nodes when they come back, but the user
+    # gets the reply immediately.
+    def _extract_memory_async():
+        try:
+            rc = get_redis_client()
+            run_pipeline(
+                f"User: {user_message}\nAssistant: {reply}",
+                person_id=person_id,
+                redis_client=rc,
+                neo4j_driver=NEO4J_DRIVER,
+                llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+            )
+            # Memory changed; invalidate cached user summary so next chat gets
+            # a fresh synthesis.
+            invalidate_user_summary(person_id)
+        except Exception:
+            pass
 
-    response: Dict[str, Any] = {"reply": reply, "added_nodes": added_nodes}
+    threading.Thread(target=_extract_memory_async, daemon=True).start()
+
+    response: Dict[str, Any] = {"reply": reply, "added_nodes": []}
     if storage_warning:
         response["warning"] = storage_warning
     return jsonify(response)
@@ -816,15 +1082,30 @@ def proxy_completions():
     messages = data.get("messages", [])
     model = data.get("model", LLM_MODEL)
 
+    non_system = [m for m in messages if m.get("role") != "system"]
+    last_user_message = ""
+    for m in reversed(non_system):
+        if m.get("role") == "user":
+            last_user_message = str(m.get("content", ""))
+            break
+
     try:
-        records = fetch_memory_summary(person_id, DATABASE)
+        records = fetch_relevant_memory(person_id, DATABASE, last_user_message) if last_user_message else []
+        memory_context = _format_facts_zep(records)
+        persona = fetch_persona(person_id, DATABASE)
+        user_summary = get_user_summary(person_id, DATABASE)
     except Exception as e:
         return jsonify({"error": "memory unavailable", "detail": str(e)}), 503
 
-    memory_context = format_memory_context(records)
-    system_prompt = build_system_prompt(memory_context)
-
-    non_system = [m for m in messages if m.get("role") != "system"]
+    recent_conversation = _format_recent_conversation(
+        [{"role": m.get("role", ""), "content": str(m.get("content", ""))} for m in non_system]
+    )
+    system_prompt = _build_chat_system_prompt(
+        persona,
+        user_summary,
+        memory_context,
+        recent_conversation,
+    )
     enriched = [{"role": "system", "content": system_prompt}, *non_system]
 
     completion = llm_complete_with_fallback(
@@ -879,6 +1160,7 @@ def save():
     transcript = "\n".join(pieces).strip()
     if transcript:
         run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=REDIS_CLIENT)
+        invalidate_user_summary(person_id)
         if conversation_history:
             try:
                 clear_conversation_history(person_id)
@@ -1131,6 +1413,7 @@ def import_twin():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    invalidate_user_summary(person_id)
     return jsonify({"status": "ok", "person_id": person_id})
 
 
@@ -1167,6 +1450,7 @@ def onboard():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    invalidate_user_summary(person_id)
     return jsonify({"status": "ok", "person_id": person_id})
 
 
@@ -1294,6 +1578,7 @@ def create_node():
                 person_id=person_id, node_id=node_id,
             )
         
+        invalidate_user_summary(person_id)
         return jsonify({"id": str(node_id), "label": safe_label, "name": name})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
@@ -1318,6 +1603,7 @@ def update_node(node_id):
             )
             if not result.single():
                 return jsonify({"error": "node not found"}), 404
+        invalidate_user_summary(person_id)
         return jsonify({"id": node_id, "name": name})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1356,6 +1642,7 @@ def create_relationship():
                 return jsonify({"error": "nodes not found"}), 404
             rel_id = record["rel_id"]
         
+        invalidate_user_summary(person_id)
         return jsonify({"id": str(rel_id), "from": from_id, "type": rel_type, "to": to_id})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
@@ -1401,6 +1688,7 @@ def commit_changes():
                 except (ValueError, TypeError):
                     pass
         
+        invalidate_user_summary(person_id)
         return jsonify({"status": "ok", "committed": len(added_nodes) + len(added_edges) + len(deleted_nodes) + len(deleted_edges)})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
@@ -1467,6 +1755,7 @@ def deduplicate_graph():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    invalidate_user_summary(person_id)
     return jsonify({"deleted": deleted})
 
 
