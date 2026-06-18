@@ -37,9 +37,9 @@ except ImportError:
     redis = None
 
 try:
-    from scripts.memory_pipeline import run_pipeline
+    from scripts.memory_pipeline import run_pipeline, invalidate_user_summary, get_user_summary
 except ImportError:
-    from memory_pipeline import run_pipeline
+    from memory_pipeline import run_pipeline, invalidate_user_summary, get_user_summary  # type: ignore
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
 LLM_FAST = os.getenv("LLM_FAST", "groq/qwen3-32b")
@@ -374,86 +374,6 @@ def fetch_persona(person_id: str, database: str) -> Dict[str, str]:
         "speaking_style": dec(row.get("speaking_style") or "", person_id),
         "description": dec(row.get("description") or "", person_id),
     }
-
-
-def _user_summary_key(person_id: str) -> str:
-    return f"user_summary:{person_id}"
-
-
-def invalidate_user_summary(person_id: str) -> None:
-    """Invalidate the cached user summary when memory changes."""
-    try:
-        REDIS_CLIENT.delete(_user_summary_key(person_id))
-    except Exception:
-        pass
-
-
-def generate_user_summary(person_id: str, database: str) -> str:
-    """Generate a narrative user summary from the entire memory graph.
-
-    This is Zep-style: an always-on baseline picture of who the user is,
-    regenerated whenever memory changes and cached in Redis.
-    """
-    records = fetch_memory_summary(person_id, database)
-    if not records:
-        return ""
-
-    # Build a dense text representation of the user's graph
-    fact_lines = []
-    for rec in records:
-        labels = rec.get("labels", [])
-        label = labels[0] if labels else "Memory"
-        key = rec.get("key", "")
-        value = rec.get("value", "")
-        if key and value and key != value:
-            fact_lines.append(f"- {label}: {key} = {value}")
-        elif value:
-            fact_lines.append(f"- {label}: {value}")
-        elif key:
-            fact_lines.append(f"- {label}: {key}")
-
-    if not fact_lines:
-        return ""
-
-    memory_text = "\n".join(fact_lines)
-    prompt = (
-        "Write a concise 2-3 sentence summary of who this person is. "
-        "Capture their identity, values, current focus, and any defining goals. "
-        "Write in the third person. Do not list facts verbatim; synthesize them into a narrative.\n\n"
-        "Stored facts:\n" + memory_text + "\n\nSummary:"
-    )
-
-    try:
-        completion = llm_complete_with_fallback(
-            LLM_FAST,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=200,
-        )
-        summary = completion.choices[0].message.content.strip()
-        # Strip stray quotes
-        summary = summary.strip('"').strip("'")
-        return summary
-    except Exception:
-        return ""
-
-
-def get_user_summary(person_id: str, database: str) -> str:
-    """Return cached user summary or generate and cache a new one."""
-    try:
-        cached = REDIS_CLIENT.get(_user_summary_key(person_id))
-        if cached:
-            return cached
-    except Exception:
-        pass
-
-    summary = generate_user_summary(person_id, database)
-    if summary:
-        try:
-            REDIS_CLIENT.set(_user_summary_key(person_id), summary, ex=3600)
-        except Exception:
-            pass
-    return summary
 
 
 def fetch_wallet_data(person_id: str, database: str) -> Dict[str, Any]:
@@ -932,6 +852,13 @@ def _build_chat_system_prompt(
             user_summary,
             "</USER_SUMMARY>",
         ])
+    elif persona.get("description"):
+        parts.extend([
+            "",
+            "<USER_SUMMARY>",
+            persona["description"],
+            "</USER_SUMMARY>",
+        ])
 
     name = persona.get("name")
     if name:
@@ -990,14 +917,17 @@ def chat():
 
     # Fetch relevant context (cheap keyword filtering; no extra LLM call)
     relevant_records: List[Dict[str, Any]] = []
+    all_records: List[Dict[str, Any]] = []
     memory_context = ""
     persona: Dict[str, str] = {}
     user_summary = ""
     if needs_retrieval(user_message):
         try:
+            all_records = fetch_memory_summary(person_id, DATABASE)
             relevant_records = fetch_relevant_memory(person_id, DATABASE, user_message)
             memory_context = _format_facts_zep(relevant_records)
         except Exception:
+            all_records = []
             relevant_records = []
             memory_context = ""
         try:
@@ -1005,7 +935,10 @@ def chat():
         except Exception:
             persona = {}
         try:
-            user_summary = get_user_summary(person_id, DATABASE)
+            user_summary = get_user_summary(
+                REDIS_CLIENT, person_id, all_records,
+                llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+            )
         except Exception:
             user_summary = ""
 
@@ -1058,7 +991,7 @@ def chat():
             )
             # Memory changed; invalidate cached user summary so next chat gets
             # a fresh synthesis.
-            invalidate_user_summary(person_id)
+            invalidate_user_summary(REDIS_CLIENT, person_id)
         except Exception:
             pass
 
@@ -1090,10 +1023,14 @@ def proxy_completions():
             break
 
     try:
+        all_records = fetch_memory_summary(person_id, DATABASE)
         records = fetch_relevant_memory(person_id, DATABASE, last_user_message) if last_user_message else []
         memory_context = _format_facts_zep(records)
         persona = fetch_persona(person_id, DATABASE)
-        user_summary = get_user_summary(person_id, DATABASE)
+        user_summary = get_user_summary(
+            REDIS_CLIENT, person_id, all_records,
+            llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+        )
     except Exception as e:
         return jsonify({"error": "memory unavailable", "detail": str(e)}), 503
 
@@ -1160,7 +1097,7 @@ def save():
     transcript = "\n".join(pieces).strip()
     if transcript:
         run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=REDIS_CLIENT)
-        invalidate_user_summary(person_id)
+        invalidate_user_summary(REDIS_CLIENT, person_id)
         if conversation_history:
             try:
                 clear_conversation_history(person_id)
@@ -1413,7 +1350,7 @@ def import_twin():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    invalidate_user_summary(person_id)
+    invalidate_user_summary(REDIS_CLIENT, person_id)
     return jsonify({"status": "ok", "person_id": person_id})
 
 
@@ -1450,7 +1387,7 @@ def onboard():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    invalidate_user_summary(person_id)
+    invalidate_user_summary(REDIS_CLIENT, person_id)
     return jsonify({"status": "ok", "person_id": person_id})
 
 
@@ -1578,7 +1515,7 @@ def create_node():
                 person_id=person_id, node_id=node_id,
             )
         
-        invalidate_user_summary(person_id)
+        invalidate_user_summary(REDIS_CLIENT, person_id)
         return jsonify({"id": str(node_id), "label": safe_label, "name": name})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
@@ -1603,7 +1540,7 @@ def update_node(node_id):
             )
             if not result.single():
                 return jsonify({"error": "node not found"}), 404
-        invalidate_user_summary(person_id)
+        invalidate_user_summary(REDIS_CLIENT, person_id)
         return jsonify({"id": node_id, "name": name})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1642,7 +1579,7 @@ def create_relationship():
                 return jsonify({"error": "nodes not found"}), 404
             rel_id = record["rel_id"]
         
-        invalidate_user_summary(person_id)
+        invalidate_user_summary(REDIS_CLIENT, person_id)
         return jsonify({"id": str(rel_id), "from": from_id, "type": rel_type, "to": to_id})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
@@ -1688,7 +1625,7 @@ def commit_changes():
                 except (ValueError, TypeError):
                     pass
         
-        invalidate_user_summary(person_id)
+        invalidate_user_summary(REDIS_CLIENT, person_id)
         return jsonify({"status": "ok", "committed": len(added_nodes) + len(added_edges) + len(deleted_nodes) + len(deleted_edges)})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
@@ -1755,7 +1692,7 @@ def deduplicate_graph():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    invalidate_user_summary(person_id)
+    invalidate_user_summary(REDIS_CLIENT, person_id)
     return jsonify({"deleted": deleted})
 
 
