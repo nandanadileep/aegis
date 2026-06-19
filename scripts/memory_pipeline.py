@@ -1,7 +1,9 @@
 import json
 import os
+import uuid
+from datetime import datetime, timezone
 from urllib.parse import urlparse, urlunparse, quote
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 
 import litellm
 from neo4j import GraphDatabase
@@ -319,7 +321,31 @@ def split_ready(staging: Dict[str, List[Dict[str, Any]]]) -> Tuple[Dict[str, Lis
     return ready, remaining
 
 
-def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dict[str, Any]]]) -> None:
+def create_episode(driver, database: str, person_id: str, conversation: str) -> str:
+    """Create an Episode node with the raw conversation text and return its ID."""
+    episode_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc).isoformat()
+    with driver.session(database=database) as session:
+        session.run(
+            """
+            MATCH (p:Person {id: $person_id})
+            CREATE (ep:Episode {
+                id: $episode_id,
+                person_id: $person_id,
+                body: $body,
+                created_at: $created_at
+            })
+            MERGE (p)-[:HAS_EPISODE]->(ep)
+            """,
+            person_id=person_id,
+            episode_id=episode_id,
+            body=conversation,
+            created_at=created_at,
+        )
+    return episode_id
+
+
+def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dict[str, Any]]], episode_id: Optional[str] = None) -> None:
     label_map = {
         "identity":    "Identity",
         "skills":      "Skill",
@@ -352,19 +378,38 @@ def write_ready(driver, database: str, person_id: str, ready: Dict[str, List[Dic
             for item in items:
                 raw_key = item.get("key") or ""
                 raw_value = item.get("value") or ""
-                session.run(
-                    f"""
-                    MERGE (p:Person {{id: $person_id}})
-                    MERGE (n:{label} {{_h: $h, person_id: $person_id}})
-                    ON CREATE SET n.key = $enc_key, n.value = $enc_value
-                    ON MATCH SET n.key = $enc_key, n.value = $enc_value
-                    MERGE (p)-[:{rel}]->(n)
-                    """,
-                    person_id=person_id,
-                    h=node_hash(raw_key, person_id),
-                    enc_key=enc(raw_key, person_id),
-                    enc_value=enc(raw_value, person_id),
-                )
+                if episode_id:
+                    session.run(
+                        f"""
+                        MERGE (p:Person {{id: $person_id}})
+                        MERGE (n:{label} {{_h: $h, person_id: $person_id}})
+                        ON CREATE SET n.key = $enc_key, n.value = $enc_value
+                        ON MATCH SET n.key = $enc_key, n.value = $enc_value
+                        MERGE (p)-[:{rel}]->(n)
+                        WITH n
+                        MATCH (ep:Episode {{id: $episode_id, person_id: $person_id}})
+                        MERGE (ep)-[:EXTRACTED]->(n)
+                        """,
+                        person_id=person_id,
+                        episode_id=episode_id,
+                        h=node_hash(raw_key, person_id),
+                        enc_key=enc(raw_key, person_id),
+                        enc_value=enc(raw_value, person_id),
+                    )
+                else:
+                    session.run(
+                        f"""
+                        MERGE (p:Person {{id: $person_id}})
+                        MERGE (n:{label} {{_h: $h, person_id: $person_id}})
+                        ON CREATE SET n.key = $enc_key, n.value = $enc_value
+                        ON MATCH SET n.key = $enc_key, n.value = $enc_value
+                        MERGE (p)-[:{rel}]->(n)
+                        """,
+                        person_id=person_id,
+                        h=node_hash(raw_key, person_id),
+                        enc_key=enc(raw_key, person_id),
+                        enc_value=enc(raw_value, person_id),
+                    )
 
 
 def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str = "nandana_dileep", redis_client=None, neo4j_driver=None, llm_fn=None) -> Dict[str, Any]:
@@ -390,13 +435,20 @@ def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str =
         staging = update_staging(staging, extractions)
         ready, remaining = split_ready(staging)
 
-        write_ready(neo4j_driver, database, person_id, ready)
+        episode_id = None
+        if any(ready.values()):
+            episode_id = create_episode(neo4j_driver, database, person_id, conversation)
+            write_ready(neo4j_driver, database, person_id, ready, episode_id=episode_id)
+        else:
+            write_ready(neo4j_driver, database, person_id, ready)
+            
         save_staging(redis_client, person_id, remaining)
         
         return {
             "extractions": extractions,
             "ready": ready,
             "staging": remaining,
+            "episode_id": episode_id,
         }
     finally:
         if close_driver:

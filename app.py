@@ -236,6 +236,7 @@ def get_neo4j_driver():
 def fetch_memory_summary(person_id: str, database: str) -> List[Dict[str, Any]]:
     query = """
     MATCH (p:Person {id: $person_id})-[r]->(n)
+    WHERE NOT n:Episode
     RETURN type(r) AS rel, labels(n) AS labels,
            properties(n) AS props,
            coalesce(n.key, n.name, '') AS key,
@@ -380,6 +381,7 @@ def fetch_wallet_data(person_id: str, database: str) -> Dict[str, Any]:
     query = """
     MATCH (p:Person {id: $person_id})
     OPTIONAL MATCH (p)-[r]->(n)
+    WHERE NOT n:Episode
     RETURN
         p.name AS person_name,
         p.id AS person_id,
@@ -1407,6 +1409,7 @@ def get_graph():
     query = """
     MATCH (p:Person {id: $person_id})
     OPTIONAL MATCH (p)-[]->(n)
+    WHERE NOT n:Episode
     RETURN DISTINCT id(n) as node_id, n.name as name, n.key as key, labels(n) as labels
     UNION
     MATCH (p:Person {id: $person_id})
@@ -1415,6 +1418,7 @@ def get_graph():
 
     query_edges = """
     MATCH (p:Person {id: $person_id})-[r]->(n)
+    WHERE NOT n:Episode
     RETURN DISTINCT id(r) as rel_id, id(p) as from_id, id(n) as to_id, type(r) as rel_type
     """
     
