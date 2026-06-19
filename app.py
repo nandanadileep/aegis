@@ -836,6 +836,9 @@ def _build_chat_system_prompt(
         "Keep responses short and conversational — a few sentences at most unless the user asks for detail. "
         "Never use numbered lists or bullet points unless explicitly asked. "
         "Never ask multiple follow-up questions at once. "
+        "Do not interrogate the user. Do not ask question after question. "
+        "If they say something brief, match that energy. Don't pry. "
+        "Be normal, not a chatbot that tries to 'get to know' them every time. "
         "Match the user's energy and speaking style.",
         "",
         "Rules for using memory:",
