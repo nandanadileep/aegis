@@ -37,9 +37,9 @@ except ImportError:
     redis = None
 
 try:
-    from scripts.memory_pipeline import run_pipeline, invalidate_user_summary, get_user_summary
+    from scripts.memory_pipeline import run_pipeline, invalidate_user_summary, get_user_summary, clear_episode_state
 except ImportError:
-    from memory_pipeline import run_pipeline, invalidate_user_summary, get_user_summary  # type: ignore
+    from memory_pipeline import run_pipeline, invalidate_user_summary, get_user_summary, clear_episode_state  # type: ignore
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
 LLM_FAST = os.getenv("LLM_FAST", "groq/qwen3-32b")
@@ -1075,6 +1075,7 @@ def clear_history():
     person_id = resolve_person_id(parse_body_json())
     try:
         clear_conversation_history(person_id)
+        clear_episode_state(REDIS_CLIENT, person_id)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify({"ok": True})

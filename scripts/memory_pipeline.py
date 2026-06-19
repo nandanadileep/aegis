@@ -270,6 +270,15 @@ def save_staging(redis_client, person_id: str, staging: Dict[str, List[Dict[str,
     redis_client.set(staging_key(person_id), json.dumps(staging))
 
 
+def clear_episode_state(redis_client, person_id: str) -> None:
+    """Clear cached keywords and episode_id so the next turn starts a fresh episode."""
+    try:
+        redis_client.delete(_keywords_key(person_id))
+        redis_client.delete(_episode_key(person_id))
+    except Exception:
+        pass
+
+
 def score_update(current: float, status: str) -> float:
     if status == "explicit_preference":
         return 0.9
@@ -321,27 +330,137 @@ def split_ready(staging: Dict[str, List[Dict[str, Any]]]) -> Tuple[Dict[str, Lis
     return ready, remaining
 
 
-def create_episode(driver, database: str, person_id: str, conversation: str) -> str:
-    """Create an Episode node with the raw conversation text and return its ID."""
-    episode_id = str(uuid.uuid4())
-    created_at = datetime.now(timezone.utc).isoformat()
-    with driver.session(database=database) as session:
-        session.run(
-            """
-            MATCH (p:Person {id: $person_id})
-            CREATE (ep:Episode {
-                id: $episode_id,
-                person_id: $person_id,
-                body: $body,
-                created_at: $created_at
-            })
-            MERGE (p)-[:HAS_EPISODE]->(ep)
-            """,
-            person_id=person_id,
-            episode_id=episode_id,
-            body=conversation,
-            created_at=created_at,
-        )
+KEYWORD_OVERLAP_THRESHOLD = 0.3
+
+
+def _keywords_key(person_id: str) -> str:
+    return f"last_keywords:{person_id}"
+
+
+def _episode_key(person_id: str) -> str:
+    return f"current_episode_id:{person_id}"
+
+
+def _extract_keywords(extractions: Dict[str, List[Dict[str, Any]]]) -> set:
+    """Extract unique keyword tokens from extraction results."""
+    keywords: set = set()
+    for items in extractions.values():
+        for item in items or []:
+            key = item.get("key", "")
+            value = item.get("value", "")
+            if key:
+                keywords.add(key.lower().strip())
+            if value and value != key:
+                keywords.add(value.lower().strip())
+    return keywords
+
+
+def _keyword_overlap(new_keys: set, old_keys: set) -> float:
+    """Jaccard similarity between two keyword sets."""
+    if not new_keys or not old_keys:
+        return 0.0
+    return len(new_keys & old_keys) / len(new_keys | old_keys)
+
+
+def _resolve_episode(
+    redis_client,
+    driver,
+    database: str,
+    person_id: str,
+    conversation: str,
+    extractions: Dict[str, List[Dict[str, Any]]],
+) -> str:
+    """Decide whether to start a new episode or append to an existing one.
+
+    Uses keyword burst detection: if the extracted entity keys overlap
+    substantially with the previous turn's, we're on the same topic and
+    append to the current episode. Otherwise, we start a new one.
+    """
+    new_keywords = _extract_keywords(extractions)
+    topic_shift = False
+
+    try:
+        raw = redis_client.get(_keywords_key(person_id))
+        if raw:
+            old_keywords = set(json.loads(raw))
+            overlap = _keyword_overlap(new_keywords, old_keywords)
+            topic_shift = overlap < KEYWORD_OVERLAP_THRESHOLD
+    except Exception:
+        topic_shift = True
+
+    if topic_shift:
+        # Start a new episode
+        episode_id = str(uuid.uuid4())
+        created_at = datetime.now(timezone.utc).isoformat()
+        with driver.session(database=database) as session:
+            session.run(
+                """
+                MATCH (p:Person {id: $person_id})
+                CREATE (ep:Episode {
+                    id: $episode_id,
+                    person_id: $person_id,
+                    body: $body,
+                    created_at: $created_at
+                })
+                MERGE (p)-[:HAS_EPISODE]->(ep)
+                """,
+                person_id=person_id,
+                episode_id=episode_id,
+                body=conversation,
+                created_at=created_at,
+            )
+    else:
+        # Append to existing episode
+        try:
+            episode_id = redis_client.get(_episode_key(person_id))
+            if episode_id:
+                with driver.session(database=database) as session:
+                    result = session.run(
+                        "MATCH (ep:Episode {id: $episode_id, person_id: $person_id}) RETURN ep.body AS body",
+                        episode_id=episode_id,
+                        person_id=person_id,
+                    ).single()
+                    if result:
+                        new_body = result["body"] + "\n" + conversation
+                        session.run(
+                            "MATCH (ep:Episode {id: $episode_id}) SET ep.body = $new_body",
+                            episode_id=episode_id,
+                            new_body=new_body,
+                        )
+                    else:
+                        # Stale episode_id — fall through to create new
+                        episode_id = None
+        except Exception:
+            episode_id = None
+
+        if not episode_id:
+            episode_id = str(uuid.uuid4())
+            created_at = datetime.now(timezone.utc).isoformat()
+            with driver.session(database=database) as session:
+                session.run(
+                    """
+                    MATCH (p:Person {id: $person_id})
+                    CREATE (ep:Episode {
+                        id: $episode_id,
+                        person_id: $person_id,
+                        body: $body,
+                        created_at: $created_at
+                    })
+                    MERGE (p)-[:HAS_EPISODE]->(ep)
+                    """,
+                    person_id=person_id,
+                    episode_id=episode_id,
+                    body=conversation,
+                    created_at=created_at,
+                )
+
+    # Cache keywords and episode_id for next comparison
+    try:
+        redis_client.set(_keywords_key(person_id), json.dumps(list(new_keywords)), ex=86400)
+        redis_client.set(_episode_key(person_id), episode_id)
+    except Exception:
+        pass
+
     return episode_id
 
 
@@ -437,7 +556,9 @@ def run_pipeline(conversation: str, use_mock_llm: bool = False, person_id: str =
 
         episode_id = None
         if any(ready.values()):
-            episode_id = create_episode(neo4j_driver, database, person_id, conversation)
+            episode_id = _resolve_episode(
+                redis_client, neo4j_driver, database, person_id, conversation, extractions,
+            )
             write_ready(neo4j_driver, database, person_id, ready, episode_id=episode_id)
         else:
             write_ready(neo4j_driver, database, person_id, ready)
