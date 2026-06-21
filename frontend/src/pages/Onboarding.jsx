@@ -249,7 +249,7 @@ function Import1Screen({ onBack, onNext }) {
   const promptFull = `${promptText}\n\n\`\`\`json\n${jsonBlock}\n\`\`\`\n\nOnly include fields where you have real information. Leave arrays empty if unsure. Output the JSON block only, no explanation.`
   function copy() { navigator.clipboard.writeText(promptFull).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200) }) }
   return (
-    <ImportLayout onBack={onBack} step="Step 1 of 2" title="Export your memory" sub="Copy this into ChatGPT or Claude — any AI that knows you. Paste back the JSON it gives you.">
+    <ImportLayout onBack={onBack} step="Step 1 of 2" title="Export your memory" sub="Copy this into ChatGPT or any AI that knows you. Paste back the JSON it gives you.">
       <div className={styles.promptBox}>
         <p className={styles.promptText}>{promptText}</p>
         <pre className={styles.promptCode}>{jsonBlock}</pre>
