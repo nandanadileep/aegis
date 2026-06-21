@@ -4,10 +4,17 @@
         "aws_region": "ap-south-1",
         "project_name": "aegis-api",
         "runtime": "python3.13",
-        "memory_size": 512,
-        "timeout_seconds": 30,
+        "memory_size": 1024,
+        "timeout_seconds": 120,
         "keep_warm": false,
         "slim_handler": true,
-        "exclude": ["__pycache__", ".env", "frontend/*", "venv/*", ".venv/*"]
+        "exclude": ["__pycache__", ".env", "frontend/*", "venv/*", ".venv/*"],
+        "environment_variables": {
+            "PERSON_ID": "nandana_dileep",
+            "LLM_MODEL": "groq/llama-3.3-70b-versatile",
+            "LLM_FAST": "groq/qwen3-32b",
+            "DAILY_MSG_LIMIT": "30",
+            "LITELLM_LOG": "WARNING"
+        }
     }
 }
