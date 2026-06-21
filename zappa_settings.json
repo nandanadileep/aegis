@@ -1,0 +1,13 @@
+{
+    "dev": {
+        "app_function": "app.app",
+        "aws_region": "ap-south-1",
+        "project_name": "aegis-api",
+        "runtime": "python3.13",
+        "memory_size": 512,
+        "timeout_seconds": 30,
+        "keep_warm": false,
+        "slim_handler": true,
+        "exclude": ["__pycache__", ".env", "frontend/*", "venv/*", ".venv/*"]
+    }
+}

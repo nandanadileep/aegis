@@ -179,8 +179,10 @@ def _get_jwks() -> list:
     now = time.time()
     if _JWKS_CACHE.get("ts", 0) + 3600 > now:
         return _JWKS_CACHE.get("keys", [])
-    import urllib.request
     supabase_url = os.getenv("SUPABASE_URL", "")
+    if not supabase_url:
+        return []
+    import urllib.request
     with urllib.request.urlopen(f"{supabase_url}/auth/v1/.well-known/jwks.json") as r:
         data = json.loads(r.read())
     _JWKS_CACHE = {"keys": data.get("keys", []), "ts": now}
@@ -227,10 +229,17 @@ def require_auth(f):
 
 
 def get_neo4j_driver():
-    uri = env_var("NEO4J_URI")
-    user = env_var("NEO4J_USER")
-    password = env_var("NEO4J_PASSWORD")
-    return GraphDatabase.driver(uri, auth=(user, password))
+    driver = globals().get("NEO4J_DRIVER")
+    if driver is not None:
+        return driver
+    uri = os.getenv("NEO4J_URI", "")
+    user = os.getenv("NEO4J_USER", "")
+    password = os.getenv("NEO4J_PASSWORD", "")
+    if not uri or not user or not password:
+        return None
+    driver = GraphDatabase.driver(uri, auth=(user, password))
+    globals()["NEO4J_DRIVER"] = driver
+    return driver
 
 
 def fetch_memory_summary(person_id: str, database: str) -> List[Dict[str, Any]]:
@@ -242,7 +251,7 @@ def fetch_memory_summary(person_id: str, database: str) -> List[Dict[str, Any]]:
            coalesce(n.key, n.name, '') AS key,
            coalesce(n.value, n.name, '') AS value
     """
-    with NEO4J_DRIVER.session(database=database) as session:
+    with get_neo4j_driver().session(database=database) as session:
         data = session.run(query, person_id=person_id).data()
     for row in data:
         row["key"] = dec(row.get("key", ""), person_id)
@@ -362,7 +371,7 @@ def fetch_persona(person_id: str, database: str) -> Dict[str, str]:
     RETURN p.name AS name, p.speaking_style AS speaking_style, p.description AS description
     """
     try:
-        with NEO4J_DRIVER.session(database=database) as session:
+        with get_neo4j_driver().session(database=database) as session:
             row = session.run(query, person_id=person_id).single()
     except Exception:
         return {}
@@ -393,7 +402,7 @@ def fetch_wallet_data(person_id: str, database: str) -> Dict[str, Any]:
             value: coalesce(n.value, n.name, '')
         }) AS facts
     """
-    with NEO4J_DRIVER.session(database=database) as session:
+    with get_neo4j_driver().session(database=database) as session:
         row = session.run(query, person_id=person_id).single()
     if not row:
         return {"person_name": person_id, "person_id": person_id, "facts": []}
@@ -629,15 +638,22 @@ def normalize_redis_url(raw_url: str) -> str:
 
 
 def get_redis_client():
+    rc = globals().get("REDIS_CLIENT")
+    if rc is not None:
+        return rc
     if redis is None:
         raise RuntimeError("redis package not installed. pip install redis")
-    redis_url = normalize_redis_url(env_var("REDIS_URL"))
-    return redis.from_url(
+    redis_url = normalize_redis_url(os.getenv("REDIS_URL", "") or "")
+    if not redis_url:
+        return None
+    rc = redis.from_url(
         redis_url,
         decode_responses=True,
         socket_connect_timeout=5,
         socket_timeout=5,
     )
+    globals()["REDIS_CLIENT"] = rc
+    return rc
 
 
 def history_to_transcript(history: List[Dict[str, str]]) -> str:
@@ -662,7 +678,10 @@ def history_key(person_id: str) -> str:
 def load_conversation_history(person_id: str) -> List[Dict[str, str]]:
     key = history_key(person_id)
     history: List[Dict[str, str]] = []
-    raw_messages = REDIS_CLIENT.lrange(key, 0, -1)
+    rc = REDIS_CLIENT or get_redis_client()
+    if rc is None:
+        return history
+    raw_messages = rc.lrange(key, 0, -1)
 
     for raw in raw_messages:
         try:
@@ -681,15 +700,21 @@ def load_conversation_history(person_id: str) -> List[Dict[str, str]]:
 
 
 def append_conversation_message(person_id: str, role: str, content: str) -> None:
-    REDIS_CLIENT.rpush(
+    rc = REDIS_CLIENT or get_redis_client()
+    if rc is None:
+        return
+    rc.rpush(
         history_key(person_id),
         json.dumps({"role": role, "content": content}),
     )
-    REDIS_CLIENT.expire(history_key(person_id), 60 * 60 * 24 * 7)
+    rc.expire(history_key(person_id), 60 * 60 * 24 * 7)
 
 
 def clear_conversation_history(person_id: str) -> None:
-    REDIS_CLIENT.delete(history_key(person_id))
+    rc = REDIS_CLIENT or get_redis_client()
+    if rc is None:
+        return
+    rc.delete(history_key(person_id))
 
 
 def parse_body_json() -> Dict[str, Any]:
@@ -733,8 +758,14 @@ def cors_preflight(path):
 
 DEFAULT_PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
 DATABASE = env_var("NEO4J_DATABASE")
-REDIS_CLIENT = get_redis_client()
-NEO4J_DRIVER = get_neo4j_driver()
+try:
+    REDIS_CLIENT = get_redis_client()
+except Exception:
+    REDIS_CLIENT = None  # will be lazy-initialized on first use
+try:
+    NEO4J_DRIVER = get_neo4j_driver()
+except Exception:
+    NEO4J_DRIVER = None  # will be lazy-initialized on first use
 
 
 def _spa():
@@ -755,7 +786,7 @@ def public_config():
 def me():
     person_id = g.user_id
     try:
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             result = session.run(
                 "MATCH (p:Person {id: $pid}) RETURN p.name as name, p.username as username LIMIT 1",
                 pid=person_id,
@@ -991,7 +1022,7 @@ def chat():
                 f"User: {user_message}\nAssistant: {reply}",
                 person_id=person_id,
                 redis_client=rc,
-                neo4j_driver=NEO4J_DRIVER,
+                neo4j_driver=get_neo4j_driver(),
                 llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
             )
             # Memory changed; invalidate cached user summary so next chat gets
@@ -1102,7 +1133,7 @@ def save():
 
     transcript = "\n".join(pieces).strip()
     if transcript:
-        run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=REDIS_CLIENT)
+        run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=get_redis_client())
         invalidate_user_summary(REDIS_CLIENT, person_id)
         if conversation_history:
             try:
@@ -1318,7 +1349,7 @@ def import_twin():
     }
 
     try:
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             session.run(
                 """
                 MERGE (p:Person {id: $pid})
@@ -1389,7 +1420,7 @@ def onboard():
         return jsonify({"error": "no answers provided"}), 400
 
     try:
-        run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=REDIS_CLIENT)
+        run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=get_redis_client())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1424,7 +1455,7 @@ def get_graph():
     """
     
     try:
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             nodes_result = session.run(query, person_id=person_id).data()
             edges_result = session.run(query_edges, person_id=person_id).data()
         
@@ -1507,7 +1538,7 @@ def create_node():
     try:
         enc_name = enc(name, person_id)
         h = node_hash(name, person_id)
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             query = f"""
             CREATE (n:`{safe_label}` {{name: $enc_name, key: $enc_name, _h: $h, person_id: $pid}})
             SET n += $properties
@@ -1541,7 +1572,7 @@ def update_node(node_id):
     try:
         enc_name = enc(name, person_id)
         h = node_hash(name, person_id)
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             result = session.run(
                 "MATCH (n) WHERE id(n) = $nid AND n.person_id = $pid SET n.name = $enc_name, n.key = $enc_name, n._h = $h RETURN id(n) as node_id",
                 nid=int(node_id), pid=person_id, enc_name=enc_name, h=h
@@ -1574,7 +1605,7 @@ def create_relationship():
         return jsonify({"error": f"Invalid relationship type: {raw_rel!r}"}), 400
 
     try:
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             query = f"""
             MATCH (a), (b)
             WHERE id(a) = $from_id AND id(b) = $to_id
@@ -1606,7 +1637,7 @@ def commit_changes():
     deleted_edges = data.get("deletedEdges", [])
     
     try:
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             # Delete nodes and their relationships
             for node_id in deleted_nodes:
                 try:
@@ -1653,7 +1684,7 @@ def deduplicate_graph():
     deleted = 0
 
     try:
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             # Fetch all non-Person nodes with their IDs and names
             rows = session.run(
                 """
@@ -1689,7 +1720,7 @@ def deduplicate_graph():
                     if k_norm and (k_norm in d_norm or d_norm in k_norm):
                         to_delete.add(dup["nid"])
 
-        with NEO4J_DRIVER.session(database=DATABASE) as session:
+        with get_neo4j_driver().session(database=DATABASE) as session:
             for nid in to_delete:
                 session.run(
                     "MATCH (n) WHERE id(n) = $nid DETACH DELETE n",
