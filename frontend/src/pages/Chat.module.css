@@ -306,8 +306,8 @@
 .navToggle {
   position: fixed;
   bottom: 18px;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 18px;
+  transform: none;
   display: flex;
   background: rgba(0,0,0,0.5);
   backdrop-filter: blur(12px);

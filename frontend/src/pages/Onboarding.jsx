@@ -193,8 +193,11 @@ function ChatScreen({ messages, input, setInput, onSend, sending, inputRef, bott
       <header className={styles.chatHeader}>
         <button onClick={onBack} className={styles.backBtn}>←</button>
         <span className={styles.chatTitle}>Building your profile</span>
-        <div className={styles.chatProgress}>
-          <ProgressRing progress={progress} count={displayCount} target={TARGET} done={done} />
+        <div className={styles.chatHeaderRight}>
+          <button onClick={() => window.location.href = '/memory'} className={styles.graphBtn}>View graph</button>
+          <div className={styles.chatProgress}>
+            <ProgressRing progress={progress} count={displayCount} target={TARGET} done={done} />
+          </div>
         </div>
       </header>
       <div className={styles.chatMessages}>

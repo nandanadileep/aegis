@@ -35,11 +35,11 @@
   letter-spacing: -0.03em;
 }
 
-/* Bottom-left nav toggle */
+/* Bottom-right nav toggle */
 .navToggle {
   position: fixed;
   bottom: 24px;
-  left: 24px;
+  right: 24px;
   display: flex;
   background: rgba(10,10,16,0.62);
   backdrop-filter: blur(10px);
