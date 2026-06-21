@@ -2,8 +2,10 @@ import os
 import re
 import json
 import base64
+import uuid
 import random
 import threading
+from datetime import datetime
 from urllib.parse import urlparse, urlunparse, quote
 from typing import List, Dict, Any, Optional, Set
 from pathlib import Path
@@ -1338,6 +1340,8 @@ def import_twin():
     }
 
     try:
+        episode_id = f"ep-{uuid.uuid4().hex[:12]}"
+        summary = f"Imported profile for {name or 'user'}"
         with get_neo4j_driver().session(database=DATABASE) as session:
             session.run(
                 """
@@ -1353,6 +1357,21 @@ def import_twin():
                 desc=enc(description, person_id),
                 style=enc(speaking_style, person_id),
             )
+            session.run(
+                """
+                MATCH (p:Person {id: $pid})
+                MERGE (ep:Episode {id: $ep_id, person_id: $pid})
+                SET ep.summary = $summary,
+                    ep.source = $source,
+                    ep.created_at = $created_at
+                MERGE (p)-[:HAS_EPISODE]->(ep)
+                """,
+                pid=person_id,
+                ep_id=episode_id,
+                summary=summary,
+                source="import",
+                created_at=datetime.utcnow().isoformat() + "Z",
+            )
             for field, (label, rel) in field_map.items():
                 items = twin.get(field) or []
                 if isinstance(items, str):
@@ -1364,12 +1383,15 @@ def import_twin():
                     session.run(
                         f"""
                         MATCH (p:Person {{id: $pid}})
+                        MATCH (ep:Episode {{id: $ep_id, person_id: $pid}})
                         MERGE (n:{label} {{_h: $h, person_id: $pid}})
                         ON CREATE SET n.name = $enc_name
                         ON MATCH SET n.name = $enc_name
                         MERGE (p)-[:{rel}]->(n)
+                        MERGE (ep)-[:EXTRACTED]->(n)
                         """,
                         pid=person_id,
+                        ep_id=episode_id,
                         h=node_hash(item, person_id),
                         enc_name=enc(item, person_id),
                     )
