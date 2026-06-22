@@ -3,7 +3,7 @@
         "app_function": "app.app",
         "aws_region": "ap-south-1",
         "project_name": "aegis-api",
-        "runtime": "python3.13",
+        "runtime": "python3.12",
         "memory_size": 1024,
         "timeout_seconds": 120,
         "keep_warm": false,
