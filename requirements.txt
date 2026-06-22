@@ -8,4 +8,5 @@ requests==2.31.0
 PyJWT
 gunicorn
 cryptography
+setuptools<70
 zappa==0.58.0
