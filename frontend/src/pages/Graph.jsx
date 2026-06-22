@@ -28,6 +28,10 @@ export default function Graph() {
   const [edgeForm, setEdgeForm] = useState({ from:'', type:'', to:'' })
   const [editNodeName, setEditNodeName] = useState('')
   const [graphLoading, setGraphLoading] = useState(true)
+  const [episodes, setEpisodes] = useState([])
+  const [episodesLoading, setEpisodesLoading] = useState(false)
+  const [episodeDetail, setEpisodeDetail] = useState(null)
+  const [nodeEpisodes, setNodeEpisodes] = useState([])
   const sessionRef = useRef(null)
   const pendingRef = useRef(pending)
   pendingRef.current = pending
@@ -58,12 +62,51 @@ export default function Graph() {
     const name = meta.full_name || meta.name || session.user?.email?.split('@')[0] || 'You'
     fetch(`${API}/api/import`, { method:'POST', headers:authH(), body:JSON.stringify({ twin: { name } }) })
       .then(r => r.json())
-      .then(data => { if (data.status === 'ok') graphRef.current?.reload() })
+      .then(data => { if (data.status === 'ok') { graphRef.current?.reload(); loadEpisodes() } })
   }, [graphLoading, stats.nodes, session])
 
   function authH() {
     return { 'Content-Type':'application/json', 'Authorization':`Bearer ${sessionRef.current?.access_token}` }
   }
+
+  const loadEpisodes = useCallback(async () => {
+    if (!sessionRef.current) return
+    setEpisodesLoading(true)
+    try {
+      const resp = await fetch(`${API}/api/episodes`, { headers: authH() })
+      const data = await resp.json()
+      if (resp.ok) setEpisodes(data.episodes || [])
+    } catch {}
+    finally { setEpisodesLoading(false) }
+  }, [])
+
+  async function openEpisode(episodeId) {
+    try {
+      const resp = await fetch(`${API}/api/episodes/${encodeURIComponent(episodeId)}`, { headers: authH() })
+      const data = await resp.json()
+      if (!resp.ok) return
+      setEpisodeDetail(data)
+      setModal('episodeDetail')
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (!session) return
+    loadEpisodes()
+  }, [session, loadEpisodes])
+
+  useEffect(() => {
+    if (!selectedNode || !session) {
+      setNodeEpisodes([])
+      return
+    }
+    let cancel = false
+    fetch(`${API}/api/nodes/${selectedNode}/episodes`, { headers: authH() })
+      .then(r => r.json())
+      .then(data => { if (!cancel) setNodeEpisodes(data.episodes || []) })
+      .catch(() => { if (!cancel) setNodeEpisodes([]) })
+    return () => { cancel = true }
+  }, [selectedNode, session])
 
   async function signOut() {
     const sb = await getSupabase()
@@ -136,6 +179,7 @@ export default function Graph() {
     if (!resp.ok) { alert('Commit failed'); return }
     setPending({ nodes:{}, edges:{}, deletedNodes:[], deletedEdges:[] })
     graphRef.current?.reload(authH)
+    loadEpisodes()
     setModal(null)
   }
 
@@ -298,6 +342,33 @@ export default function Graph() {
             <StatRow k="Relationships" v={stats.edges} />
           </Section>
 
+          <Section label="Episodes">
+            {episodesLoading && <p className={styles.episodeEmpty}>Loading…</p>}
+            {!episodesLoading && episodes.length === 0 && (
+              <p className={styles.episodeEmpty}>Memory from chat and imports appears here as conversation episodes.</p>
+            )}
+            {!episodesLoading && episodes.length > 0 && (
+              <div className={styles.episodeList}>
+                {episodes.map(ep => (
+                  <div
+                    key={ep.id}
+                    className={`${styles.episodeItem} ${episodeDetail?.id === ep.id ? styles.episodeItemActive : ''}`}
+                    onClick={() => openEpisode(ep.id)}
+                  >
+                    <div className={styles.episodeTop}>
+                      <span className={styles.episodeDate}>{formatEpisodeDate(ep.created_at)}</span>
+                      <span className={`${styles.episodeBadge} ${ep.source === 'import' ? styles.episodeBadgeImport : ''}`}>
+                        {ep.source === 'import' ? 'Import' : 'Chat'}
+                      </span>
+                    </div>
+                    <div className={styles.episodePreview}>{ep.preview || 'No preview'}</div>
+                    <div className={styles.episodeMeta}>{ep.entity_count} {ep.entity_count === 1 ? 'fact' : 'facts'} extracted</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
           {searchResults && (
             <Section label="Search Results">
               <div className={styles.searchResultsScroll}>
@@ -336,6 +407,29 @@ export default function Graph() {
               <DR k="Name" v={selectedNodeData._label || selectedNodeData.label || '—'} />
               {selectedNodeData.title && (
                 <DR k="Type" v={<span style={{ color: typeColor(selectedNodeData.title) }}>{selectedNodeData.title}</span>} />
+              )}
+              {nodeEpisodes.length > 0 && (
+                <div className={styles.dr}>
+                  <span className={styles.drKey}>Learned from</span>
+                  <div className={styles.episodeSourceList}>
+                    {nodeEpisodes.map(ep => (
+                      <button
+                        key={ep.id}
+                        type="button"
+                        className={styles.episodeSourceItem}
+                        onClick={() => openEpisode(ep.id)}
+                      >
+                        <div className={styles.episodeTop}>
+                          <span className={styles.episodeDate}>{formatEpisodeDate(ep.created_at)}</span>
+                          <span className={`${styles.episodeBadge} ${ep.source === 'import' ? styles.episodeBadgeImport : ''}`}>
+                            {ep.source === 'import' ? 'Import' : 'Chat'}
+                          </span>
+                        </div>
+                        <div className={styles.episodePreview}>{ep.preview || 'View episode'}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
               <div className={styles.detailActions}>
                 <button
@@ -465,6 +559,46 @@ export default function Graph() {
                 <button className={`${styles.btn} ${styles.btnPrimary} ${styles.btnFlex}`} onClick={doCommit}>Confirm & Save</button>
               </div>
             </>}
+            {modal === 'episodeDetail' && episodeDetail && <>
+              <h3 className={styles.modalTitle}>Episode</h3>
+              <p className={styles.modalSub}>
+                {formatEpisodeDate(episodeDetail.created_at)}
+                {' · '}
+                {episodeDetail.source === 'import' ? 'Import' : 'Chat'}
+                {' · '}
+                {(episodeDetail.entities || []).length} {(episodeDetail.entities || []).length === 1 ? 'fact' : 'facts'}
+              </p>
+              <div className={styles.episodeDetailBody}>
+                {episodeDetail.body || episodeDetail.summary || episodeDetail.preview || 'No conversation text stored for this episode.'}
+              </div>
+              {(episodeDetail.entities || []).length > 0 && (
+                <>
+                  <div className={styles.sectionLabel}>Extracted facts</div>
+                  <div className={styles.episodeEntityList}>
+                    {episodeDetail.entities.map(ent => (
+                      <button
+                        key={ent.node_id}
+                        type="button"
+                        className={styles.episodeEntityItem}
+                        onClick={() => {
+                          setModal(null)
+                          setSelectedNode(ent.node_id)
+                          setSelectedEdge(null)
+                          graphRef.current?.focusNode(ent.node_id)
+                          setSidebarOpen(true)
+                        }}
+                      >
+                        <span className={styles.episodeEntityName}>{ent.label}</span>
+                        <span className={styles.episodeEntityType}>{ent.type}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div className={styles.modalActions}>
+                <button className={`${styles.btn} ${styles.btnPrimary} ${styles.btnFull}`} onClick={() => setModal(null)}>Close</button>
+              </div>
+            </>}
           </div>
         </div>
       )}
@@ -571,6 +705,17 @@ function ChangeItem({ text, del }) {
   )
 }
 
+function formatEpisodeDate(iso) {
+  if (!iso) return 'Unknown date'
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return iso
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  } catch {
+    return iso
+  }
+}
+
 function MInput({ label, placeholder, value, onChange, textarea }) {
   return (
     <div className={styles.minputWrap}>
@@ -620,6 +765,10 @@ const TOUR_STEPS = [
   {
     title: 'Your memory graph',
     desc: 'Every dot is a piece of you — a skill, goal, value, or trait. The lines show how everything connects.',
+  },
+  {
+    title: 'Episodes & provenance',
+    desc: 'The Episodes panel shows where your memory came from — chat turns and imports. Select a node to see which episodes extracted it.',
   },
   {
     title: 'Search your graph',

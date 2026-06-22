@@ -1501,6 +1501,146 @@ def get_graph():
         return jsonify({"error": str(e), "detail": str(e)}), 500
 
 
+def _episode_preview(ep: Dict[str, Any], max_len: int = 160) -> str:
+    text = (ep.get("body") or ep.get("summary") or "").strip()
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1].rstrip() + "…"
+
+
+def _format_episode_entity(entity: Dict[str, Any], person_id: str) -> Dict[str, Any]:
+    labels = entity.get("labels") or []
+    raw_key = entity.get("key") or entity.get("name") or ""
+    raw_value = entity.get("value") or ""
+    key = dec(raw_key, person_id)
+    value = dec(raw_value, person_id)
+    if key and value and key != value:
+        label = f"{key}: {value}"
+    elif value:
+        label = value
+    else:
+        label = key or "—"
+    return {
+        "node_id": str(entity.get("node_id")),
+        "type": labels[0] if labels else "Node",
+        "label": label,
+    }
+
+
+@app.route("/api/episodes", methods=["GET"])
+@require_auth
+def list_episodes():
+    """List conversation/import episodes with provenance metadata."""
+    person_id = resolve_person_id()
+    query = """
+    MATCH (p:Person {id: $person_id})-[:HAS_EPISODE]->(ep:Episode)
+    OPTIONAL MATCH (ep)-[:EXTRACTED]->(n)
+    WITH ep, count(n) AS entity_count
+    RETURN ep.id AS id,
+           ep.created_at AS created_at,
+           ep.source AS source,
+           ep.summary AS summary,
+           ep.body AS body,
+           entity_count
+    ORDER BY ep.created_at DESC
+    """
+    try:
+        with get_neo4j_driver().session(database=DATABASE) as session:
+            rows = session.run(query, person_id=person_id).data()
+        episodes = []
+        for row in rows:
+            episodes.append({
+                "id": row.get("id"),
+                "created_at": row.get("created_at"),
+                "source": row.get("source") or "chat",
+                "preview": _episode_preview(row),
+                "entity_count": row.get("entity_count") or 0,
+            })
+        return jsonify({"episodes": episodes})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/episodes/<episode_id>", methods=["GET"])
+@require_auth
+def get_episode(episode_id: str):
+    """Fetch a single episode with extracted entities."""
+    person_id = resolve_person_id()
+    query = """
+    MATCH (p:Person {id: $person_id})-[:HAS_EPISODE]->(ep:Episode {id: $episode_id})
+    OPTIONAL MATCH (ep)-[:EXTRACTED]->(n)
+    RETURN ep.id AS id,
+           ep.created_at AS created_at,
+           ep.source AS source,
+           ep.summary AS summary,
+           ep.body AS body,
+           collect({
+               node_id: id(n),
+               labels: labels(n),
+               key: coalesce(n.key, n.name, ''),
+               value: coalesce(n.value, n.name, ''),
+               name: coalesce(n.name, '')
+           }) AS entities
+    """
+    try:
+        with get_neo4j_driver().session(database=DATABASE) as session:
+            row = session.run(query, person_id=person_id, episode_id=episode_id).single()
+        if not row:
+            return jsonify({"error": "episode not found"}), 404
+        entities = [
+            _format_episode_entity(e, person_id)
+            for e in (row.get("entities") or [])
+            if e and e.get("node_id") is not None
+        ]
+        return jsonify({
+            "id": row.get("id"),
+            "created_at": row.get("created_at"),
+            "source": row.get("source") or "chat",
+            "summary": row.get("summary") or "",
+            "body": row.get("body") or "",
+            "preview": _episode_preview(row, max_len=10000),
+            "entities": entities,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/nodes/<node_id>/episodes", methods=["GET"])
+@require_auth
+def node_episodes(node_id: str):
+    """List episodes that extracted a given graph node."""
+    person_id = resolve_person_id()
+    try:
+        nid = int(node_id)
+    except ValueError:
+        return jsonify({"error": "invalid node id"}), 400
+
+    query = """
+    MATCH (n)
+    WHERE id(n) = $node_id AND n.person_id = $person_id
+    MATCH (ep:Episode)-[:EXTRACTED]->(n)
+    WHERE ep.person_id = $person_id
+    RETURN ep.id AS id,
+           ep.created_at AS created_at,
+           ep.source AS source,
+           ep.summary AS summary,
+           ep.body AS body
+    ORDER BY ep.created_at DESC
+    """
+    try:
+        with get_neo4j_driver().session(database=DATABASE) as session:
+            rows = session.run(query, person_id=person_id, node_id=nid).data()
+        episodes = [{
+            "id": row.get("id"),
+            "created_at": row.get("created_at"),
+            "source": row.get("source") or "chat",
+            "preview": _episode_preview(row),
+        } for row in rows]
+        return jsonify({"episodes": episodes})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/nodes", methods=["POST"])
 @require_auth
 def create_node():
