@@ -40,3 +40,49 @@ jobs:
         run: |
           source .venv/bin/activate
           zappa update dev
+
+      - name: Configure Lambda secrets
+        env:
+          NEO4J_DATABASE: ${{ secrets.NEO4J_DATABASE }}
+          NEO4J_URI: ${{ secrets.NEO4J_URI }}
+          NEO4J_USER: ${{ secrets.NEO4J_USER }}
+          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          ENCRYPTION_SECRET: ${{ secrets.ENCRYPTION_SECRET }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+        run: |
+          if [ -z "$NEO4J_URI" ]; then
+            echo "::warning::NEO4J_URI GitHub secret not set — add secrets or configure Lambda env in AWS console"
+            exit 0
+          fi
+          python <<'PY'
+          import json, os, subprocess
+
+          base = {
+              "PERSON_ID": "nandana_dileep",
+              "LLM_MODEL": "groq/llama-3.3-70b-versatile",
+              "LLM_FAST": "groq/qwen3-32b",
+              "DAILY_MSG_LIMIT": "30",
+              "LITELLM_LOG": "WARNING",
+              "ALLOWED_ORIGINS": "https://identiti.nandanadileep.com,https://www.identiti.nandanadileep.com,http://localhost:5173,http://localhost:3000",
+          }
+          for key in (
+              "NEO4J_DATABASE", "NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD",
+              "SUPABASE_URL", "SUPABASE_ANON_KEY", "ENCRYPTION_SECRET",
+              "GROQ_API_KEY", "REDIS_URL",
+          ):
+              val = os.getenv(key, "")
+              if val:
+                  base[key] = val
+
+          payload = json.dumps({"Variables": base})
+          subprocess.run(
+              ["aws", "lambda", "update-function-configuration",
+               "--function-name", "aegis-api-dev",
+               "--environment", payload],
+              check=True,
+          )
+          print("Lambda environment updated.")
+          PY

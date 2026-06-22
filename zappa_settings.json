@@ -15,7 +15,8 @@
             "LLM_MODEL": "groq/llama-3.3-70b-versatile",
             "LLM_FAST": "groq/qwen3-32b",
             "DAILY_MSG_LIMIT": "30",
-            "LITELLM_LOG": "WARNING"
+            "LITELLM_LOG": "WARNING",
+            "ALLOWED_ORIGINS": "https://identiti.nandanadileep.com,https://www.identiti.nandanadileep.com,http://localhost:5173,http://localhost:3000"
         }
     }
 }

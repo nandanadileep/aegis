@@ -759,7 +759,7 @@ def cors_preflight(path):
     return "", 204
 
 DEFAULT_PERSON_ID = os.getenv("PERSON_ID", "nandana_dileep")
-DATABASE = env_var("NEO4J_DATABASE")
+DATABASE = os.getenv("NEO4J_DATABASE", "")
 try:
     REDIS_CLIENT = get_redis_client()
 except Exception:
@@ -819,6 +819,15 @@ def export_wallet():
 
 @app.route("/health", methods=["GET"])
 def health():
+    missing = [
+        name for name in (
+            "NEO4J_DATABASE", "NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD",
+            "SUPABASE_URL", "ENCRYPTION_SECRET",
+        )
+        if not os.getenv(name)
+    ]
+    if missing:
+        return jsonify({"status": "degraded", "missing_env": missing}), 503
     return jsonify({"status": "ok"}), 200
 
 
