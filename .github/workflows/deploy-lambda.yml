@@ -24,6 +24,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m venv .venv
+          source .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
@@ -35,4 +37,6 @@ jobs:
           aws-region: ap-south-1
 
       - name: Deploy with Zappa
-        run: zappa update dev
+        run: |
+          source .venv/bin/activate
+          zappa update dev || zappa deploy dev
