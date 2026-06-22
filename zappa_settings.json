@@ -8,6 +8,7 @@
         "timeout_seconds": 120,
         "keep_warm": false,
         "slim_handler": true,
+        "touch": false,
         "exclude": ["__pycache__", ".env", "frontend/*", "venv/*", ".venv/*"],
         "environment_variables": {
             "PERSON_ID": "nandana_dileep",

@@ -39,4 +39,4 @@ jobs:
       - name: Deploy with Zappa
         run: |
           source .venv/bin/activate
-          zappa update dev || zappa deploy dev
+          zappa update dev
