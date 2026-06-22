@@ -35,4 +35,4 @@ jobs:
           aws-region: ap-south-1
 
       - name: Deploy with Zappa
-        run: python -m zappa update dev
+        run: zappa update dev
