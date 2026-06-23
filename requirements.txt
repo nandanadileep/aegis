@@ -9,3 +9,4 @@ PyJWT
 gunicorn
 cryptography
 zappa==0.62.1
+parsedatetime==2.6

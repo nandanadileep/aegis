@@ -191,7 +191,7 @@ def run_mock_demo(driver, database: str, person_id: str) -> None:
     import scripts.graph_memory as gm
     gm.extract_entities = mock_extract_entities
     gm.extract_facts = mock_extract_facts
-    gm.extract_temporal = lambda fact_text, ref_time=None, llm_fn=None: (None, None)
+    # Let the real hybrid temporal extractor run on mock facts.
 
     # Turn 1
     msg1 = "I'm Nandana, building an AI memory app using Neo4j."
@@ -266,12 +266,18 @@ def run_mock_demo(driver, database: str, person_id: str) -> None:
     print("Created/resolved entities:", json.dumps(result3["entities"], indent=2))
     print("Created facts:", json.dumps(result3["facts"], indent=2))
 
-    # Show all current (non-expired) facts.
+    # Show all current (non-expired, temporally valid) facts.
     print("\n=== Retrieval demo ===")
     for q in ["What database does Nandana use?", "Tell me about the AI memory app."]:
         print(f"\nQuery: {q}")
         hits = search_facts(driver, database, person_id, q, top_k=5)
-        print(format_context(hits))
+        for h in hits:
+            print(
+                f"  - {h['source_name']} -[{h['relation_type']}]-> {h['target_name']}: "
+                f"{h['fact']} (valid_from={h.get('valid_from')}, valid_to={h.get('valid_to')})"
+            )
+        if not hits:
+            print("  (no currently valid facts)")
 
 
 def run_real_demo(driver, database: str, person_id: str) -> None:

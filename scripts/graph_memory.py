@@ -26,6 +26,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Callable, Tuple
 
 import litellm
+import parsedatetime as pdt
 from neo4j import GraphDatabase
 
 # Import crypto helpers with fallback to no-ops (same pattern as app.py)
@@ -69,7 +70,7 @@ def _embedding_model() -> Optional[str]:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return _iso(datetime.now(timezone.utc))
 
 
 def _default_llm_fn(messages: List[Dict[str, str]], temperature: float = 0.0, max_tokens: Optional[int] = None, **kw):
@@ -257,7 +258,9 @@ Return ONLY a JSON object with optional fields:
 }}
 
 Interpret relative phrases like "two weeks ago", "next Thursday", "since 2020",
-"last summer" relative to the reference time. If no time is mentioned, return nulls.
+"last summer" relative to the reference time. If the fact is negated or past tense
+(e.g. "I used to work at X", "I no longer use Y"), set valid_to to the reference time.
+If no time is mentioned and the fact is not negated/past tense, return nulls.
 """
 
 
@@ -512,26 +515,185 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
 # Temporal extraction
 # -----------------------------------------------------------------------------
 
+# True past-tense facts describe a state that ended in the past (e.g. "used to
+# work at X"). They are valid up to the reference time.
+_PAST_FACT_PATTERNS = [
+    re.compile(r"\bused?\s+to\b", re.I),
+    re.compile(r"\bformerly?\b", re.I),
+    re.compile(r"\bformer\b", re.I),
+    re.compile(r"\bex[-\s]?", re.I),
+]
+
+# Negation facts state that something is no longer true right now (e.g. "no
+# longer works at X"). They are valid from the reference time onward and usually
+# contradict an existing positive fact.
+_NEGATION_FACT_PATTERNS = [
+    re.compile(r"\bno\s+longer\b", re.I),
+    re.compile(r"\bstopped\s+(?:doing|using|working|living|going|being|smoking|drinking)\b", re.I),
+    re.compile(r"\bquit\b", re.I),
+    re.compile(r"\bgave\s+up\b", re.I),
+    re.compile(r"\bdon't\s+(?:work|live|use|do)\s+(?:at|for|in|there|anymore)\b", re.I),
+    re.compile(r"\bdid\s+not\s+(?:work|live|use|do)\b", re.I),
+]
+
+_VALID_FROM_KEYWORDS = [
+    "since", "from", "starting", "started", "began", "begins", "begun",
+    "joined", "adopted", "launched", "created",
+]
+
+_VALID_TO_KEYWORDS = [
+    "until", "till", "by", "before", "ending", "ended",
+]
+
+# Phrases like "valid to 2025", "good until Friday" mark an end bound even when
+# a bare "to" would otherwise be ambiguous.
+_END_BOUND_PHRASES = [
+    re.compile(r"\b(?:valid|good|available|open)\s+(?:to|until|till)\b", re.I),
+]
+
+
+def _iso(dt: datetime) -> str:
+    """Return a UTC ISO-8601 string for a datetime."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _is_past_fact(text: str) -> bool:
+    """Return True when the fact describes a state that ended in the past."""
+    return any(p.search(text) for p in _PAST_FACT_PATTERNS)
+
+
+def _is_negation_fact(text: str) -> bool:
+    """Return True when the fact states something is no longer true right now."""
+    return any(p.search(text) for p in _NEGATION_FACT_PATTERNS)
+
+
+def _parse_year(year: int, side: Optional[str]) -> datetime:
+    """Return a reasonable date for a bare year."""
+    month = 12 if side == "to" else 1
+    day = 31 if side == "to" else 1
+    return datetime(year, month, day, tzinfo=timezone.utc)
+
+
+def _parse_date(text: str, ref_time: datetime) -> Optional[datetime]:
+    """Try parsedatetime; return a UTC datetime or None."""
+    cal = pdt.Calendar()
+    parsed, status = cal.parseDT(text, sourceTime=ref_time)
+    if status == 0:
+        return None
+
+    year_match = re.search(r"\b(19\d{2}|20\d{2})\b", text)
+    if year_match:
+        year = int(year_match.group(1))
+        # parsedatetime sometimes interprets a bare year as a time-of-day
+        # (e.g. "2021" -> 20:21 on the reference date). Detect that case and
+        # use the year directly instead.
+        if (status == 2 or
+            (parsed.year == ref_time.year and
+             parsed.month == ref_time.month and
+             parsed.day == ref_time.day)):
+            side = _temporal_keyword_side(text)
+            return _parse_year(year, side)
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    return parsed
+
+
+def _parse_date_range(text: str, ref_time: datetime) -> Tuple[Optional[str], Optional[str]]:
+    """Try to extract a start/end year pair from phrases like 'from X to Y'."""
+    # Match patterns like: from 2020 to 2022, since 2021 until 2023, 2020-2022
+    m = re.search(
+        r"(?:\bfrom\b|\bsince\b)?\s*\b(19\d{2}|20\d{2})\b\s*"
+        r"(?:to|until|till|through|[-–])\s*"
+        r"\b(19\d{2}|20\d{2})\b",
+        text,
+        re.I,
+    )
+    if m:
+        start_year, end_year = int(m.group(1)), int(m.group(2))
+        return _iso(_parse_year(start_year, "from")), _iso(_parse_year(end_year, "to"))
+    return None, None
+
+
+def _temporal_keyword_side(text: str) -> Optional[str]:
+    """Determine whether a detected date is a start or end bound.
+
+    Returns 'from', 'to', or None if the text is ambiguous.
+    """
+    lowered = text.lower()
+    from_score = sum(1 for kw in _VALID_FROM_KEYWORDS if f" {kw} " in f" {lowered} ")
+    to_score = sum(1 for kw in _VALID_TO_KEYWORDS if f" {kw} " in f" {lowered} ")
+    if any(p.search(text) for p in _END_BOUND_PHRASES):
+        to_score += 1
+    if from_score and not to_score:
+        return "from"
+    if to_score and not from_score:
+        return "to"
+    return None
+
+
 def extract_temporal(
     fact_text: str,
     ref_time: Optional[datetime] = None,
     llm_fn: Optional[Callable] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
-    """Return (valid_from, valid_to) ISO strings for a fact."""
+    """Return (valid_from, valid_to) ISO strings for a fact.
+
+    Uses a hybrid approach: parsedatetime for clear cases, with an LLM fallback
+    for ambiguous or missing temporal information. Past-tense/negated facts are
+    treated as valid only up to the reference time.
+    """
+    ref_time = ref_time or datetime.now(timezone.utc)
+
+    # Past-tense facts describe a state that ended in the past.
+    if _is_past_fact(fact_text):
+        return None, _iso(ref_time)
+
+    # Try explicit year ranges first (e.g. "from 2020 to 2022").  Even negated
+    # facts can carry a start date.
+    vf, vt = _parse_date_range(fact_text, ref_time)
+    if vf or vt:
+        return vf, vt
+
+    # Try the fast rule-based parser for a single date.
+    parsed = _parse_date(fact_text, ref_time)
+
+    # Past-tense facts describe a state that ended in the past.
+    if _is_past_fact(fact_text):
+        return None, _iso(parsed if parsed else ref_time)
+
+    # Negation facts state something is no longer true right now; they are valid
+    # from the detected date (or the reference time) onward.
+    if _is_negation_fact(fact_text):
+        return _iso(parsed if parsed else ref_time), None
+
+    if parsed:
+        side = _temporal_keyword_side(fact_text)
+        iso = _iso(parsed)
+        if side == "to":
+            return None, iso
+        # Default to a start bound for any detected date.
+        return iso, None
+
+    # Fallback to LLM for fuzzy phrases parsedatetime missed.
     if llm_fn is None:
         llm_fn = _default_llm_fn
-
-    ref_time = ref_time or datetime.now(timezone.utc)
     prompt = _TEMPORAL_EXTRACTION_PROMPT.format(
-        ref_time=ref_time.isoformat(),
+        ref_time=_iso(ref_time),
         fact=fact_text,
     )
-    resp = llm_fn(
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0,
-    )
-    raw = resp.choices[0].message.content or "{}"
     try:
+        resp = llm_fn(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+        )
+        raw = resp.choices[0].message.content or "{}"
         data = _extract_json(raw)
     except Exception:
         data = {}
@@ -581,12 +743,16 @@ def fetch_facts_between(
     person_id: str,
     source_uuid: str,
     target_uuid: str,
+    current_time: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch non-expired facts between two entity UUIDs."""
+    """Fetch currently valid, non-expired facts between two entity UUIDs."""
+    now = _iso(current_time or datetime.now(timezone.utc))
     query = """
     MATCH (a:Entity {uuid: $source_uuid, person_id: $person_id})-
           [f:FACT {person_id: $person_id}]->(b:Entity {uuid: $target_uuid, person_id: $person_id})
     WHERE f.expired_at IS NULL
+      AND (f.valid_from IS NULL OR f.valid_from <= $now)
+      AND (f.valid_to IS NULL OR f.valid_to >= $now)
     RETURN f.uuid AS uuid,
            f.fact AS fact_enc,
            f.relation_type AS relation_type,
@@ -599,6 +765,7 @@ def fetch_facts_between(
             person_id=person_id,
             source_uuid=source_uuid,
             target_uuid=target_uuid,
+            now=now,
         ).data()
     for row in rows:
         row["fact"] = dec(row.get("fact_enc") or "", person_id)
@@ -698,6 +865,9 @@ def create_fact(
     MERGE (ep)-[:EXTRACTED]->(a)
     MERGE (ep)-[:EXTRACTED]->(b)
     """
+    # Untimed facts are valid from the moment they are recorded.
+    created_at = fact.created_at or _now_iso()
+    valid_from = fact.valid_from or created_at
     with driver.session(database=database) as session:
         session.run(
             query,
@@ -707,9 +877,9 @@ def create_fact(
             uuid=fact.uuid,
             fact_enc=enc(fact.fact, person_id),
             relation_type=fact.relation_type,
-            valid_from=fact.valid_from,
+            valid_from=valid_from,
             valid_to=fact.valid_to,
-            created_at=fact.created_at,
+            created_at=created_at,
             embedding=_embedding_property(fact.embedding),
             episode_id=episode_id,
         )
@@ -721,18 +891,26 @@ def expire_fact(
     person_id: str,
     fact_uuid: str,
     expired_at: Optional[str] = None,
+    valid_to: Optional[str] = None,
 ) -> None:
-    """Mark an existing FACT relationship as expired (contradicted)."""
+    """Mark an existing FACT relationship as expired (contradicted).
+
+    Sets both `expired_at` (transaction time) and `valid_to` (validity end time)
+    so retrieval can hide facts that are no longer true.
+    """
     query = """
     MATCH (:Entity {person_id: $person_id})-[f:FACT {uuid: $uuid, person_id: $person_id}]->(:Entity {person_id: $person_id})
-    SET f.expired_at = $expired_at
+    SET f.expired_at = $expired_at,
+        f.valid_to = coalesce($valid_to, f.valid_to, $expired_at)
     """
+    now = expired_at or _now_iso()
     with driver.session(database=database) as session:
         session.run(
             query,
             person_id=person_id,
             uuid=fact_uuid,
-            expired_at=expired_at or _now_iso(),
+            expired_at=now,
+            valid_to=valid_to,
         )
 
 
@@ -788,7 +966,16 @@ def resolve_facts(
         if decision_type == "contradiction":
             old_uuid = decision.get("uuid")
             if old_uuid:
-                expire_fact(driver, database, person_id, old_uuid)
+                # The old fact stopped being true at the moment the new fact
+                # became valid (or when it was created if no explicit time).
+                contradiction_valid_to = fact.valid_from or fact.created_at
+                expire_fact(
+                    driver,
+                    database,
+                    person_id,
+                    old_uuid,
+                    valid_to=contradiction_valid_to,
+                )
         facts_to_write.append(fact)
 
     return facts_to_write
@@ -899,11 +1086,17 @@ def search_facts(
     query_text: str,
     top_k: int = 10,
     embed_fn: Optional[Callable] = None,
+    current_time: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Hybrid fact retrieval: vector + BM25 fallback + recency."""
+    """Hybrid fact retrieval: vector + BM25 fallback + recency.
+
+    Only returns facts that are currently valid: valid_from <= now and
+    (valid_to IS NULL OR valid_to >= now).
+    """
     if embed_fn is None:
         embed_fn = _default_embed_fn
 
+    now = _iso(current_time or datetime.now(timezone.utc))
     query_embedding: Optional[List[float]] = None
     if _embedding_model():
         embs = embed_fn([query_text])
@@ -912,6 +1105,8 @@ def search_facts(
     cypher = """
     MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
     WHERE f.expired_at IS NULL
+      AND (f.valid_from IS NULL OR f.valid_from <= $now)
+      AND (f.valid_to IS NULL OR f.valid_to >= $now)
     RETURN a.uuid AS source_uuid,
            b.uuid AS target_uuid,
            a.name AS source_name_enc,
@@ -925,7 +1120,7 @@ def search_facts(
            f.embedding AS embedding
     """
     with driver.session(database=database) as session:
-        rows = session.run(cypher, person_id=person_id).data()
+        rows = session.run(cypher, person_id=person_id, now=now).data()
 
     query_tokens = set(_tokens(query_text))
     scored = []
@@ -962,14 +1157,21 @@ def bfs_expand(
     seed_entity_uuids: List[str],
     depth: int = 2,
     top_k: int = 20,
+    current_time: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Breadth-first expansion from seed entities to find related facts."""
+    """Breadth-first expansion from seed entities to find related facts.
+
+    Only returns currently valid facts.
+    """
+    now = _iso(current_time or datetime.now(timezone.utc))
     query = """
     MATCH path = (seed:Entity {person_id: $person_id})-[:FACT*1..$depth]->(related:Entity {person_id: $person_id})
     WHERE seed.uuid IN $seed_uuids
     UNWIND relationships(path) AS f
     MATCH (a)-[f]->(b)
     WHERE f.expired_at IS NULL
+      AND (f.valid_from IS NULL OR f.valid_from <= $now)
+      AND (f.valid_to IS NULL OR f.valid_to >= $now)
     RETURN DISTINCT a.uuid AS source_uuid,
            b.uuid AS target_uuid,
            a.name AS source_name_enc,
@@ -990,6 +1192,7 @@ def bfs_expand(
             seed_uuids=seed_entity_uuids,
             depth=depth,
             top_k=top_k,
+            now=now,
         ).data()
 
     for row in rows:
@@ -1004,11 +1207,15 @@ def fetch_all_facts(
     database: str,
     person_id: str,
     limit: int = 10000,
+    current_time: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch all non-expired facts for a person, ordered by recency."""
+    """Fetch all non-expired, currently valid facts for a person, ordered by recency."""
+    now = _iso(current_time or datetime.now(timezone.utc))
     query = """
     MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
     WHERE f.expired_at IS NULL
+      AND (f.valid_from IS NULL OR f.valid_from <= $now)
+      AND (f.valid_to IS NULL OR f.valid_to >= $now)
     RETURN a.uuid AS source_uuid,
            b.uuid AS target_uuid,
            a.name AS source_name_enc,
@@ -1023,7 +1230,7 @@ def fetch_all_facts(
     LIMIT $limit
     """
     with driver.session(database=database) as session:
-        rows = session.run(query, person_id=person_id, limit=limit).data()
+        rows = session.run(query, person_id=person_id, limit=limit, now=now).data()
 
     for row in rows:
         row["fact"] = dec(row.get("fact_enc") or "", person_id)
