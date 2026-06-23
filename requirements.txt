@@ -3,10 +3,9 @@ neo4j==5.14.1
 redis==5.0.1
 python-dotenv==1.0.0
 litellm==1.38.11
-pydantic==2.5.3
+pydantic==2.10.6
 requests==2.31.0
 PyJWT
 gunicorn
 cryptography
-setuptools<70
-zappa==0.58.0
+zappa==0.62.1
