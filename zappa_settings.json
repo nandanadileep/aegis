@@ -7,7 +7,7 @@
         "memory_size": 1024,
         "timeout_seconds": 120,
         "keep_warm": false,
-        "slim_handler": true,
+        "slim_handler": false,
         "touch": false,
         "exclude": ["__pycache__", ".env", "frontend/*", "venv/*", ".venv/*"],
         "environment_variables": {
