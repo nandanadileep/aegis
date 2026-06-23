@@ -7,7 +7,7 @@ import random
 import threading
 from datetime import datetime
 from urllib.parse import urlparse, urlunparse, quote
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 from functools import wraps
 
@@ -17,13 +17,12 @@ from flask import Flask, request, jsonify, send_from_directory, Response, redire
 from neo4j import GraphDatabase
 
 try:
-    from scripts.crypto import enc, dec, node_hash, dec_props
+    from scripts.crypto import enc, dec, node_hash
 except ImportError:
     # Fallback no-ops if crypto module is unavailable
     def enc(v, u): return v  # type: ignore
     def dec(v, u): return v  # type: ignore
     def node_hash(v, u): return v  # type: ignore
-    def dec_props(p, u): return p  # type: ignore
 
 # Ensure we're in the right directory for .env
 os.chdir(Path(__file__).parent)
@@ -39,9 +38,26 @@ except ImportError:
     redis = None
 
 try:
-    from scripts.memory_pipeline import run_pipeline, invalidate_user_summary, get_user_summary, clear_episode_state
+    from scripts.user_summary import invalidate_user_summary, get_user_summary, clear_episode_state
 except ImportError:
-    from memory_pipeline import run_pipeline, invalidate_user_summary, get_user_summary, clear_episode_state  # type: ignore
+    from user_summary import invalidate_user_summary, get_user_summary, clear_episode_state  # type: ignore
+
+try:
+    from scripts.graph_memory import (
+        run_graph_pipeline,
+        search_facts,
+        format_context,
+        create_episode,
+        fetch_all_facts,
+    )
+except ImportError:
+    from graph_memory import (  # type: ignore
+        run_graph_pipeline,
+        search_facts,
+        format_context,
+        create_episode,
+        fetch_all_facts,
+    )
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
 LLM_FAST = os.getenv("LLM_FAST", "groq/qwen3-32b")
@@ -239,131 +255,9 @@ def get_neo4j_driver():
     password = os.getenv("NEO4J_PASSWORD", "")
     if not uri or not user or not password:
         return None
-    driver = GraphDatabase.driver(uri, auth=(user, password))
+    driver = GraphDatabase.driver(uri, auth=(user, password), notifications_min_severity="OFF")
     globals()["NEO4J_DRIVER"] = driver
     return driver
-
-
-def fetch_memory_summary(person_id: str, database: str) -> List[Dict[str, Any]]:
-    query = """
-    MATCH (p:Person {id: $person_id})-[r]->(n)
-    WHERE NOT n:Episode
-    RETURN type(r) AS rel, labels(n) AS labels,
-           properties(n) AS props,
-           coalesce(n.key, n.name, '') AS key,
-           coalesce(n.value, n.name, '') AS value
-    """
-    with get_neo4j_driver().session(database=database) as session:
-        data = session.run(query, person_id=person_id).data()
-    for row in data:
-        row["key"] = dec(row.get("key", ""), person_id)
-        row["value"] = dec(row.get("value", ""), person_id)
-        if row.get("props"):
-            row["props"] = dec_props(row["props"], person_id)
-    return data
-
-
-_STOP_WORDS = {
-    'the','and','for','are','you','can','how','what','when','where','why',
-    'with','that','this','have','from','they','will','been','more','your',
-    'its','about','some','just','get','got','did','does','was','has','had',
-    'but','not','use','using','used','our','their','there','here','want',
-    'need','also','like','make','made','into','out','all','any','would',
-    'could','should','tell','know','think','work','working','going','been',
-}
-_GREETING = re.compile(
-    r'^(hi+|hey+|hello|sup|yo|hiya|howdy|good\s*(morning|evening|afternoon|night)|'
-    r'what\'?s\s*up|how\s*are\s*(you|u)|greetings?)\W*$', re.I
-)
-
-def _message_tokens(message: str) -> Set[str]:
-    """Extract meaningful lowercase tokens from a message."""
-    return {
-        tok.lower()
-        for tok in re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", message)
-        if tok.lower() not in _STOP_WORDS and len(tok) > 2
-    }
-
-
-def _record_relevance(record: Dict[str, Any], message_tokens: Set[str]) -> float:
-    """Score how relevant a memory record is to the current message."""
-    labels = record.get("labels") or []
-    key = str(record.get("key", "")).lower()
-    value = str(record.get("value", "")).lower()
-    props = record.get("props") or {}
-
-    text_parts = [key, value]
-    text_parts.extend(str(v).lower() for v in props.values() if isinstance(v, str))
-    text_parts.extend(l.lower() for l in labels)
-    record_text = " ".join(text_parts)
-
-    record_tokens = _message_tokens(record_text)
-    if not record_tokens:
-        return 0.0
-
-    overlap = message_tokens & record_tokens
-    # Exact phrase match in the original message gets a big boost
-    phrase_bonus = 0.0
-    full_message = " ".join(message_tokens)
-    if key and len(key) > 3 and key in full_message:
-        phrase_bonus += 0.4
-    if value and len(value) > 3 and value in full_message:
-        phrase_bonus += 0.4
-
-    return (len(overlap) / max(len(message_tokens), 1)) + phrase_bonus
-
-
-def fetch_relevant_memory(person_id: str, database: str, message: str, top_k: int = 12) -> List[Dict[str, Any]]:
-    """Return the most relevant memory nodes for the current message.
-
-    Greetings get nothing. Otherwise we score every stored fact by token overlap
-    with the message and return the top_k most relevant ones. This keeps the
-    prompt small, cheap, and on-topic instead of dumping the whole graph.
-    """
-    if _GREETING.match(message.strip()):
-        return []
-
-    msg_tokens = _message_tokens(message)
-    if not msg_tokens:
-        return []
-
-    all_records = fetch_memory_summary(person_id, database)
-    scored = [
-        (rec, _record_relevance(rec, msg_tokens))
-        for rec in all_records
-    ]
-    scored.sort(key=lambda x: x[1], reverse=True)
-
-    # Always include the top memories that have any overlap, but require at
-    # least a small signal so we don't inject random facts.
-    relevant = [rec for rec, score in scored if score > 0.15][:top_k]
-
-    # Fallback: if nothing looks relevant, still give the LLM the 5 most
-    # recent/important-looking facts so it isn't flying blind.
-    if not relevant and scored:
-        relevant = [rec for rec, _ in scored[:5]]
-
-    return relevant
-
-
-def format_memory_context(records: List[Dict[str, Any]]) -> str:
-    if not records:
-        return "No stored memory yet."
-    groups: Dict[str, List[str]] = {}
-    for rec in records:
-        labels = rec.get("labels", [])
-        key = rec.get("key", "")
-        value = rec.get("value", "")
-        props = rec.get("props") or {}
-        label_str = labels[0] if labels else "Other"
-        name = key or value or props.get("name", "")
-        if not name:
-            continue
-        groups.setdefault(label_str, []).append(name)
-    lines = []
-    for label, items in groups.items():
-        lines.append(f"{label}: {', '.join(items)}")
-    return "\n".join(lines)
 
 
 def fetch_persona(person_id: str, database: str) -> Dict[str, str]:
@@ -389,74 +283,34 @@ def fetch_persona(person_id: str, database: str) -> Dict[str, str]:
 
 
 def fetch_wallet_data(person_id: str, database: str) -> Dict[str, Any]:
-    query = """
-    MATCH (p:Person {id: $person_id})
-    OPTIONAL MATCH (p)-[r]->(n)
-    WHERE NOT n:Episode
-    RETURN
-        p.name AS person_name,
-        p.id AS person_id,
-        collect({
-            rel: type(r),
-            labels: labels(n),
-            props: properties(n),
-            key: coalesce(n.key, n.name, ''),
-            value: coalesce(n.value, n.name, '')
-        }) AS facts
-    """
+    """Fetch person name and all active ERF facts for the wallet export."""
     with get_neo4j_driver().session(database=database) as session:
-        row = session.run(query, person_id=person_id).single()
-    if not row:
-        return {"person_name": person_id, "person_id": person_id, "facts": []}
-    result = dict(row)
-    result["person_name"] = dec(result.get("person_name") or "", person_id)
-    decrypted_facts = []
-    for fact in (result.get("facts") or []):
-        if not fact:
-            continue
-        f = dict(fact)
-        f["key"] = dec(f.get("key", ""), person_id)
-        f["value"] = dec(f.get("value", ""), person_id)
-        if f.get("props"):
-            f["props"] = dec_props(f["props"], person_id)
-        decrypted_facts.append(f)
-    result["facts"] = decrypted_facts
-    return result
+        person_row = session.run(
+            "MATCH (p:Person {id: $person_id}) RETURN p.name AS person_name",
+            person_id=person_id,
+        ).single()
+        person_name = dec(person_row.get("person_name") or "", person_id) if person_row else person_id
+
+    facts = fetch_all_facts(get_neo4j_driver(), database, person_id)
+
+    # Group by relation_type
+    groups: Dict[str, List[str]] = {}
+    for f in facts:
+        rel = f.get("relation_type", "FACT")
+        source = f.get("source_name", "")
+        target = f.get("target_name", "")
+        fact_text = f.get("fact", "")
+        entry = f"{source} → {target}: {fact_text}" if source and target else fact_text
+        section = rel.replace("_", " ").title()
+        groups.setdefault(section, []).append(entry)
+
+    return {"person_name": person_name, "person_id": person_id, "groups": groups}
 
 
 def generate_wallet_markdown(person_id: str, database: str) -> str:
     data = fetch_wallet_data(person_id, database)
     person_name = data.get("person_name") or person_id
-    facts = data.get("facts") or []
-
-    # Group facts by relationship type
-    groups: Dict[str, List[str]] = {}
-    for fact in facts:
-        if not fact or not fact.get("rel"):
-            continue
-        rel = fact["rel"]
-        labels = fact.get("labels") or []
-        label_str = labels[0] if labels else ""
-        key = fact.get("key", "")
-        value = fact.get("value", "")
-        props = fact.get("props") or {}
-
-        if key and value and key != value:
-            entry = f"{key}: {value}"
-        elif value:
-            entry = value
-        elif props:
-            entry = "; ".join(
-                f"{k} = {', '.join(str(i) for i in v) if isinstance(v, list) else v}"
-                for k, v in sorted(props.items())
-                if k not in ("name", "key")
-            ) or key
-        else:
-            entry = key
-
-        if entry:
-            section = label_str or rel.replace("_", " ").title()
-            groups.setdefault(section, []).append(entry)
+    groups = data.get("groups") or {}
 
     lines = [
         f"# Memory Profile — {person_name}",
@@ -804,8 +658,12 @@ def me():
 @require_auth
 def context():
     person_id = resolve_person_id()
-    records = fetch_memory_summary(person_id, DATABASE)
-    summary = format_memory_context(records)
+    try:
+        driver = get_neo4j_driver()
+        facts = fetch_all_facts(driver, DATABASE, person_id)
+        summary = format_context(facts)
+    except Exception:
+        summary = "No stored memory yet."
     return jsonify({"context": summary})
 
 
@@ -831,27 +689,16 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
-def _format_facts_zep(records: List[Dict[str, Any]]) -> str:
-    """Format memory records in Zep-style FACTS block with date ranges."""
-    lines = []
-    for rec in records:
-        labels = rec.get("labels", [])
-        label = labels[0] if labels else "Memory"
-        key = rec.get("key", "")
-        value = rec.get("value", "")
-
-        if key and value and key != value:
-            fact = f"{key} = {value}"
-        elif value:
-            fact = f"{value}"
-        elif key:
-            fact = f"{key}"
-        else:
-            continue
-
-        lines.append(f"- [{label}] {fact}")
-
-    return "\n".join(lines) if lines else "No relevant facts."
+def _erf_facts_to_summary_records(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convert ERF facts into the record shape generate_user_summary expects."""
+    records: List[Dict[str, Any]] = []
+    for f in facts:
+        records.append({
+            "labels": ["Fact"],
+            "key": f.get("source_name", ""),
+            "value": f"{f.get('relation_type', 'FACT')} {f.get('target_name', '')}: {f.get('fact', '')}",
+        })
+    return records
 
 
 def _format_recent_conversation(history: List[Dict[str, str]], max_turns: int = 4) -> str:
@@ -964,20 +811,19 @@ def chat():
             "added_nodes": [],
         }), 200
 
-    # Fetch relevant context (cheap keyword filtering; no extra LLM call)
-    relevant_records: List[Dict[str, Any]] = []
+    # Fetch relevant context from the Zep-style ERF graph.
     all_records: List[Dict[str, Any]] = []
     memory_context = ""
     persona: Dict[str, str] = {}
     user_summary = ""
     if needs_retrieval(user_message):
         try:
-            all_records = fetch_memory_summary(person_id, DATABASE)
-            relevant_records = fetch_relevant_memory(person_id, DATABASE, user_message)
-            memory_context = _format_facts_zep(relevant_records)
+            driver = get_neo4j_driver()
+            relevant_facts = search_facts(driver, DATABASE, person_id, user_message, top_k=12)
+            memory_context = format_context(relevant_facts)
+            all_records = _erf_facts_to_summary_records(fetch_all_facts(driver, DATABASE, person_id))
         except Exception:
             all_records = []
-            relevant_records = []
             memory_context = ""
         try:
             persona = fetch_persona(person_id, DATABASE)
@@ -1025,17 +871,18 @@ def chat():
         else:
             storage_warning = f"redis write failed: {e}"
 
-    # Run memory extraction in the background so it doesn't block the reply.
-    # The frontend shows newly-saved nodes when they come back, but the user
-    # gets the reply immediately.
+    # Run ERF memory extraction in the background so it doesn't block the reply.
     def _extract_memory_async():
         try:
-            rc = get_redis_client()
-            run_pipeline(
-                f"User: {user_message}\nAssistant: {reply}",
+            driver = get_neo4j_driver()
+            transcript = f"User: {user_message}\nAssistant: {reply}"
+            episode_id = create_episode(driver, DATABASE, person_id, body=transcript)
+            run_graph_pipeline(
+                conversation=transcript,
                 person_id=person_id,
-                redis_client=rc,
-                neo4j_driver=get_neo4j_driver(),
+                driver=driver,
+                database=DATABASE,
+                episode_id=episode_id,
                 llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
             )
             # Memory changed; invalidate cached user summary so next chat gets
@@ -1072,9 +919,10 @@ def proxy_completions():
             break
 
     try:
-        all_records = fetch_memory_summary(person_id, DATABASE)
-        records = fetch_relevant_memory(person_id, DATABASE, last_user_message) if last_user_message else []
-        memory_context = _format_facts_zep(records)
+        driver = get_neo4j_driver()
+        records = search_facts(driver, DATABASE, person_id, last_user_message, top_k=12) if last_user_message else []
+        memory_context = format_context(records)
+        all_records = _erf_facts_to_summary_records(fetch_all_facts(driver, DATABASE, person_id))
         persona = fetch_persona(person_id, DATABASE)
         user_summary = get_user_summary(
             REDIS_CLIENT, person_id, all_records,
@@ -1109,6 +957,33 @@ def proxy_completions():
         append_conversation_message(person_id, "assistant", reply)
     except Exception:
         pass
+
+    # Extract ERF memory in the background for proxy completions too.
+    def _extract_proxy_memory():
+        try:
+            driver = get_neo4j_driver()
+            transcript_bits = []
+            for m in non_system:
+                role = m.get("role", "").capitalize()
+                content = str(m.get("content", "")).strip()
+                if content:
+                    transcript_bits.append(f"{role}: {content}")
+            transcript = "\n".join(transcript_bits)
+            if transcript:
+                episode_id = create_episode(driver, DATABASE, person_id, body=transcript)
+                run_graph_pipeline(
+                    conversation=transcript,
+                    person_id=person_id,
+                    driver=driver,
+                    database=DATABASE,
+                    episode_id=episode_id,
+                    llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+                )
+                invalidate_user_summary(REDIS_CLIENT, person_id)
+        except Exception:
+            pass
+
+    threading.Thread(target=_extract_proxy_memory, daemon=True).start()
 
     return jsonify(completion.model_dump())
 
@@ -1146,8 +1021,23 @@ def save():
 
     transcript = "\n".join(pieces).strip()
     if transcript:
-        run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=get_redis_client())
-        invalidate_user_summary(REDIS_CLIENT, person_id)
+        try:
+            driver = get_neo4j_driver()
+            episode_id = create_episode(driver, DATABASE, person_id, body=transcript, source="save")
+            run_graph_pipeline(
+                conversation=transcript,
+                person_id=person_id,
+                driver=driver,
+                database=DATABASE,
+                episode_id=episode_id,
+                llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+            )
+            invalidate_user_summary(REDIS_CLIENT, person_id)
+        except Exception as e:
+            if storage_warning:
+                storage_warning = f"{storage_warning}; memory extraction failed: {e}"
+            else:
+                storage_warning = f"memory extraction failed: {e}"
         if conversation_history:
             try:
                 clear_conversation_history(person_id)
@@ -1340,19 +1230,8 @@ def import_twin():
     description = str(twin.get("description") or twin.get("twin_description") or "")
     speaking_style = str(twin.get("speaking_style") or "")
 
-    field_map = {
-        "values":              ("Value",    "HAS_VALUE"),
-        "skills":              ("Skill",    "HAS_SKILL"),
-        "personality":         ("Trait",    "HAS_TRAIT"),
-        "goals":               ("Goal",     "HAS_GOAL"),
-        "beliefs":             ("Belief",   "HAS_BELIEF"),
-        "currently_working_on":("Project",  "WORKING_ON"),
-        "known_for":           ("Identity", "KNOWN_FOR"),
-    }
-
     try:
-        episode_id = f"ep-{uuid.uuid4().hex[:12]}"
-        summary = f"Imported profile for {name or 'user'}"
+        # Update the Person profile fields as before.
         with get_neo4j_driver().session(database=DATABASE) as session:
             session.run(
                 """
@@ -1368,44 +1247,41 @@ def import_twin():
                 desc=enc(description, person_id),
                 style=enc(speaking_style, person_id),
             )
-            session.run(
-                """
-                MATCH (p:Person {id: $pid})
-                MERGE (ep:Episode {id: $ep_id, person_id: $pid})
-                SET ep.summary = $summary,
-                    ep.source = $source,
-                    ep.created_at = $created_at
-                MERGE (p)-[:HAS_EPISODE]->(ep)
-                """,
-                pid=person_id,
-                ep_id=episode_id,
-                summary=summary,
-                source="import",
-                created_at=datetime.utcnow().isoformat() + "Z",
-            )
-            for field, (label, rel) in field_map.items():
-                items = twin.get(field) or []
-                if isinstance(items, str):
-                    items = [items]
-                for item in items:
-                    item = str(item).strip()
-                    if not item:
-                        continue
-                    session.run(
-                        f"""
-                        MATCH (p:Person {{id: $pid}})
-                        MATCH (ep:Episode {{id: $ep_id, person_id: $pid}})
-                        MERGE (n:{label} {{_h: $h, person_id: $pid}})
-                        ON CREATE SET n.name = $enc_name
-                        ON MATCH SET n.name = $enc_name
-                        MERGE (p)-[:{rel}]->(n)
-                        MERGE (ep)-[:EXTRACTED]->(n)
-                        """,
-                        pid=person_id,
-                        ep_id=episode_id,
-                        h=node_hash(item, person_id),
-                        enc_name=enc(item, person_id),
-                    )
+
+        # Build a narrative transcript from the twin so the ERF pipeline can
+        # extract entities and facts naturally.
+        narrative_lines = [f"My name is {name}."]
+        if description:
+            narrative_lines.append(f"About me: {description}")
+        if speaking_style:
+            narrative_lines.append(f"My speaking style is: {speaking_style}.")
+        for field, label in [
+            ("values", "values"),
+            ("skills", "skills"),
+            ("personality", "personality traits"),
+            ("goals", "goals"),
+            ("beliefs", "beliefs"),
+            ("currently_working_on", "currently working on"),
+            ("known_for", "known for"),
+        ]:
+            items = twin.get(field) or []
+            if isinstance(items, str):
+                items = [items]
+            items = [str(i).strip() for i in items if str(i).strip()]
+            if items:
+                narrative_lines.append(f"My {label}: {', '.join(items)}.")
+        transcript = " ".join(narrative_lines)
+
+        driver = get_neo4j_driver()
+        episode_id = create_episode(driver, DATABASE, person_id, body=transcript, source="import")
+        run_graph_pipeline(
+            conversation=transcript,
+            person_id=person_id,
+            driver=driver,
+            database=DATABASE,
+            episode_id=episode_id,
+            llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1442,7 +1318,16 @@ def onboard():
         return jsonify({"error": "no answers provided"}), 400
 
     try:
-        run_pipeline(transcript, use_mock_llm=False, person_id=person_id, redis_client=get_redis_client())
+        driver = get_neo4j_driver()
+        episode_id = create_episode(driver, DATABASE, person_id, body=transcript, source="onboard")
+        run_graph_pipeline(
+            conversation=transcript,
+            person_id=person_id,
+            driver=driver,
+            database=DATABASE,
+            episode_id=episode_id,
+            llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1457,57 +1342,44 @@ def onboard():
 @app.route("/api/graph", methods=["GET"])
 @require_auth
 def get_graph():
-    """Fetch all nodes and relationships for a person."""
+    """Fetch ERF entities and FACT relationships for a person."""
     person_id = resolve_person_id()
-    
-    query = """
-    MATCH (p:Person {id: $person_id})
-    OPTIONAL MATCH (p)-[]->(n)
-    WHERE NOT n:Episode
-    RETURN DISTINCT id(n) as node_id, n.name as name, n.key as key, labels(n) as labels
-    UNION
-    MATCH (p:Person {id: $person_id})
-    RETURN id(p) as node_id, p.name as name, p.id as key, labels(p) as labels
+
+    nodes_query = """
+    MATCH (e:Entity {person_id: $person_id})
+    RETURN e.uuid AS id, e.name AS name_enc, e.type AS type_enc
+    """
+    edges_query = """
+    MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
+    WHERE f.expired_at IS NULL
+    RETURN f.uuid AS id, a.uuid AS from_id, b.uuid AS to_id, f.relation_type AS label
     """
 
-    query_edges = """
-    MATCH (p:Person {id: $person_id})-[r]->(n)
-    WHERE NOT n:Episode
-    RETURN DISTINCT id(r) as rel_id, id(p) as from_id, id(n) as to_id, type(r) as rel_type
-    """
-    
     try:
         with get_neo4j_driver().session(database=DATABASE) as session:
-            nodes_result = session.run(query, person_id=person_id).data()
-            edges_result = session.run(query_edges, person_id=person_id).data()
-        
-        nodes_dict = {}
-        
-        for record in nodes_result:
-            node_id = str(record["node_id"])
-            raw_name = record.get("name") or record.get("key") or "Node"
-            name = dec(raw_name, person_id)
-            labels = record.get("labels") or []
+            nodes_result = session.run(nodes_query, person_id=person_id).data()
+            edges_result = session.run(edges_query, person_id=person_id).data()
 
-            nodes_dict[node_id] = {
-                "id": node_id,
+        nodes = []
+        for record in nodes_result:
+            name = dec(record.get("name_enc") or "", person_id)
+            entity_type = dec(record.get("type_enc") or "", person_id)
+            nodes.append({
+                "id": record["id"],
                 "label": name,
-                "title": f"{labels[0] if labels else 'Node'}"
-            }
-        
-        edges_list = []
-        for record in edges_result:
-            edges_list.append({
-                "id": str(record["rel_id"]),
-                "from": str(record["from_id"]),
-                "to": str(record["to_id"]),
-                "label": record.get("rel_type", "")
+                "title": entity_type,
             })
-        
-        return jsonify({
-            "nodes": list(nodes_dict.values()),
-            "edges": edges_list
-        })
+
+        edges = []
+        for record in edges_result:
+            edges.append({
+                "id": record["id"],
+                "from": record["from_id"],
+                "to": record["to_id"],
+                "label": record.get("label", ""),
+            })
+
+        return jsonify({"nodes": nodes, "edges": edges})
     except Exception as e:
         return jsonify({"error": str(e), "detail": str(e)}), 500
 
