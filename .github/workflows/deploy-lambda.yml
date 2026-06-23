@@ -67,7 +67,7 @@ jobs:
               "LLM_FAST": "groq/qwen3-32b",
               "DAILY_MSG_LIMIT": "30",
               "LITELLM_LOG": "WARNING",
-              "ALLOWED_ORIGINS": "https://identiti.nandanadileep.com,https://www.identiti.nandanadileep.com,http://localhost:5173,http://localhost:3000",
+              "ALLOWED_ORIGINS": "https://identiti.nandanadileep.com,https://www.identiti.nandanadileep.com,https://infiniti-ochre.vercel.app,http://localhost:5173,http://localhost:3000",
           }
           for key in (
               "NEO4J_DATABASE", "NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD",
