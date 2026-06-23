@@ -1411,16 +1411,20 @@ def retrieve_facts(
     bfs_top_k: int = 20,
     embed_fn: Optional[Callable] = None,
     current_time: Optional[datetime] = None,
+    rerank_method: str = "rrf",
 ) -> List[Dict[str, Any]]:
-    """Hybrid fact retrieval: vector + BM25 seeds + BFS graph expansion.
+    """Hybrid fact retrieval: vector + BM25 seeds + BFS graph expansion + rerank.
 
     Steps:
     1. Retrieve top-k directly relevant facts via vector similarity + BM25.
     2. Collect seed entity UUIDs from those facts.
-    3. Run BFS expansion from the seeds to pull in related facts.
-    4. Merge, deduplicate, and rank by retrieval score + recency.
+    3. Run BFS expansion from the seeds to find related facts.
+    4. Rerank the merged direct + BFS facts (RRF, MMR, or cross-encoder).
 
     If query_text is empty, returns the most recent facts instead.
+
+    Args:
+        rerank_method: one of "rrf" (default), "mmr", or "cross_encoder".
     """
     if not query_text or not query_text.strip():
         return _fetch_recent_facts(driver, database, person_id, limit=top_k, current_time=current_time)
@@ -1454,38 +1458,199 @@ def retrieve_facts(
         current_time=current_time,
     )
 
-    # 3. Merge and deduplicate by fact UUID.
+    # 3. Rerank merged direct and BFS facts.
+    return rerank_facts(
+        query_text,
+        direct_facts=direct,
+        related_facts=related,
+        method=rerank_method,
+        top_k=top_k,
+        embed_fn=embed_fn,
+    )
+
+
+def _ranked_uuids(facts: List[Dict[str, Any]]) -> List[str]:
+    """Return fact UUIDs sorted by descending score."""
+    ranked = sorted(facts, key=lambda r: r.get("score", 0.0), reverse=True)
+    return [r["uuid"] for r in ranked]
+
+
+def _rerank_rrf(
+    direct_facts: List[Dict[str, Any]],
+    related_facts: List[Dict[str, Any]],
+    top_k: int,
+    rrf_k: int,
+    direct_weight: float = 1.0,
+    related_weight: float = 0.8,
+) -> List[Dict[str, Any]]:
+    """Reciprocal Rank Fusion of direct and BFS fact rankings.
+
+    Direct retrieval is weighted slightly higher than graph-expanded facts
+    because it is grounded in explicit query relevance.
+    """
+    direct_ranking = _ranked_uuids(direct_facts)
+    related_ranking = _ranked_uuids(related_facts)
+    rrf_scores: Dict[str, float] = {}
+    for rank, uuid in enumerate(direct_ranking, start=1):
+        rrf_scores[uuid] = rrf_scores.get(uuid, 0.0) + direct_weight / (rrf_k + rank)
+    for rank, uuid in enumerate(related_ranking, start=1):
+        rrf_scores[uuid] = rrf_scores.get(uuid, 0.0) + related_weight / (rrf_k + rank)
+
     by_uuid: Dict[str, Dict[str, Any]] = {}
-    for row in direct:
-        row.setdefault("hop", 0)
-        # Slightly prefer directly retrieved facts over graph-expanded ones.
-        row["score"] = row.get("score", 0.0) + 0.1
-        by_uuid[row["uuid"]] = row
-
-    query_tokens = set(_tokens(query_text))
-    for row in related:
+    for row in direct_facts + related_facts:
         uuid = row["uuid"]
-        if uuid in by_uuid:
-            continue
-        # BFS facts start with a modest base score decayed by hop distance,
-        # then get a small overlap boost so relevant related facts rise.
-        hop = row.get("hop", 1)
-        base = max(0.03, 0.12 / hop)
-        fact_tokens = set(_tokens(f"{row.get('source_name', '')} {row.get('target_name', '')} {row.get('fact', '')}"))
-        overlap = len(query_tokens & fact_tokens) / max(len(query_tokens), 1)
-        row["score"] = base + 0.15 * overlap
-        by_uuid[uuid] = row
+        if uuid not in by_uuid:
+            row["score"] = rrf_scores.get(uuid, 0.0)
+            by_uuid[uuid] = row
 
-    # 4. Rank by score, tie-break by recency.
     scored = list(by_uuid.values())
     scored.sort(
-        key=lambda r: (
-            r.get("score", 0.0),
-            r.get("created_at") or "",
-        ),
+        key=lambda r: (r.get("score", 0.0), r.get("created_at") or ""),
         reverse=True,
     )
     return scored[:top_k]
+
+
+def _rerank_mmr(
+    query_text: str,
+    direct_facts: List[Dict[str, Any]],
+    related_facts: List[Dict[str, Any]],
+    top_k: int,
+    lambda_param: float,
+    embed_fn: Optional[Callable],
+) -> List[Dict[str, Any]]:
+    """Maximal Marginal Re-ranking: relevance vs. diversity.
+
+    Requires fact embeddings. Falls back to RRF if embeddings are unavailable.
+    """
+    candidates = {row["uuid"]: dict(row) for row in direct_facts + related_facts}
+    if not candidates:
+        return []
+
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+
+    model = _embedding_model()
+    query_embedding: Optional[List[float]] = None
+    if model:
+        try:
+            embs = embed_fn([query_text])
+            query_embedding = embs[0] if embs else None
+        except Exception:
+            query_embedding = None
+
+    # Collect embeddings from candidates; fall back to RRF if missing.
+    embeddings: Dict[str, List[float]] = {}
+    for uuid, row in candidates.items():
+        emb = row.get("embedding")
+        if emb:
+            embeddings[uuid] = emb
+    if not query_embedding or len(embeddings) < len(candidates):
+        return _rerank_rrf(direct_facts, related_facts, top_k, rrf_k=60)
+
+    def _sim(a: List[float], b: List[float]) -> float:
+        return _cosine_similarity(a, b)
+
+    selected: List[str] = []
+    remaining = set(candidates.keys())
+    while remaining and len(selected) < top_k:
+        best_uuid = None
+        best_score = -float("inf")
+        for uuid in remaining:
+            rel = _sim(query_embedding, embeddings[uuid])
+            div = 0.0
+            if selected:
+                div = max(_sim(embeddings[uuid], embeddings[s]) for s in selected)
+            score = lambda_param * rel - (1 - lambda_param) * div
+            if score > best_score:
+                best_score = score
+                best_uuid = uuid
+        if best_uuid is None:
+            break
+        selected.append(best_uuid)
+        remaining.remove(best_uuid)
+
+    return [candidates[uuid] for uuid in selected]
+
+
+# Optional cross-encoder reranker. Loaded lazily so the heavy dependency is only
+# required when explicitly requested.
+_CROSS_ENCODER = None
+
+
+def _load_cross_encoder(model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2") -> Any:
+    global _CROSS_ENCODER
+    if _CROSS_ENCODER is None:
+        try:
+            from sentence_transformers import CrossEncoder
+            _CROSS_ENCODER = CrossEncoder(model_name)
+        except Exception as exc:
+            raise RuntimeError(
+                "Cross-encoder reranking requires `sentence-transformers`. "
+                "Install it or use method='rrf'/'mmr'."
+            ) from exc
+    return _CROSS_ENCODER
+
+
+def _rerank_cross_encoder(
+    query_text: str,
+    direct_facts: List[Dict[str, Any]],
+    related_facts: List[Dict[str, Any]],
+    top_k: int,
+    model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+) -> List[Dict[str, Any]]:
+    """Cross-encoder reranking using sentence-transformers.
+
+    Falls back to RRF if the library or model is unavailable.
+    """
+    candidates = {row["uuid"]: dict(row) for row in direct_facts + related_facts}
+    if not candidates:
+        return []
+
+    try:
+        model = _load_cross_encoder(model_name)
+    except Exception:
+        return _rerank_rrf(direct_facts, related_facts, top_k, rrf_k=60)
+
+    pairs = [
+        (query_text, f"{row['source_name']} {row['relation_type']} {row['target_name']}: {row['fact']}")
+        for row in candidates.values()
+    ]
+    try:
+        scores = model.predict(pairs)
+    except Exception:
+        return _rerank_rrf(direct_facts, related_facts, top_k, rrf_k=60)
+
+    for (uuid, row), score in zip(candidates.items(), scores):
+        row["score"] = float(score)
+
+    scored = sorted(candidates.values(), key=lambda r: r.get("score", 0.0), reverse=True)
+    return scored[:top_k]
+
+
+def rerank_facts(
+    query_text: str,
+    direct_facts: List[Dict[str, Any]],
+    related_facts: List[Dict[str, Any]],
+    method: str = "rrf",
+    top_k: int = 12,
+    rrf_k: int = 60,
+    mmr_lambda: float = 0.5,
+    embed_fn: Optional[Callable] = None,
+) -> List[Dict[str, Any]]:
+    """Rerank direct retrieval and BFS-expanded facts.
+
+    Methods:
+    - "rrf": Reciprocal Rank Fusion (default, no extra deps).
+    - "mmr": Maximal Marginal Relevance for diversity (requires embeddings).
+    - "cross_encoder": Neural cross-encoder (requires sentence-transformers).
+    """
+    if method == "mmr":
+        return _rerank_mmr(query_text, direct_facts, related_facts, top_k, mmr_lambda, embed_fn)
+    if method == "cross_encoder":
+        return _rerank_cross_encoder(query_text, direct_facts, related_facts, top_k)
+    # Default: RRF.
+    return _rerank_rrf(direct_facts, related_facts, top_k, rrf_k)
 
 
 def format_context(facts: List[Dict[str, Any]]) -> str:

@@ -97,7 +97,45 @@ def test_retrieve_facts_empty_query_returns_recent() -> None:
     print("PASS: retrieve_facts empty query returns recent facts")
 
 
+def test_rerank_rrf() -> None:
+    direct = [
+        {"uuid": "d1", "score": 0.9, "created_at": "2026-06-01T00:00:00Z"},
+        {"uuid": "d2", "score": 0.5, "created_at": "2026-06-01T00:00:00Z"},
+    ]
+    related = [
+        {"uuid": "r1", "score": 0.8, "created_at": "2026-06-01T00:00:00Z"},
+        {"uuid": "d1", "score": 0.0, "created_at": "2026-06-01T00:00:00Z"},  # duplicate
+    ]
+    results = gm.rerank_facts("python", direct, related, method="rrf", top_k=10)
+    uuids = [r["uuid"] for r in results]
+    assert len(uuids) == 3
+    # d1 appears in both lists so should have highest RRF score.
+    assert uuids[0] == "d1"
+    print("PASS: rerank_facts RRF")
+
+
+def test_rerank_mmr_fallback_without_embeddings() -> None:
+    direct = [{"uuid": "d1", "score": 0.9, "created_at": "2026-06-01T00:00:00Z"}]
+    related = [{"uuid": "r1", "score": 0.5, "created_at": "2026-06-01T00:00:00Z"}]
+    results = gm.rerank_facts("python", direct, related, method="mmr", top_k=10)
+    uuids = [r["uuid"] for r in results]
+    assert set(uuids) == {"d1", "r1"}
+    print("PASS: rerank_facts MMR fallback without embeddings")
+
+
+def test_rerank_cross_encoder_fallback_without_deps() -> None:
+    direct = [{"uuid": "d1", "score": 0.9, "created_at": "2026-06-01T00:00:00Z"}]
+    related = [{"uuid": "r1", "score": 0.5, "created_at": "2026-06-01T00:00:00Z"}]
+    results = gm.rerank_facts("python", direct, related, method="cross_encoder", top_k=10)
+    uuids = [r["uuid"] for r in results]
+    assert set(uuids) == {"d1", "r1"}
+    print("PASS: rerank_facts cross-encoder fallback without deps")
+
+
 if __name__ == "__main__":
     test_retrieve_facts_merges_and_ranks()
     test_retrieve_facts_empty_query_returns_recent()
+    test_rerank_rrf()
+    test_rerank_mmr_fallback_without_embeddings()
+    test_rerank_cross_encoder_fallback_without_deps()
     print("\nAll retrieve_facts tests passed.")
