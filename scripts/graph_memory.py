@@ -225,7 +225,7 @@ If no facts relate the entities, return [].
 _FACT_RESOLUTION_PROMPT = """You are resolving whether a newly extracted fact
 contradicts or duplicates an existing fact between the same two entities.
 
-NEW FACT:
+NEW FACT (valid from {new_valid_from} to {new_valid_to}):
 {new_fact}
 
 EXISTING FACTS:
@@ -233,14 +233,21 @@ EXISTING FACTS:
 
 Task:
 Return JSON with one of these decisions:
-- {{"decision": "duplicate", "uuid": "<existing uuid>"}}  — same information.
-- {{"decision": "contradiction", "uuid": "<existing uuid>"}} — new fact makes the old fact no longer true.
+- {{"decision": "duplicate", "uuid": "<existing uuid>"}}  — same core information, possibly with different wording.
+- {{"decision": "contradiction", "uuid": "<existing uuid>"}} — the new fact makes the old fact no longer true within an overlapping time window.
 - {{"decision": "new"}} — unrelated or additional information.
 
 Guidelines:
 - Facts don't need identical wording to be duplicates; they must express the
   same core information.
-- A contradiction means the OLD fact is no longer true because of the NEW fact.
+- A contradiction only applies when the two facts describe the same state at
+  overlapping times. "I lived in Paris until 2020" does NOT contradict
+  "I live in Berlin now" because the time windows do not overlap.
+- "I used to work at Google" contradicts "I work at Google now" because the
+  current-time windows overlap.
+- "I know Python" and "I am fluent in Python" are duplicates.
+- "I work at Google" and "I work at Microsoft" are contradictions if both are
+  claimed to be currently true.
 - Return ONLY the JSON object, no explanation.
 """
 
@@ -914,6 +921,90 @@ def expire_fact(
         )
 
 
+def _parse_iso_or_none(value: Optional[str]) -> Optional[datetime]:
+    """Parse an ISO-8601 string to a UTC datetime, or return None."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _facts_temporally_overlap(
+    new_valid_from: Optional[str],
+    new_valid_to: Optional[str],
+    old_valid_from: Optional[str],
+    old_valid_to: Optional[str],
+) -> bool:
+    """Return True if two validity intervals could describe the same state."""
+    # Unbounded facts overlap with everything.
+    if (new_valid_from is None and new_valid_to is None) or (
+        old_valid_from is None and old_valid_to is None
+    ):
+        return True
+    nf = _parse_iso_or_none(new_valid_from)
+    nt = _parse_iso_or_none(new_valid_to)
+    of = _parse_iso_or_none(old_valid_from)
+    ot = _parse_iso_or_none(old_valid_to)
+
+    # Treat missing bounds as +/- infinity.
+    start_a = nf or datetime.min.replace(tzinfo=timezone.utc)
+    end_a = nt or datetime.max.replace(tzinfo=timezone.utc)
+    start_b = of or datetime.min.replace(tzinfo=timezone.utc)
+    end_b = ot or datetime.max.replace(tzinfo=timezone.utc)
+    return start_a <= end_b and start_b <= end_a
+
+
+_NEGATION_WORDS = {
+    "no longer", "quit", "quits", "quitting", "quit", "resigned", "resigns",
+    "resigning", "stopped", "stops", "stopping", "ceased", "ceases",
+    "ceasing", "gave up", "gives up", "giving up",
+}
+
+
+def _is_heuristic_contradiction(new_fact: Fact, old_fact: Dict[str, Any]) -> bool:
+    """Fast, rule-based contradiction detection before calling the LLM."""
+    new_text = f"{new_fact.relation_type} {new_fact.fact}".lower()
+    old_text = f"{old_fact.get('relation_type', '')} {old_fact.get('fact', '')}".lower()
+
+    # Negation of an existing positive fact is a contradiction.
+    has_negation = any(w in new_text for w in _NEGATION_WORDS)
+    if has_negation:
+        # Ensure the old fact is a positive statement about the same relation.
+        old_is_positive = not any(w in old_text for w in _NEGATION_WORDS)
+        if old_is_positive:
+            return True
+
+    # Mutually exclusive location/employer values for the same relation.
+    # Example: "lives in Paris" vs "lives in Berlin".
+    exclusive_relations = {"lives_in", "works_for", "located_in", "works_at"}
+    if new_fact.relation_type.upper() in exclusive_relations:
+        # Very naive check: same relation, different object names.
+        # A real check would compare entities; the LLM handles nuance.
+        return False  # keep LLM in the loop for safety
+
+    return False
+
+
+def _is_heuristic_duplicate(new_fact: Fact, old_fact: Dict[str, Any]) -> bool:
+    """Fast, rule-based duplicate detection."""
+    if new_fact.relation_type.upper() != (old_fact.get("relation_type") or "").upper():
+        return False
+    new_text = new_fact.fact.lower()
+    old_text = (old_fact.get("fact") or "").lower()
+    if new_text == old_text:
+        return True
+    # High token overlap for short facts.
+    new_tokens = set(_tokens(new_text))
+    old_tokens = set(_tokens(old_text))
+    if not new_tokens or not old_tokens:
+        return False
+    overlap = len(new_tokens & old_tokens) / max(len(new_tokens), len(old_tokens))
+    return overlap >= 0.9
+
+
 def resolve_facts(
     driver,
     database: str,
@@ -938,29 +1029,55 @@ def resolve_facts(
             driver, database, person_id, fact.target.uuid, fact.source.uuid
         )
 
-        if not existing:
+        # A fact can only contradict another if their validity windows overlap.
+        candidates = [
+            ex for ex in existing
+            if _facts_temporally_overlap(
+                fact.valid_from, fact.valid_to,
+                ex.get("valid_from"), ex.get("valid_to"),
+            )
+        ]
+
+        if not candidates:
             facts_to_write.append(fact)
             continue
 
-        existing_block = "\n".join(
-            f"- UUID: {ex['uuid']}\n  Fact: {ex['fact']}"
-            for ex in existing[:10]
-        )
-        prompt = _FACT_RESOLUTION_PROMPT.format(
-            new_fact=f"{fact.source.name} -[{fact.relation_type}]-> {fact.target.name}: {fact.fact}",
-            existing=existing_block,
-        )
-        resp = llm_fn(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-        )
-        raw = resp.choices[0].message.content or "{}"
-        try:
-            decision = _extract_json(raw)
-        except Exception:
-            decision = {"decision": "new"}
+        decision: Optional[Dict[str, Any]] = None
+        # 1. Fast heuristic path.
+        for ex in candidates:
+            if _is_heuristic_duplicate(fact, ex):
+                decision = {"decision": "duplicate", "uuid": ex["uuid"]}
+                break
+            if _is_heuristic_contradiction(fact, ex):
+                decision = {"decision": "contradiction", "uuid": ex["uuid"]}
+                break
 
-        decision_type = decision.get("decision", "new")
+        # 2. LLM fallback for ambiguous cases.
+        if decision is None:
+            existing_block = "\n".join(
+                f"- UUID: {ex['uuid']}\n"
+                f"  Relation: {ex.get('relation_type', 'RELATED_TO')}\n"
+                f"  Validity: {ex.get('valid_from') or '...'} to {ex.get('valid_to') or '...'}\n"
+                f"  Fact: {ex['fact']}"
+                for ex in candidates[:10]
+            )
+            prompt = _FACT_RESOLUTION_PROMPT.format(
+                new_fact=f"{fact.source.name} -[{fact.relation_type}]-> {fact.target.name}: {fact.fact}",
+                new_valid_from=fact.valid_from or "unspecified",
+                new_valid_to=fact.valid_to or "unspecified",
+                existing=existing_block,
+            )
+            try:
+                resp = llm_fn(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                )
+                raw = resp.choices[0].message.content or "{}"
+                decision = _extract_json(raw)
+            except Exception:
+                decision = {"decision": "new"}
+
+        decision_type = decision.get("decision", "new") if decision else "new"
         if decision_type == "duplicate":
             continue
         if decision_type == "contradiction":
