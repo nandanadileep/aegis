@@ -270,6 +270,22 @@ Interpret relative phrases like "two weeks ago", "next Thursday", "since 2020",
 If no time is mentioned and the fact is not negated/past tense, return nulls.
 """
 
+_COMMUNITY_SUMMARY_PROMPT = """You are summarizing clusters of related facts from a
+person's memory graph. Each cluster was discovered automatically by grouping entities
+and facts that are tightly connected.
+
+{clusters}
+
+Return ONLY a JSON array with one object per cluster, in the same order:
+[
+  {{"name": "Short 2-4 word label (e.g. 'Work & Career', 'Hobbies', 'Family')", "summary": "One or two sentences"}},
+  ...
+]
+
+Be concise. The summaries should help someone quickly understand the theme of each
+cluster when browsing the memory graph.
+"""
+
 
 # -----------------------------------------------------------------------------
 # Extraction helpers
@@ -1179,6 +1195,20 @@ def run_graph_pipeline(
     for fact in facts_to_write:
         create_fact(driver, database, person_id, fact, episode_id=episode_id)
 
+    # 10. Re-detect semantic communities and summarize them.
+    communities = []
+    try:
+        communities = detect_communities(
+            driver,
+            database,
+            person_id,
+            embed_fn=embed_fn,
+            llm_fn=llm_fn,
+        )
+    except Exception:
+        # Community detection should not break the pipeline.
+        pass
+
     return {
         "entities": [
             {"uuid": e.uuid, "name": e.name, "type": e.entity_type}
@@ -1187,6 +1217,10 @@ def run_graph_pipeline(
         "facts": [
             {"uuid": f.uuid, "fact": f.fact, "relation_type": f.relation_type}
             for f in facts_to_write
+        ],
+        "communities": [
+            {"uuid": c["uuid"], "name": c["name"], "summary": c["summary"]}
+            for c in communities
         ],
         "episode_id": episode_id,
     }
@@ -1664,6 +1698,394 @@ def format_context(facts: List[Dict[str, Any]]) -> str:
             valid = f" (Date range: {f.get('valid_from') or 'unknown'} to {f.get('valid_to') or 'present'})"
         lines.append(f"- {f['source_name']} {f['relation_type']} {f['target_name']}: {f['fact']}{valid}")
     return "\n".join(lines)
+
+
+# -----------------------------------------------------------------------------
+# Community detection & summarization
+# -----------------------------------------------------------------------------
+
+class _UnionFind:
+    def __init__(self, items: List[str]):
+        self.parent = {item: item for item in items}
+
+    def find(self, x: str) -> str:
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, x: str, y: str) -> None:
+        px, py = self.find(x), self.find(y)
+        if px != py:
+            self.parent[px] = py
+
+
+def _connected_components(
+    entities: List[Dict[str, Any]],
+    facts: List[Dict[str, Any]],
+) -> List[Set[str]]:
+    """Group entity UUIDs into connected components via FACT edges."""
+    entity_uuids = [e["uuid"] for e in entities]
+    if not entity_uuids:
+        return []
+    uf = _UnionFind(entity_uuids)
+    for fact in facts:
+        source = fact.get("source_uuid")
+        target = fact.get("target_uuid")
+        if source and target and source != target:
+            uf.union(source, target)
+
+    groups: Dict[str, Set[str]] = {}
+    for uuid in entity_uuids:
+        root = uf.find(uuid)
+        groups.setdefault(root, set()).add(uuid)
+    return list(groups.values())
+
+
+def _cluster_similarity(
+    cluster_a: Set[str],
+    cluster_b: Set[str],
+    embeddings: Dict[str, List[float]],
+) -> float:
+    """Average pairwise cosine similarity between two entity clusters."""
+    sims = []
+    for a in cluster_a:
+        emb_a = embeddings.get(a)
+        if not emb_a:
+            continue
+        for b in cluster_b:
+            emb_b = embeddings.get(b)
+            if not emb_b:
+                continue
+            sims.append(_cosine_similarity(emb_a, emb_b))
+    return sum(sims) / len(sims) if sims else 0.0
+
+
+def _split_large_component(
+    component: Set[str],
+    embeddings: Dict[str, List[float]],
+    max_size: int = 8,
+    merge_threshold: float = 0.55,
+) -> List[Set[str]]:
+    """Agglomeratively split a large connected component by embedding similarity.
+
+    Starts with each entity as its own cluster and greedily merges the most
+    similar pair whose combined size would not exceed max_size. Stops when no
+    such pair exceeds the similarity threshold.
+    """
+    if len(component) <= max_size:
+        return [component]
+
+    clusters = [{uuid} for uuid in component]
+    while True:
+        best_pair = None
+        best_sim = -1.0
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                if len(clusters[i]) + len(clusters[j]) > max_size:
+                    continue
+                sim = _cluster_similarity(clusters[i], clusters[j], embeddings)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_pair = (i, j)
+        if best_pair is None or best_sim < merge_threshold:
+            break
+        i, j = best_pair
+        clusters[i] = clusters[i] | clusters[j]
+        clusters.pop(j)
+    return clusters
+
+
+def _community_facts(
+    entity_uuids: Set[str],
+    facts: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Return facts whose source and target are both in the community."""
+    return [
+        f for f in facts
+        if f.get("source_uuid") in entity_uuids and f.get("target_uuid") in entity_uuids
+    ]
+
+
+def _extractive_summary(
+    facts: List[Dict[str, Any]],
+    top_k: int = 5,
+) -> str:
+    """Return a bullet list of the most central facts in the community."""
+    if not facts:
+        return ""
+    # Sort by recency as a simple centrality proxy; could be degree later.
+    ranked = sorted(facts, key=lambda f: f.get("created_at") or "", reverse=True)
+    lines = []
+    for f in ranked[:top_k]:
+        lines.append(
+            f"- {f.get('source_name', '')} {f.get('relation_type', 'RELATED_TO')} "
+            f"{f.get('target_name', '')}: {f.get('fact', '')}"
+        )
+    return "\n".join(lines)
+
+
+def _summarize_communities(
+    communities: List[Dict[str, Any]],
+    llm_fn: Optional[Callable] = None,
+) -> List[Tuple[str, str]]:
+    """Batch-summarize communities and return (name, summary) for each.
+
+    Falls back to default labels if the LLM call fails.
+    """
+    if not communities:
+        return []
+    if llm_fn is None:
+        llm_fn = _default_llm_fn
+
+    cluster_blocks = []
+    for idx, community in enumerate(communities, start=1):
+        entities = community.get("entities", [])
+        facts = community.get("facts", [])
+        entity_names = ", ".join(e.get("name", "") for e in entities[:15])
+        fact_block = _extractive_summary(facts, top_k=8)
+        cluster_blocks.append(
+            f"Cluster {idx}:\nEntities: {entity_names}\nFacts:\n{fact_block}"
+        )
+
+    prompt = _COMMUNITY_SUMMARY_PROMPT.format(clusters="\n\n".join(cluster_blocks))
+    try:
+        resp = llm_fn(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+        )
+        raw = resp.choices[0].message.content or "[]"
+        data = _extract_json(raw)
+        if not isinstance(data, list):
+            data = []
+    except Exception:
+        data = []
+
+    results: List[Tuple[str, str]] = []
+    for idx, community in enumerate(communities):
+        entities = community.get("entities", [])
+        facts = community.get("facts", [])
+        item = data[idx] if idx < len(data) else {}
+        name = item.get("name") if isinstance(item, dict) else None
+        summary = item.get("summary") if isinstance(item, dict) else None
+        name = name or "Miscellaneous"
+        summary = summary or f"Cluster of {len(entities)} entities and {len(facts)} facts."
+        results.append((name, summary))
+    return results
+
+
+def _community_centroid_embedding(
+    entity_uuids: Set[str],
+    embeddings: Dict[str, List[float]],
+) -> Optional[List[float]]:
+    """Compute mean embedding vector for entities in the community."""
+    vectors = [embeddings[uuid] for uuid in entity_uuids if uuid in embeddings]
+    if not vectors:
+        return None
+    dim = len(vectors[0])
+    return [sum(v[i] for v in vectors) / len(vectors) for i in range(dim)]
+
+
+def detect_communities(
+    driver,
+    database: str,
+    person_id: str,
+    embed_fn: Optional[Callable] = None,
+    llm_fn: Optional[Callable] = None,
+    max_community_size: int = 8,
+) -> List[Dict[str, Any]]:
+    """Detect semantic communities in the ERF graph and summarize them.
+
+    Steps:
+    1. Fetch all non-expired, currently valid entities and facts.
+    2. Compute connected components over the entity graph.
+    3. Split very large components by embedding similarity.
+    4. For each community, generate an extractive and abstractive summary.
+    5. Persist Community nodes and BELONGS_TO links.
+
+    Returns the list of persisted communities with metadata.
+    """
+    if llm_fn is None:
+        llm_fn = _default_llm_fn
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+
+    now = _iso(datetime.now(timezone.utc))
+
+    # 1. Fetch entities.
+    entity_query = """
+    MATCH (e:Entity {person_id: $person_id})
+    RETURN e.uuid AS uuid,
+           e.name AS name_enc,
+           e.type AS type_enc,
+           e.summary AS summary_enc,
+           e.embedding AS embedding
+    """
+    with driver.session(database=database) as session:
+        entity_rows = session.run(entity_query, person_id=person_id).data()
+
+    entities = []
+    embeddings: Dict[str, List[float]] = {}
+    for row in entity_rows:
+        row["name"] = dec(row.get("name_enc") or "", person_id)
+        row["entity_type"] = dec(row.get("type_enc") or "", person_id)
+        row["summary"] = dec(row.get("summary_enc") or "", person_id)
+        entities.append(row)
+        if row.get("embedding"):
+            embeddings[row["uuid"]] = row["embedding"]
+
+    # 2. Fetch facts.
+    fact_query = """
+    MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
+    WHERE f.expired_at IS NULL
+      AND (f.valid_from IS NULL OR f.valid_from <= $now)
+      AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    RETURN a.uuid AS source_uuid,
+           b.uuid AS target_uuid,
+           a.name AS source_name_enc,
+           b.name AS target_name_enc,
+           f.uuid AS uuid,
+           f.fact AS fact_enc,
+           f.relation_type AS relation_type,
+           f.valid_from AS valid_from,
+           f.valid_to AS valid_to,
+           f.created_at AS created_at
+    """
+    with driver.session(database=database) as session:
+        fact_rows = session.run(fact_query, person_id=person_id, now=now).data()
+
+    facts = []
+    for row in fact_rows:
+        row["fact"] = dec(row.get("fact_enc") or "", person_id)
+        row["source_name"] = dec(row.get("source_name_enc") or "", person_id)
+        row["target_name"] = dec(row.get("target_name_enc") or "", person_id)
+        facts.append(row)
+
+    # 3. Connected components.
+    components = _connected_components(entities, facts)
+
+    # 4. Split large components semantically.
+    communities: List[Set[str]] = []
+    for component in components:
+        if len(component) <= max_community_size:
+            communities.append(component)
+        else:
+            communities.extend(_split_large_component(component, embeddings, max_size=max_community_size))
+
+    # 5. Build community objects.
+    entity_lookup = {e["uuid"]: e for e in entities}
+    community_objects = []
+    for member_uuids in communities:
+        member_entities = [entity_lookup[uuid] for uuid in member_uuids if uuid in entity_lookup]
+        member_facts = _community_facts(member_uuids, facts)
+        if not member_entities:
+            continue
+        centroid = _community_centroid_embedding(member_uuids, embeddings)
+        community_objects.append({
+            "uuid": str(__import__("uuid").uuid4()),
+            "person_id": person_id,
+            "entities": member_entities,
+            "facts": member_facts,
+            "name": "Miscellaneous",
+            "summary": "",
+            "extractive_summary": _extractive_summary(member_facts),
+            "entity_uuids": list(member_uuids),
+            "fact_uuids": [f["uuid"] for f in member_facts],
+            "embedding": centroid,
+        })
+
+    # 6. Batch-summarize all communities in one LLM call.
+    summaries = _summarize_communities(community_objects, llm_fn=llm_fn)
+    for community, (name, summary) in zip(community_objects, summaries):
+        community["name"] = name
+        community["summary"] = summary
+
+    # 7. Persist.
+    _persist_communities(driver, database, person_id, community_objects)
+    return community_objects
+
+
+def _persist_communities(
+    driver,
+    database: str,
+    person_id: str,
+    communities: List[Dict[str, Any]],
+) -> None:
+    """Write Community nodes and BELONGS_TO relationships to Neo4j."""
+    # Clear old communities for this person.
+    clear_query = """
+    MATCH (p:Person {id: $person_id})
+    OPTIONAL MATCH (p)-[:HAS_COMMUNITY]->(c:Community {person_id: $person_id})
+    DETACH DELETE c
+    """
+    with driver.session(database=database) as session:
+        session.run(clear_query, person_id=person_id)
+
+    now = _now_iso()
+    create_query = """
+    MATCH (p:Person {id: $person_id})
+    MERGE (c:Community {uuid: $uuid, person_id: $person_id})
+    SET c.name = $name,
+        c.summary = $summary_enc,
+        c.extractive_summary = $extractive_enc,
+        c.embedding = $embedding,
+        c.updated_at = $now
+    MERGE (p)-[:HAS_COMMUNITY]->(c)
+    WITH c
+    UNWIND $entity_uuids AS entity_uuid
+    MATCH (e:Entity {uuid: entity_uuid, person_id: $person_id})
+    MERGE (e)-[:BELONGS_TO]->(c)
+    """
+    with driver.session(database=database) as session:
+        for community in communities:
+            session.run(
+                create_query,
+                person_id=person_id,
+                uuid=community["uuid"],
+                name=community["name"],
+                summary_enc=enc(community["summary"], person_id),
+                extractive_enc=enc(community["extractive_summary"], person_id),
+                embedding=_embedding_property(community.get("embedding")),
+                entity_uuids=community["entity_uuids"],
+                now=now,
+            )
+
+
+def fetch_communities(
+    driver,
+    database: str,
+    person_id: str,
+    limit: int = 100,
+) -> List[Dict[str, Any]]:
+    """Fetch persisted communities for a person with decrypted summaries."""
+    query = """
+    MATCH (p:Person {id: $person_id})-[:HAS_COMMUNITY]->(c:Community {person_id: $person_id})
+    OPTIONAL MATCH (e:Entity {person_id: $person_id})-[:BELONGS_TO]->(c)
+    RETURN c.uuid AS uuid,
+           c.name AS name,
+           c.summary AS summary_enc,
+           c.extractive_summary AS extractive_enc,
+           c.embedding AS embedding,
+           c.updated_at AS updated_at,
+           collect(e.uuid) AS entity_uuids
+    ORDER BY c.updated_at DESC
+    LIMIT $limit
+    """
+    with driver.session(database=database) as session:
+        rows = session.run(query, person_id=person_id, limit=limit).data()
+
+    communities = []
+    for row in rows:
+        communities.append({
+            "uuid": row["uuid"],
+            "name": row["name"],
+            "summary": dec(row.get("summary_enc") or "", person_id),
+            "extractive_summary": dec(row.get("extractive_enc") or "", person_id),
+            "embedding": row.get("embedding"),
+            "updated_at": row.get("updated_at"),
+            "entity_uuids": row.get("entity_uuids") or [],
+        })
+    return communities
 
 
 # -----------------------------------------------------------------------------

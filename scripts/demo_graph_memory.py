@@ -36,6 +36,7 @@ from scripts.graph_memory import (
     run_graph_pipeline,
     fetch_existing_entities,
     retrieve_facts,
+    fetch_communities,
     format_context,
 )
 
@@ -167,14 +168,15 @@ def mock_llm_fn(messages: List[Dict[str, str]], **kw) -> Any:
 
 
 def _clear_demo_data(driver, database: str, person_id: str) -> None:
-    """Remove old :Entity and :Episode nodes for the demo person id."""
+    """Remove old :Entity, :Episode, and :Community nodes for the demo person id."""
     with driver.session(database=database) as session:
         session.run(
             """
             MATCH (p:Person {id: $person_id})
             OPTIONAL MATCH (p)-[:HAS_ENTITY]->(e:Entity)
             OPTIONAL MATCH (p)-[:HAS_EPISODE]->(ep:Episode)
-            DETACH DELETE e, ep
+            OPTIONAL MATCH (p)-[:HAS_COMMUNITY]->(c:Community)
+            DETACH DELETE e, ep, c
             """,
             person_id=person_id,
         )
@@ -265,6 +267,9 @@ def run_mock_demo(driver, database: str, person_id: str) -> None:
     )
     print("Created/resolved entities:", json.dumps(result3["entities"], indent=2))
     print("Created facts:", json.dumps(result3["facts"], indent=2))
+    print("\nDetected communities:")
+    for c in result3.get("communities", []):
+        print(f"  - {c['name']}: {c['summary']}")
 
     # Show relevant facts via vector + BM25 + BFS retrieval.
     print("\n=== Retrieval demo (vector + BM25 + BFS) ===")
