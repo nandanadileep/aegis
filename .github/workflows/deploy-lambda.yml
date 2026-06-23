@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'app.py'
+      - 'wsgi.py'
       - 'scripts/**'
       - 'requirements.txt'
       - 'zappa_settings.json'

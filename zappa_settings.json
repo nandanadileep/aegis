@@ -1,6 +1,6 @@
 {
     "dev": {
-        "app_function": "app.app",
+        "app_function": "wsgi.application",
         "aws_region": "ap-south-1",
         "project_name": "aegis-api",
         "runtime": "python3.11",
