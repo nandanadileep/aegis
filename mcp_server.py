@@ -3,7 +3,7 @@ from mcp.server.fastmcp import FastMCP
 
 from app import load_env, env_var, get_neo4j_driver
 from scripts.graph_memory import (
-    fetch_all_facts,
+    retrieve_facts,
     format_context,
     create_episode,
     run_graph_pipeline,
@@ -23,10 +23,15 @@ Use the result naturally without referencing that you fetched it.
 
 
 @mcp.tool()
-def get_memory(person_id: str) -> str:
-    """Fetch the full memory profile for a person from the Aegis ERF graph."""
+def get_memory(person_id: str, query: str = "") -> str:
+    """Fetch relevant memory for a person from the Aegis ERF graph.
+
+    Args:
+        person_id: the user's stable identifier.
+        query: optional topic to retrieve facts about. If empty, recent facts are returned.
+    """
     driver = get_neo4j_driver()
-    facts = fetch_all_facts(driver, DATABASE, person_id)
+    facts = retrieve_facts(driver, DATABASE, person_id, query, top_k=50)
     return format_context(facts)
 
 

@@ -46,17 +46,17 @@ try:
     from scripts.graph_memory import (
         run_graph_pipeline,
         search_facts,
+        retrieve_facts,
         format_context,
         create_episode,
-        fetch_all_facts,
     )
 except ImportError:
     from graph_memory import (  # type: ignore
         run_graph_pipeline,
         search_facts,
+        retrieve_facts,
         format_context,
         create_episode,
-        fetch_all_facts,
     )
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
@@ -291,7 +291,7 @@ def fetch_wallet_data(person_id: str, database: str) -> Dict[str, Any]:
         ).single()
         person_name = dec(person_row.get("person_name") or "", person_id) if person_row else person_id
 
-    facts = fetch_all_facts(get_neo4j_driver(), database, person_id)
+    facts = retrieve_facts(get_neo4j_driver(), database, person_id, query_text="", top_k=200)
 
     # Group by relation_type
     groups: Dict[str, List[str]] = {}
@@ -660,7 +660,7 @@ def context():
     person_id = resolve_person_id()
     try:
         driver = get_neo4j_driver()
-        facts = fetch_all_facts(driver, DATABASE, person_id)
+        facts = retrieve_facts(driver, DATABASE, person_id, query_text="", top_k=200)
         summary = format_context(facts)
     except Exception:
         summary = "No stored memory yet."
@@ -819,9 +819,11 @@ def chat():
     if needs_retrieval(user_message):
         try:
             driver = get_neo4j_driver()
-            relevant_facts = search_facts(driver, DATABASE, person_id, user_message, top_k=12)
+            relevant_facts = retrieve_facts(driver, DATABASE, person_id, user_message, top_k=12)
             memory_context = format_context(relevant_facts)
-            all_records = _erf_facts_to_summary_records(fetch_all_facts(driver, DATABASE, person_id))
+            all_records = _erf_facts_to_summary_records(
+                retrieve_facts(driver, DATABASE, person_id, user_message, top_k=50)
+            )
         except Exception:
             all_records = []
             memory_context = ""
@@ -920,9 +922,11 @@ def proxy_completions():
 
     try:
         driver = get_neo4j_driver()
-        records = search_facts(driver, DATABASE, person_id, last_user_message, top_k=12) if last_user_message else []
+        records = retrieve_facts(driver, DATABASE, person_id, last_user_message, top_k=12) if last_user_message else []
         memory_context = format_context(records)
-        all_records = _erf_facts_to_summary_records(fetch_all_facts(driver, DATABASE, person_id))
+        all_records = _erf_facts_to_summary_records(
+            retrieve_facts(driver, DATABASE, person_id, last_user_message, top_k=50)
+        )
         persona = fetch_persona(person_id, DATABASE)
         user_summary = get_user_summary(
             REDIS_CLIENT, person_id, all_records,

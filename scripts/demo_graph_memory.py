@@ -35,7 +35,7 @@ from scripts.graph_memory import (
     create_episode,
     run_graph_pipeline,
     fetch_existing_entities,
-    search_facts,
+    retrieve_facts,
     format_context,
 )
 
@@ -266,15 +266,15 @@ def run_mock_demo(driver, database: str, person_id: str) -> None:
     print("Created/resolved entities:", json.dumps(result3["entities"], indent=2))
     print("Created facts:", json.dumps(result3["facts"], indent=2))
 
-    # Show all current (non-expired, temporally valid) facts.
-    print("\n=== Retrieval demo ===")
+    # Show relevant facts via vector + BM25 + BFS retrieval.
+    print("\n=== Retrieval demo (vector + BM25 + BFS) ===")
     for q in ["What database does Nandana use?", "Tell me about the AI memory app."]:
         print(f"\nQuery: {q}")
-        hits = search_facts(driver, database, person_id, q, top_k=5)
+        hits = retrieve_facts(driver, database, person_id, q, top_k=5)
         for h in hits:
             print(
                 f"  - {h['source_name']} -[{h['relation_type']}]-> {h['target_name']}: "
-                f"{h['fact']} (valid_from={h.get('valid_from')}, valid_to={h.get('valid_to')})"
+                f"{h['fact']} (score={h.get('score', 0):.3f}, valid_from={h.get('valid_from')}, valid_to={h.get('valid_to')})"
             )
         if not hits:
             print("  (no currently valid facts)")
@@ -307,7 +307,7 @@ def run_real_demo(driver, database: str, person_id: str) -> None:
 
     q = "What is Nandana building?"
     print(f"\nQuery: {q}")
-    hits = search_facts(driver, database, person_id, q, top_k=5)
+    hits = retrieve_facts(driver, database, person_id, q, top_k=5)
     print(format_context(hits))
 
 

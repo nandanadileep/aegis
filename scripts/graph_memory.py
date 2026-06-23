@@ -1261,7 +1261,14 @@ def search_facts(
 
         score = 0.6 * emb_sim + 0.4 * overlap
         if score > 0.02:
-            scored.append((score, {**row, "fact": fact_text, "source_name": source_name, "target_name": target_name}))
+            item = {
+                **row,
+                "fact": fact_text,
+                "source_name": source_name,
+                "target_name": target_name,
+                "score": score,
+            }
+            scored.append((score, item))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item for _, item in scored[:top_k]]
@@ -1281,8 +1288,10 @@ def bfs_expand(
     Only returns currently valid facts.
     """
     now = _iso(current_time or datetime.now(timezone.utc))
-    query = """
-    MATCH path = (seed:Entity {person_id: $person_id})-[:FACT*1..$depth]->(related:Entity {person_id: $person_id})
+    # Neo4j does not accept parameters for variable-length path bounds, so we
+    # interpolate the integer depth safely into the query string.
+    query = f"""
+    MATCH path = (seed:Entity {{person_id: $person_id}})-[:FACT*1..{depth}]->(related:Entity {{person_id: $person_id}})
     WHERE seed.uuid IN $seed_uuids
     UNWIND relationships(path) AS f
     MATCH (a)-[f]->(b)
@@ -1307,7 +1316,6 @@ def bfs_expand(
             query,
             person_id=person_id,
             seed_uuids=seed_entity_uuids,
-            depth=depth,
             top_k=top_k,
             now=now,
         ).data()
@@ -1354,6 +1362,130 @@ def fetch_all_facts(
         row["source_name"] = dec(row.get("source_name_enc") or "", person_id)
         row["target_name"] = dec(row.get("target_name_enc") or "", person_id)
     return rows
+
+
+def _fetch_recent_facts(
+    driver,
+    database: str,
+    person_id: str,
+    limit: int = 100,
+    current_time: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch the most recent non-expired, currently valid facts for a person."""
+    now = _iso(current_time or datetime.now(timezone.utc))
+    query = """
+    MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
+    WHERE f.expired_at IS NULL
+      AND (f.valid_from IS NULL OR f.valid_from <= $now)
+      AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    RETURN a.uuid AS source_uuid,
+           b.uuid AS target_uuid,
+           a.name AS source_name_enc,
+           b.name AS target_name_enc,
+           f.uuid AS uuid,
+           f.fact AS fact_enc,
+           f.relation_type AS relation_type,
+           f.valid_from AS valid_from,
+           f.valid_to AS valid_to,
+           f.created_at AS created_at
+    ORDER BY f.created_at DESC
+    LIMIT $limit
+    """
+    with driver.session(database=database) as session:
+        rows = session.run(query, person_id=person_id, limit=limit, now=now).data()
+
+    for row in rows:
+        row["fact"] = dec(row.get("fact_enc") or "", person_id)
+        row["source_name"] = dec(row.get("source_name_enc") or "", person_id)
+        row["target_name"] = dec(row.get("target_name_enc") or "", person_id)
+    return rows
+
+
+def retrieve_facts(
+    driver,
+    database: str,
+    person_id: str,
+    query_text: str,
+    top_k: int = 12,
+    bfs_depth: int = 2,
+    bfs_top_k: int = 20,
+    embed_fn: Optional[Callable] = None,
+    current_time: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Hybrid fact retrieval: vector + BM25 seeds + BFS graph expansion.
+
+    Steps:
+    1. Retrieve top-k directly relevant facts via vector similarity + BM25.
+    2. Collect seed entity UUIDs from those facts.
+    3. Run BFS expansion from the seeds to pull in related facts.
+    4. Merge, deduplicate, and rank by retrieval score + recency.
+
+    If query_text is empty, returns the most recent facts instead.
+    """
+    if not query_text or not query_text.strip():
+        return _fetch_recent_facts(driver, database, person_id, limit=top_k, current_time=current_time)
+
+    # 1. Direct vector + BM25 retrieval.
+    direct = search_facts(
+        driver,
+        database,
+        person_id,
+        query_text,
+        top_k=top_k,
+        embed_fn=embed_fn,
+        current_time=current_time,
+    )
+    if not direct:
+        return []
+
+    # 2. BFS from seed entities found in direct hits.
+    seed_uuids: set = set()
+    for row in direct:
+        seed_uuids.add(row.get("source_uuid"))
+        seed_uuids.add(row.get("target_uuid"))
+
+    related = bfs_expand(
+        driver,
+        database,
+        person_id,
+        seed_entity_uuids=list(seed_uuids),
+        depth=bfs_depth,
+        top_k=bfs_top_k,
+        current_time=current_time,
+    )
+
+    # 3. Merge and deduplicate by fact UUID.
+    by_uuid: Dict[str, Dict[str, Any]] = {}
+    for row in direct:
+        row.setdefault("hop", 0)
+        # Slightly prefer directly retrieved facts over graph-expanded ones.
+        row["score"] = row.get("score", 0.0) + 0.1
+        by_uuid[row["uuid"]] = row
+
+    query_tokens = set(_tokens(query_text))
+    for row in related:
+        uuid = row["uuid"]
+        if uuid in by_uuid:
+            continue
+        # BFS facts start with a modest base score decayed by hop distance,
+        # then get a small overlap boost so relevant related facts rise.
+        hop = row.get("hop", 1)
+        base = max(0.03, 0.12 / hop)
+        fact_tokens = set(_tokens(f"{row.get('source_name', '')} {row.get('target_name', '')} {row.get('fact', '')}"))
+        overlap = len(query_tokens & fact_tokens) / max(len(query_tokens), 1)
+        row["score"] = base + 0.15 * overlap
+        by_uuid[uuid] = row
+
+    # 4. Rank by score, tie-break by recency.
+    scored = list(by_uuid.values())
+    scored.sort(
+        key=lambda r: (
+            r.get("score", 0.0),
+            r.get("created_at") or "",
+        ),
+        reverse=True,
+    )
+    return scored[:top_k]
 
 
 def format_context(facts: List[Dict[str, Any]]) -> str:

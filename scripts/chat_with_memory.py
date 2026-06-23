@@ -10,9 +10,9 @@ except ImportError:
     load_dotenv = None
 
 try:
-    from scripts.graph_memory import fetch_all_facts, format_context
+    from scripts.graph_memory import retrieve_facts, format_context
 except ImportError:
-    from graph_memory import fetch_all_facts, format_context  # type: ignore
+    from graph_memory import retrieve_facts, format_context  # type: ignore
 
 
 # ---------- env helpers ----------
@@ -29,9 +29,9 @@ def env_var(name: str) -> str:
 
 
 # ---------- neo4j helpers ----------
-def fetch_memory(driver, database: str, person_id: str) -> str:
-    """Pull all active ERF facts for the person as a formatted context block."""
-    facts = fetch_all_facts(driver, database, person_id)
+def fetch_memory(driver, database: str, person_id: str, query: str = "") -> str:
+    """Pull relevant ERF facts for the person as a formatted context block."""
+    facts = retrieve_facts(driver, database, person_id, query, top_k=100)
     return format_context(facts)
 
 
