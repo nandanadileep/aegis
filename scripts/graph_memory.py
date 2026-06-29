@@ -80,6 +80,8 @@ def _embedding_dimensions() -> int:
 
 FACT_FTS_INDEX = "factSearchText"
 FACT_VECTOR_INDEX = "factEmbedding"
+COMMUNITY_FTS_INDEX = "communitySearchText"
+COMMUNITY_VECTOR_INDEX = "communityEmbedding"
 
 
 def _now_iso() -> str:
@@ -561,6 +563,11 @@ def _build_fact_search_text(
     return " ".join(p.strip() for p in parts if p and p.strip()).lower()
 
 
+def _build_community_search_text(name: str, summary: str) -> str:
+    """Plaintext search field for Community full-text indexes."""
+    return " ".join(p.strip() for p in (name, summary) if p and p.strip()).lower()
+
+
 def _fact_validity_pred(alias: str = "f") -> str:
     """Cypher predicate for currently valid, non-expired facts."""
     return f"""
@@ -877,6 +884,21 @@ def ensure_indexes(driver, database: str) -> None:
           }}
         }}
         """,
+        "CREATE INDEX community_person_id IF NOT EXISTS FOR (c:Community) ON (c.person_id)",
+        f"""
+        CREATE FULLTEXT INDEX {COMMUNITY_FTS_INDEX} IF NOT EXISTS
+        FOR (c:Community) ON EACH [c.search_text]
+        """,
+        f"""
+        CREATE VECTOR INDEX {COMMUNITY_VECTOR_INDEX} IF NOT EXISTS
+        FOR (c:Community) ON (c.embedding)
+        OPTIONS {{
+          indexConfig: {{
+            `vector.dimensions`: {dim},
+            `vector.similarity_function`: 'cosine'
+          }}
+        }}
+        """,
     ]
     with driver.session(database=database) as session:
         for stmt in statements:
@@ -888,6 +910,55 @@ def ensure_indexes(driver, database: str) -> None:
         backfill_fact_search_fields(driver, database)
     except Exception as e:
         print(f"[ensure_indexes] backfill_fact_search_fields failed: {e}")
+    try:
+        backfill_community_search_fields(driver, database)
+    except Exception as e:
+        print(f"[ensure_indexes] backfill_community_search_fields failed: {e}")
+
+
+def backfill_community_search_fields(
+    driver,
+    database: str,
+    person_id: Optional[str] = None,
+    batch_size: int = 200,
+) -> int:
+    """Populate search_text on legacy Community nodes missing the field."""
+    query = """
+    MATCH (c:Community)
+    WHERE c.search_text IS NULL
+      AND ($person_id IS NULL OR c.person_id = $person_id)
+    RETURN c.uuid AS uuid,
+           c.person_id AS person_id,
+           c.name AS name,
+           c.summary AS summary_enc
+    LIMIT $batch_size
+    """
+    update = """
+    MATCH (c:Community {uuid: $uuid, person_id: $person_id})
+    SET c.search_text = $search_text
+    """
+    updated = 0
+    with driver.session(database=database) as session:
+        while True:
+            rows = session.run(
+                query,
+                person_id=person_id,
+                batch_size=batch_size,
+            ).data()
+            if not rows:
+                break
+            for row in rows:
+                pid = row["person_id"]
+                summary = dec(row.get("summary_enc") or "", pid)
+                search_text = _build_community_search_text(row.get("name") or "", summary)
+                session.run(
+                    update,
+                    uuid=row["uuid"],
+                    person_id=pid,
+                    search_text=search_text,
+                )
+                updated += 1
+    return updated
 
 
 def backfill_fact_search_fields(
@@ -1618,6 +1689,244 @@ def search_facts(
         )
 
 
+_COMMUNITY_HYBRID_SEARCH_CYPHER = """
+CALL {
+  CALL db.index.fulltext.queryNodes($fts_index, $fts_query)
+  YIELD node AS c, score AS fts_raw
+  WHERE c.person_id = $person_id
+  RETURN c, fts_raw, 0.0 AS vec_raw
+  UNION ALL
+  CALL db.index.vector.queryNodes($vec_index, $candidate_k, $query_embedding)
+  YIELD node AS c, score AS vec_raw
+  WHERE c.person_id = $person_id
+  RETURN c, 0.0 AS fts_raw, vec_raw
+}
+WITH c, max(fts_raw) AS fts_raw, max(vec_raw) AS vec_raw
+OPTIONAL MATCH (e:Entity {person_id: $person_id})-[:BELONGS_TO]->(c)
+WITH c, fts_raw, vec_raw, collect(DISTINCT e.uuid) AS entity_uuids
+WITH c, entity_uuids, fts_raw, vec_raw,
+     CASE WHEN fts_raw > 0 THEN fts_raw / (fts_raw + 1.0) ELSE 0.0 END AS fts_norm,
+     coalesce(vec_raw, 0.0) AS vec_norm
+WITH c, entity_uuids,
+     CASE
+       WHEN fts_norm > 0 AND vec_norm > 0 THEN 0.6 * vec_norm + 0.4 * fts_norm
+       WHEN vec_norm > 0 THEN vec_norm
+       WHEN fts_norm > 0 THEN fts_norm
+       ELSE 0.0
+     END AS score
+WHERE score > $min_score
+RETURN c.uuid AS uuid,
+       c.name AS name,
+       c.summary AS summary_enc,
+       entity_uuids,
+       score
+ORDER BY score DESC, c.updated_at DESC
+LIMIT $top_k
+"""
+
+_COMMUNITY_FTS_SEARCH_CYPHER = """
+CALL db.index.fulltext.queryNodes($fts_index, $fts_query)
+YIELD node AS c, score AS fts_raw
+WHERE c.person_id = $person_id
+OPTIONAL MATCH (e:Entity {person_id: $person_id})-[:BELONGS_TO]->(c)
+WITH c, collect(DISTINCT e.uuid) AS entity_uuids, fts_raw / (fts_raw + 1.0) AS score
+WHERE score > $min_score
+RETURN c.uuid AS uuid,
+       c.name AS name,
+       c.summary AS summary_enc,
+       entity_uuids,
+       score
+ORDER BY score DESC, c.updated_at DESC
+LIMIT $top_k
+"""
+
+_COMMUNITY_VECTOR_SEARCH_CYPHER = """
+CALL db.index.vector.queryNodes($vec_index, $candidate_k, $query_embedding)
+YIELD node AS c, score
+WHERE c.person_id = $person_id
+OPTIONAL MATCH (e:Entity {person_id: $person_id})-[:BELONGS_TO]->(c)
+WITH c, collect(DISTINCT e.uuid) AS entity_uuids, score
+WHERE score > $min_score
+RETURN c.uuid AS uuid,
+       c.name AS name,
+       c.summary AS summary_enc,
+       entity_uuids,
+       score
+ORDER BY score DESC, c.updated_at DESC
+LIMIT $top_k
+"""
+
+
+def _search_communities_fallback(
+    driver,
+    database: str,
+    person_id: str,
+    query_text: str,
+    top_k: int,
+    embed_fn: Callable,
+) -> List[Dict[str, Any]]:
+    """Score communities in Python when semantic indexes are unavailable."""
+    communities = fetch_communities(driver, database, person_id, limit=max(top_k * 3, 20))
+    if not communities:
+        return []
+
+    query_tokens = set(_tokens(query_text))
+    query_embedding: Optional[List[float]] = None
+    if _embedding_model():
+        embs = embed_fn([query_text])
+        query_embedding = embs[0] if embs else None
+
+    scored = []
+    for community in communities:
+        search_text = _build_community_search_text(
+            community.get("name") or "",
+            community.get("summary") or "",
+        )
+        comm_tokens = set(_tokens(search_text))
+        overlap = len(query_tokens & comm_tokens) / max(len(query_tokens), 1)
+
+        vec_sim = 0.0
+        if query_embedding and community.get("embedding"):
+            try:
+                vec_sim = _cosine_similarity(query_embedding, community["embedding"])
+            except Exception:
+                pass
+
+        score = 0.6 * vec_sim + 0.4 * overlap
+        if score > 0.02:
+            scored.append((score, {**community, "score": score}))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [item for _, item in scored[:top_k]]
+
+
+def search_communities(
+    driver,
+    database: str,
+    person_id: str,
+    query_text: str,
+    top_k: int = 5,
+    embed_fn: Optional[Callable] = None,
+) -> List[Dict[str, Any]]:
+    """Coarse retrieval: match Community nodes by summary/name via FTS + vector."""
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+
+    fts_query = _sanitize_fts_query(query_text)
+    query_embedding: Optional[List[float]] = None
+    if _embedding_model():
+        embs = embed_fn([query_text])
+        query_embedding = embs[0] if embs else None
+
+    use_fts = bool(fts_query)
+    use_vector = query_embedding is not None
+    if not use_fts and not use_vector:
+        return []
+
+    candidate_k = max(top_k * 10, 30)
+    params: Dict[str, Any] = {
+        "person_id": person_id,
+        "top_k": top_k,
+        "min_score": 0.02,
+        "candidate_k": candidate_k,
+        "fts_index": COMMUNITY_FTS_INDEX,
+        "vec_index": COMMUNITY_VECTOR_INDEX,
+        "fts_query": fts_query,
+        "query_embedding": query_embedding,
+    }
+
+    if use_fts and use_vector:
+        cypher = _COMMUNITY_HYBRID_SEARCH_CYPHER
+    elif use_fts:
+        cypher = _COMMUNITY_FTS_SEARCH_CYPHER
+    else:
+        cypher = _COMMUNITY_VECTOR_SEARCH_CYPHER
+
+    try:
+        with driver.session(database=database) as session:
+            rows = session.run(cypher, **params).data()
+    except Exception as exc:
+        print(f"[search_communities] index search failed, using fallback: {exc}")
+        return _search_communities_fallback(
+            driver, database, person_id, query_text, top_k, embed_fn
+        )
+
+    communities = []
+    for row in rows:
+        communities.append({
+            "uuid": row["uuid"],
+            "name": row.get("name") or "",
+            "summary": dec(row.get("summary_enc") or "", person_id),
+            "entity_uuids": [u for u in (row.get("entity_uuids") or []) if u],
+            "score": row.get("score", 0.0),
+        })
+    return communities
+
+
+def fetch_facts_for_entities(
+    driver,
+    database: str,
+    person_id: str,
+    entity_uuids: List[str],
+    top_k: int = 30,
+    current_time: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch valid facts touching any of the given entity UUIDs."""
+    if not entity_uuids:
+        return []
+
+    now = _iso(current_time or datetime.now(timezone.utc))
+    query = f"""
+    MATCH (a:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]->(b:Entity {{person_id: $person_id}})
+    WHERE (a.uuid IN $entity_uuids OR b.uuid IN $entity_uuids)
+      AND {_fact_validity_pred("f")}
+    RETURN DISTINCT a.uuid AS source_uuid,
+           b.uuid AS target_uuid,
+           a.name AS source_name_enc,
+           b.name AS target_name_enc,
+           f.uuid AS uuid,
+           f.fact AS fact_enc,
+           f.relation_type AS relation_type,
+           f.valid_from AS valid_from,
+           f.valid_to AS valid_to,
+           f.created_at AS created_at,
+           f.embedding AS embedding
+    ORDER BY f.created_at DESC
+    LIMIT $top_k
+    """
+    with driver.session(database=database) as session:
+        rows = session.run(
+            query,
+            person_id=person_id,
+            entity_uuids=entity_uuids,
+            now=now,
+            top_k=top_k,
+        ).data()
+    return _hydrate_fact_rows(rows, person_id)
+
+
+def _score_facts_from_communities(
+    facts: List[Dict[str, Any]],
+    communities: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Propagate community match scores onto expanded facts."""
+    entity_score: Dict[str, float] = {}
+    for community in communities:
+        score = float(community.get("score") or 0.0)
+        for entity_uuid in community.get("entity_uuids") or []:
+            entity_score[entity_uuid] = max(entity_score.get(entity_uuid, 0.0), score)
+
+    scored_facts = []
+    for fact in facts:
+        fact_score = max(
+            entity_score.get(fact.get("source_uuid") or "", 0.0),
+            entity_score.get(fact.get("target_uuid") or "", 0.0),
+        )
+        if fact_score > 0:
+            scored_facts.append({**fact, "score": fact_score})
+    return scored_facts
+
+
 def bfs_expand(
     driver,
     database: str,
@@ -1753,17 +2062,20 @@ def retrieve_facts(
     top_k: int = 12,
     bfs_depth: int = 2,
     bfs_top_k: int = 20,
+    community_top_k: int = 5,
+    community_fact_top_k: int = 30,
     embed_fn: Optional[Callable] = None,
     current_time: Optional[datetime] = None,
     rerank_method: str = "rrf",
 ) -> List[Dict[str, Any]]:
-    """Hybrid fact retrieval: vector + BM25 seeds + BFS graph expansion + rerank.
+    """Hybrid fact retrieval: communities + direct search + BFS + rerank.
 
     Steps:
-    1. Retrieve top-k directly relevant facts via vector similarity + BM25.
-    2. Collect seed entity UUIDs from those facts.
-    3. Run BFS expansion from the seeds to find related facts.
-    4. Rerank the merged direct + BFS facts (RRF, MMR, or cross-encoder).
+    1. Match top communities by summary/name (coarse retrieval layer).
+    2. Expand matched communities to member-entity facts.
+    3. Retrieve top-k directly relevant facts via vector + full-text search.
+    4. BFS-expand from seed entities found in direct and community hits.
+    5. Rerank direct, community-expanded, and BFS facts (RRF, MMR, or cross-encoder).
 
     If query_text is empty, returns the most recent facts instead.
 
@@ -1773,7 +2085,35 @@ def retrieve_facts(
     if not query_text or not query_text.strip():
         return _fetch_recent_facts(driver, database, person_id, limit=top_k, current_time=current_time)
 
-    # 1. Direct vector + BM25 retrieval.
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+
+    # 1. Coarse community retrieval.
+    communities = search_communities(
+        driver,
+        database,
+        person_id,
+        query_text,
+        top_k=community_top_k,
+        embed_fn=embed_fn,
+    )
+    community_entity_uuids: set = set()
+    for community in communities:
+        community_entity_uuids.update(community.get("entity_uuids") or [])
+
+    community_facts: List[Dict[str, Any]] = []
+    if community_entity_uuids:
+        raw_community_facts = fetch_facts_for_entities(
+            driver,
+            database,
+            person_id,
+            entity_uuids=list(community_entity_uuids),
+            top_k=community_fact_top_k,
+            current_time=current_time,
+        )
+        community_facts = _score_facts_from_communities(raw_community_facts, communities)
+
+    # 2. Direct fact retrieval.
     direct = search_facts(
         driver,
         database,
@@ -1783,11 +2123,12 @@ def retrieve_facts(
         embed_fn=embed_fn,
         current_time=current_time,
     )
-    if not direct:
+
+    if not direct and not community_facts:
         return []
 
-    # 2. BFS from seed entities found in direct hits.
-    seed_uuids: set = set()
+    # 3. BFS from seeds in direct hits and matched community entities.
+    seed_uuids: set = set(community_entity_uuids)
     for row in direct:
         seed_uuids.add(row.get("source_uuid"))
         seed_uuids.add(row.get("target_uuid"))
@@ -1800,13 +2141,14 @@ def retrieve_facts(
         depth=bfs_depth,
         top_k=bfs_top_k,
         current_time=current_time,
-    )
+    ) if seed_uuids else []
 
-    # 3. Rerank merged direct and BFS facts.
+    # 4. Rerank merged direct, community-expanded, and BFS facts.
     return rerank_facts(
         query_text,
         direct_facts=direct,
         related_facts=related,
+        community_facts=community_facts,
         method=rerank_method,
         top_k=top_k,
         embed_fn=embed_fn,
@@ -1826,26 +2168,29 @@ def _rerank_rrf(
     rrf_k: int,
     direct_weight: float = 1.0,
     related_weight: float = 0.8,
+    community_facts: Optional[List[Dict[str, Any]]] = None,
+    community_weight: float = 0.7,
 ) -> List[Dict[str, Any]]:
-    """Reciprocal Rank Fusion of direct and BFS fact rankings.
+    """Reciprocal Rank Fusion of direct, BFS, and community-expanded fact rankings."""
+    ranked_lists = [
+        (direct_facts, direct_weight),
+        (related_facts, related_weight),
+    ]
+    if community_facts:
+        ranked_lists.append((community_facts, community_weight))
 
-    Direct retrieval is weighted slightly higher than graph-expanded facts
-    because it is grounded in explicit query relevance.
-    """
-    direct_ranking = _ranked_uuids(direct_facts)
-    related_ranking = _ranked_uuids(related_facts)
     rrf_scores: Dict[str, float] = {}
-    for rank, uuid in enumerate(direct_ranking, start=1):
-        rrf_scores[uuid] = rrf_scores.get(uuid, 0.0) + direct_weight / (rrf_k + rank)
-    for rank, uuid in enumerate(related_ranking, start=1):
-        rrf_scores[uuid] = rrf_scores.get(uuid, 0.0) + related_weight / (rrf_k + rank)
+    for facts, weight in ranked_lists:
+        for rank, fact_uuid in enumerate(_ranked_uuids(facts), start=1):
+            rrf_scores[fact_uuid] = rrf_scores.get(fact_uuid, 0.0) + weight / (rrf_k + rank)
 
     by_uuid: Dict[str, Dict[str, Any]] = {}
-    for row in direct_facts + related_facts:
-        uuid = row["uuid"]
-        if uuid not in by_uuid:
-            row["score"] = rrf_scores.get(uuid, 0.0)
-            by_uuid[uuid] = row
+    for facts, _ in ranked_lists:
+        for row in facts:
+            fact_uuid = row["uuid"]
+            if fact_uuid not in by_uuid:
+                row["score"] = rrf_scores.get(fact_uuid, 0.0)
+                by_uuid[fact_uuid] = row
 
     scored = list(by_uuid.values())
     scored.sort(
@@ -1862,12 +2207,16 @@ def _rerank_mmr(
     top_k: int,
     lambda_param: float,
     embed_fn: Optional[Callable],
+    community_facts: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Maximal Marginal Re-ranking: relevance vs. diversity.
 
     Requires fact embeddings. Falls back to RRF if embeddings are unavailable.
     """
-    candidates = {row["uuid"]: dict(row) for row in direct_facts + related_facts}
+    merged_related = list(related_facts)
+    if community_facts:
+        merged_related.extend(community_facts)
+    candidates = {row["uuid"]: dict(row) for row in direct_facts + merged_related}
     if not candidates:
         return []
 
@@ -1890,7 +2239,13 @@ def _rerank_mmr(
         if emb:
             embeddings[uuid] = emb
     if not query_embedding or len(embeddings) < len(candidates):
-        return _rerank_rrf(direct_facts, related_facts, top_k, rrf_k=60)
+        return _rerank_rrf(
+            direct_facts,
+            related_facts,
+            top_k,
+            rrf_k=60,
+            community_facts=community_facts,
+        )
 
     def _sim(a: List[float], b: List[float]) -> float:
         return _cosine_similarity(a, b)
@@ -1942,19 +2297,29 @@ def _rerank_cross_encoder(
     related_facts: List[Dict[str, Any]],
     top_k: int,
     model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    community_facts: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Cross-encoder reranking using sentence-transformers.
 
     Falls back to RRF if the library or model is unavailable.
     """
-    candidates = {row["uuid"]: dict(row) for row in direct_facts + related_facts}
+    merged_related = list(related_facts)
+    if community_facts:
+        merged_related.extend(community_facts)
+    candidates = {row["uuid"]: dict(row) for row in direct_facts + merged_related}
     if not candidates:
         return []
 
     try:
         model = _load_cross_encoder(model_name)
     except Exception:
-        return _rerank_rrf(direct_facts, related_facts, top_k, rrf_k=60)
+        return _rerank_rrf(
+            direct_facts,
+            related_facts,
+            top_k,
+            rrf_k=60,
+            community_facts=community_facts,
+        )
 
     pairs = [
         (query_text, f"{row['source_name']} {row['relation_type']} {row['target_name']}: {row['fact']}")
@@ -1963,7 +2328,13 @@ def _rerank_cross_encoder(
     try:
         scores = model.predict(pairs)
     except Exception:
-        return _rerank_rrf(direct_facts, related_facts, top_k, rrf_k=60)
+        return _rerank_rrf(
+            direct_facts,
+            related_facts,
+            top_k,
+            rrf_k=60,
+            community_facts=community_facts,
+        )
 
     for (uuid, row), score in zip(candidates.items(), scores):
         row["score"] = float(score)
@@ -1981,8 +2352,9 @@ def rerank_facts(
     rrf_k: int = 60,
     mmr_lambda: float = 0.5,
     embed_fn: Optional[Callable] = None,
+    community_facts: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Rerank direct retrieval and BFS-expanded facts.
+    """Rerank direct, community-expanded, and BFS-expanded facts.
 
     Methods:
     - "rrf": Reciprocal Rank Fusion (default, no extra deps).
@@ -1990,11 +2362,30 @@ def rerank_facts(
     - "cross_encoder": Neural cross-encoder (requires sentence-transformers).
     """
     if method == "mmr":
-        return _rerank_mmr(query_text, direct_facts, related_facts, top_k, mmr_lambda, embed_fn)
+        return _rerank_mmr(
+            query_text,
+            direct_facts,
+            related_facts,
+            top_k,
+            mmr_lambda,
+            embed_fn,
+            community_facts=community_facts,
+        )
     if method == "cross_encoder":
-        return _rerank_cross_encoder(query_text, direct_facts, related_facts, top_k)
-    # Default: RRF.
-    return _rerank_rrf(direct_facts, related_facts, top_k, rrf_k)
+        return _rerank_cross_encoder(
+            query_text,
+            direct_facts,
+            related_facts,
+            top_k,
+            community_facts=community_facts,
+        )
+    return _rerank_rrf(
+        direct_facts,
+        related_facts,
+        top_k,
+        rrf_k,
+        community_facts=community_facts,
+    )
 
 
 def format_context(facts: List[Dict[str, Any]]) -> str:
@@ -2310,6 +2701,16 @@ def detect_communities(
         community["name"] = name
         community["summary"] = summary
 
+    # Prefer summary embeddings for community retrieval when available.
+    if _embedding_model() and community_objects:
+        summary_texts = [
+            f"{c['name']} {c['summary']}".strip() for c in community_objects
+        ]
+        summary_embs = embed_fn(summary_texts)
+        for community, emb in zip(community_objects, summary_embs):
+            if emb:
+                community["embedding"] = emb
+
     # 7. Persist.
     _persist_communities(driver, database, person_id, community_objects)
     return community_objects
@@ -2338,6 +2739,7 @@ def _persist_communities(
     SET c.name = $name,
         c.summary = $summary_enc,
         c.extractive_summary = $extractive_enc,
+        c.search_text = $search_text,
         c.embedding = $embedding,
         c.updated_at = $now
     MERGE (p)-[:HAS_COMMUNITY]->(c)
@@ -2355,6 +2757,10 @@ def _persist_communities(
                 name=community["name"],
                 summary_enc=enc(community["summary"], person_id),
                 extractive_enc=enc(community["extractive_summary"], person_id),
+                search_text=_build_community_search_text(
+                    community["name"],
+                    community["summary"],
+                ),
                 embedding=_embedding_property(community.get("embedding")),
                 entity_uuids=community["entity_uuids"],
                 now=now,
