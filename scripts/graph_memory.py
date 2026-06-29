@@ -69,6 +69,19 @@ def _embedding_model() -> Optional[str]:
     return os.getenv("EMBEDDING_MODEL") or None
 
 
+def _embedding_dimensions() -> int:
+    """Vector index dimensionality; must match stored FACT embeddings."""
+    raw = os.getenv("EMBEDDING_DIMENSIONS", "1536")
+    try:
+        return int(raw)
+    except ValueError:
+        return 1536
+
+
+FACT_FTS_INDEX = "factSearchText"
+FACT_VECTOR_INDEX = "factEmbedding"
+
+
 def _now_iso() -> str:
     return _iso(datetime.now(timezone.utc))
 
@@ -525,6 +538,51 @@ def _tokens(text: str) -> List[str]:
     return [t.lower() for t in re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", text) if len(t) > 2]
 
 
+_LUCENE_SPECIAL = re.compile(r'([+\-&|!(){}[\]^"~*?:\\/])')
+
+
+def _sanitize_fts_query(query_text: str) -> str:
+    """Build a Lucene-safe full-text query from user text."""
+    tokens = _tokens(query_text)
+    if not tokens:
+        return ""
+    escaped = [_LUCENE_SPECIAL.sub(r"\\\1", token) for token in tokens]
+    return " AND ".join(escaped)
+
+
+def _build_fact_search_text(
+    source_name: str,
+    target_name: str,
+    relation_type: str,
+    fact_text: str,
+) -> str:
+    """Plaintext, token-friendly text stored on FACT for Neo4j full-text search."""
+    parts = [source_name, target_name, relation_type.replace("_", " "), fact_text]
+    return " ".join(p.strip() for p in parts if p and p.strip()).lower()
+
+
+def _fact_validity_pred(alias: str = "f") -> str:
+    """Cypher predicate for currently valid, non-expired facts."""
+    return f"""
+      {alias}.expired_at IS NULL
+      AND ({alias}.valid_from IS NULL OR {alias}.valid_from <= $now)
+      AND ({alias}.valid_to IS NULL OR {alias}.valid_to >= $now)
+    """
+
+
+def _hydrate_fact_rows(rows: List[Dict[str, Any]], person_id: str) -> List[Dict[str, Any]]:
+    """Decrypt entity/fact fields on search result rows."""
+    hydrated: List[Dict[str, Any]] = []
+    for row in rows:
+        hydrated.append({
+            **row,
+            "fact": dec(row.get("fact_enc") or "", person_id),
+            "source_name": dec(row.get("source_name_enc") or "", person_id),
+            "target_name": dec(row.get("target_name_enc") or "", person_id),
+        })
+    return hydrated
+
+
 def _cosine_similarity(a: List[float], b: List[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = sum(x * x for x in a) ** 0.5
@@ -797,6 +855,7 @@ def fetch_facts_between(
 
 def ensure_indexes(driver, database: str) -> None:
     """Create required indexes/constraints for the ERF graph."""
+    dim = _embedding_dimensions()
     statements = [
         "CREATE CONSTRAINT entity_uuid IF NOT EXISTS FOR (e:Entity) REQUIRE e.uuid IS UNIQUE",
         "CREATE CONSTRAINT episode_uuid IF NOT EXISTS FOR (ep:Episode) REQUIRE ep.id IS UNIQUE",
@@ -804,13 +863,85 @@ def ensure_indexes(driver, database: str) -> None:
         "CREATE INDEX fact_uuid IF NOT EXISTS FOR ()-[f:FACT]-() ON (f.uuid)",
         "CREATE INDEX fact_person_id IF NOT EXISTS FOR ()-[f:FACT]-() ON (f.person_id)",
         "CREATE INDEX entity_mention_episode IF NOT EXISTS FOR ()-[m:MENTIONED_IN]-() ON (m.person_id)",
+        f"""
+        CREATE FULLTEXT INDEX {FACT_FTS_INDEX} IF NOT EXISTS
+        FOR ()-[f:FACT]-() ON EACH [f.search_text]
+        """,
+        f"""
+        CREATE VECTOR INDEX {FACT_VECTOR_INDEX} IF NOT EXISTS
+        FOR ()-[f:FACT]-() ON (f.embedding)
+        OPTIONS {{
+          indexConfig: {{
+            `vector.dimensions`: {dim},
+            `vector.similarity_function`: 'cosine'
+          }}
+        }}
+        """,
     ]
     with driver.session(database=database) as session:
         for stmt in statements:
             try:
                 session.run(stmt)
             except Exception as e:
-                print(f"[ensure_indexes] {stmt} failed: {e}")
+                print(f"[ensure_indexes] {stmt.strip()[:80]} failed: {e}")
+    try:
+        backfill_fact_search_fields(driver, database)
+    except Exception as e:
+        print(f"[ensure_indexes] backfill_fact_search_fields failed: {e}")
+
+
+def backfill_fact_search_fields(
+    driver,
+    database: str,
+    person_id: Optional[str] = None,
+    batch_size: int = 200,
+) -> int:
+    """Populate search_text on legacy FACT relationships that predate indexing."""
+    query = """
+    MATCH (a:Entity)-[f:FACT]->(b:Entity)
+    WHERE f.search_text IS NULL
+      AND ($person_id IS NULL OR f.person_id = $person_id)
+    RETURN f.uuid AS uuid,
+           f.person_id AS person_id,
+           a.name AS source_name_enc,
+           b.name AS target_name_enc,
+           f.fact AS fact_enc,
+           f.relation_type AS relation_type
+    LIMIT $batch_size
+    """
+    update = """
+    MATCH ()-[f:FACT {uuid: $uuid, person_id: $person_id}]->()
+    SET f.search_text = $search_text
+    """
+    updated = 0
+    with driver.session(database=database) as session:
+        while True:
+            rows = session.run(
+                query,
+                person_id=person_id,
+                batch_size=batch_size,
+            ).data()
+            if not rows:
+                break
+            for row in rows:
+                pid = row["person_id"]
+                source_name = dec(row.get("source_name_enc") or "", pid)
+                target_name = dec(row.get("target_name_enc") or "", pid)
+                fact_text = dec(row.get("fact_enc") or "", pid)
+                search_text = _build_fact_search_text(
+                    source_name,
+                    target_name,
+                    row.get("relation_type") or "RELATED_TO",
+                    fact_text,
+                )
+                session.run(
+                    update,
+                    uuid=row["uuid"],
+                    person_id=pid,
+                    search_text=search_text,
+                )
+                updated += 1
+    return updated
 
 
 def _embedding_property(embedding: Optional[List[float]]) -> Optional[List[float]]:
@@ -874,6 +1005,7 @@ def create_fact(
         person_id: $person_id,
         fact: $fact_enc,
         relation_type: $relation_type,
+        search_text: $search_text,
         valid_from: $valid_from,
         valid_to: $valid_to,
         created_at: $created_at,
@@ -891,6 +1023,12 @@ def create_fact(
     # Untimed facts are valid from the moment they are recorded.
     created_at = fact.created_at or _now_iso()
     valid_from = fact.valid_from or created_at
+    search_text = _build_fact_search_text(
+        fact.source.name,
+        fact.target.name,
+        fact.relation_type,
+        fact.fact,
+    )
     with driver.session(database=database) as session:
         session.run(
             query,
@@ -900,6 +1038,7 @@ def create_fact(
             uuid=fact.uuid,
             fact_enc=enc(fact.fact, person_id),
             relation_type=fact.relation_type,
+            search_text=search_text,
             valid_from=valid_from,
             valid_to=fact.valid_to,
             created_at=created_at,
@@ -1230,34 +1369,126 @@ def run_graph_pipeline(
 # Retrieval
 # -----------------------------------------------------------------------------
 
-def search_facts(
+_HYBRID_SEARCH_CYPHER = """
+CALL {
+  CALL db.index.fulltext.queryRelationships($fts_index, $fts_query)
+  YIELD relationship AS f, score AS fts_raw
+  WHERE f.person_id = $person_id
+    AND f.expired_at IS NULL
+    AND (f.valid_from IS NULL OR f.valid_from <= $now)
+    AND (f.valid_to IS NULL OR f.valid_to >= $now)
+  RETURN f, fts_raw, 0.0 AS vec_raw
+  UNION ALL
+  CALL db.index.vector.queryRelationships($vec_index, $candidate_k, $query_embedding)
+  YIELD relationship AS f, score AS vec_raw
+  WHERE f.person_id = $person_id
+    AND f.expired_at IS NULL
+    AND (f.valid_from IS NULL OR f.valid_from <= $now)
+    AND (f.valid_to IS NULL OR f.valid_to >= $now)
+  RETURN f, 0.0 AS fts_raw, vec_raw
+}
+WITH f, max(fts_raw) AS fts_raw, max(vec_raw) AS vec_raw
+MATCH (a:Entity {person_id: $person_id})-[f]->(b:Entity {person_id: $person_id})
+WITH f, a, b, fts_raw, vec_raw,
+     CASE WHEN fts_raw > 0 THEN fts_raw / (fts_raw + 1.0) ELSE 0.0 END AS fts_norm,
+     coalesce(vec_raw, 0.0) AS vec_norm
+WITH f, a, b,
+     CASE
+       WHEN fts_norm > 0 AND vec_norm > 0 THEN 0.6 * vec_norm + 0.4 * fts_norm
+       WHEN vec_norm > 0 THEN vec_norm
+       WHEN fts_norm > 0 THEN fts_norm
+       ELSE 0.0
+     END AS score
+WHERE score > $min_score
+RETURN a.uuid AS source_uuid,
+       b.uuid AS target_uuid,
+       a.name AS source_name_enc,
+       b.name AS target_name_enc,
+       f.uuid AS uuid,
+       f.fact AS fact_enc,
+       f.relation_type AS relation_type,
+       f.valid_from AS valid_from,
+       f.valid_to AS valid_to,
+       f.created_at AS created_at,
+       f.embedding AS embedding,
+       score
+ORDER BY score DESC, f.created_at DESC
+LIMIT $top_k
+"""
+
+_FTS_SEARCH_CYPHER = """
+CALL db.index.fulltext.queryRelationships($fts_index, $fts_query)
+YIELD relationship AS f, score AS fts_raw
+WHERE f.person_id = $person_id
+  AND f.expired_at IS NULL
+  AND (f.valid_from IS NULL OR f.valid_from <= $now)
+  AND (f.valid_to IS NULL OR f.valid_to >= $now)
+MATCH (a:Entity {person_id: $person_id})-[f]->(b:Entity {person_id: $person_id})
+WITH f, a, b, fts_raw / (fts_raw + 1.0) AS score
+WHERE score > $min_score
+RETURN a.uuid AS source_uuid,
+       b.uuid AS target_uuid,
+       a.name AS source_name_enc,
+       b.name AS target_name_enc,
+       f.uuid AS uuid,
+       f.fact AS fact_enc,
+       f.relation_type AS relation_type,
+       f.valid_from AS valid_from,
+       f.valid_to AS valid_to,
+       f.created_at AS created_at,
+       f.embedding AS embedding,
+       score
+ORDER BY score DESC, f.created_at DESC
+LIMIT $top_k
+"""
+
+_VECTOR_SEARCH_CYPHER = """
+CALL db.index.vector.queryRelationships($vec_index, $candidate_k, $query_embedding)
+YIELD relationship AS f, score
+WHERE f.person_id = $person_id
+  AND f.expired_at IS NULL
+  AND (f.valid_from IS NULL OR f.valid_from <= $now)
+  AND (f.valid_to IS NULL OR f.valid_to >= $now)
+MATCH (a:Entity {person_id: $person_id})-[f]->(b:Entity {person_id: $person_id})
+WITH f, a, b, score
+WHERE score > $min_score
+RETURN a.uuid AS source_uuid,
+       b.uuid AS target_uuid,
+       a.name AS source_name_enc,
+       b.name AS target_name_enc,
+       f.uuid AS uuid,
+       f.fact AS fact_enc,
+       f.relation_type AS relation_type,
+       f.valid_from AS valid_from,
+       f.valid_to AS valid_to,
+       f.created_at AS created_at,
+       f.embedding AS embedding,
+       score
+ORDER BY score DESC, f.created_at DESC
+LIMIT $top_k
+"""
+
+
+def _search_facts_fallback(
     driver,
     database: str,
     person_id: str,
     query_text: str,
-    top_k: int = 10,
-    embed_fn: Optional[Callable] = None,
-    current_time: Optional[datetime] = None,
+    top_k: int,
+    embed_fn: Callable,
+    current_time: Optional[datetime],
+    scan_limit: int = 500,
 ) -> List[Dict[str, Any]]:
-    """Hybrid fact retrieval: vector + BM25 fallback + recency.
-
-    Only returns facts that are currently valid: valid_from <= now and
-    (valid_to IS NULL OR valid_to >= now).
-    """
-    if embed_fn is None:
-        embed_fn = _default_embed_fn
-
+    """Limited Python-side scoring when Neo4j semantic indexes are unavailable."""
     now = _iso(current_time or datetime.now(timezone.utc))
     query_embedding: Optional[List[float]] = None
     if _embedding_model():
         embs = embed_fn([query_text])
         query_embedding = embs[0] if embs else None
 
-    cypher = """
-    MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
-    WHERE f.expired_at IS NULL
-      AND (f.valid_from IS NULL OR f.valid_from <= $now)
-      AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    cypher = f"""
+    MATCH (a:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]->(b:Entity {{person_id: $person_id}})
+    WHERE {_fact_validity_pred("f")}
     RETURN a.uuid AS source_uuid,
            b.uuid AS target_uuid,
            a.name AS source_name_enc,
@@ -1268,24 +1499,36 @@ def search_facts(
            f.valid_from AS valid_from,
            f.valid_to AS valid_to,
            f.created_at AS created_at,
-           f.embedding AS embedding
+           f.embedding AS embedding,
+           f.search_text AS search_text
+    ORDER BY f.created_at DESC
+    LIMIT $scan_limit
     """
     with driver.session(database=database) as session:
-        rows = session.run(cypher, person_id=person_id, now=now).data()
+        rows = session.run(
+            cypher,
+            person_id=person_id,
+            now=now,
+            scan_limit=scan_limit,
+        ).data()
 
     query_tokens = set(_tokens(query_text))
     scored = []
     for row in rows:
-        fact_text = dec(row.get("fact_enc") or "", person_id)
-        source_name = dec(row.get("source_name_enc") or "", person_id)
-        target_name = dec(row.get("target_name_enc") or "", person_id)
-        full_text = f"{source_name} {target_name} {fact_text}"
-
-        # BM25-ish token overlap
-        fact_tokens = set(_tokens(full_text))
+        search_text = row.get("search_text") or ""
+        if not search_text:
+            fact_text = dec(row.get("fact_enc") or "", person_id)
+            source_name = dec(row.get("source_name_enc") or "", person_id)
+            target_name = dec(row.get("target_name_enc") or "", person_id)
+            search_text = _build_fact_search_text(
+                source_name,
+                target_name,
+                row.get("relation_type") or "RELATED_TO",
+                fact_text,
+            )
+        fact_tokens = set(_tokens(search_text))
         overlap = len(query_tokens & fact_tokens) / max(len(query_tokens), 1)
 
-        # Vector similarity
         emb_sim = 0.0
         if query_embedding and row.get("embedding"):
             try:
@@ -1297,15 +1540,82 @@ def search_facts(
         if score > 0.02:
             item = {
                 **row,
-                "fact": fact_text,
-                "source_name": source_name,
-                "target_name": target_name,
+                "fact": dec(row.get("fact_enc") or "", person_id),
+                "source_name": dec(row.get("source_name_enc") or "", person_id),
+                "target_name": dec(row.get("target_name_enc") or "", person_id),
                 "score": score,
             }
             scored.append((score, item))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item for _, item in scored[:top_k]]
+
+
+def search_facts(
+    driver,
+    database: str,
+    person_id: str,
+    query_text: str,
+    top_k: int = 10,
+    embed_fn: Optional[Callable] = None,
+    current_time: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Hybrid fact retrieval via Neo4j full-text + vector indexes.
+
+    Uses db.index.fulltext.queryRelationships and
+    db.index.vector.queryRelationships, merging scores in Cypher.
+    Falls back to a capped Python-side scan if indexes are unavailable.
+    """
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+
+    now = _iso(current_time or datetime.now(timezone.utc))
+    fts_query = _sanitize_fts_query(query_text)
+    query_embedding: Optional[List[float]] = None
+    if _embedding_model():
+        embs = embed_fn([query_text])
+        query_embedding = embs[0] if embs else None
+
+    use_fts = bool(fts_query)
+    use_vector = query_embedding is not None
+    if not use_fts and not use_vector:
+        return []
+
+    candidate_k = max(top_k * 10, 50)
+    params: Dict[str, Any] = {
+        "person_id": person_id,
+        "now": now,
+        "top_k": top_k,
+        "min_score": 0.02,
+        "candidate_k": candidate_k,
+        "fts_index": FACT_FTS_INDEX,
+        "vec_index": FACT_VECTOR_INDEX,
+        "fts_query": fts_query,
+        "query_embedding": query_embedding,
+    }
+
+    if use_fts and use_vector:
+        cypher = _HYBRID_SEARCH_CYPHER
+    elif use_fts:
+        cypher = _FTS_SEARCH_CYPHER
+    else:
+        cypher = _VECTOR_SEARCH_CYPHER
+
+    try:
+        with driver.session(database=database) as session:
+            rows = session.run(cypher, **params).data()
+        return _hydrate_fact_rows(rows, person_id)
+    except Exception as exc:
+        print(f"[search_facts] index search failed, using fallback: {exc}")
+        return _search_facts_fallback(
+            driver,
+            database,
+            person_id,
+            query_text,
+            top_k,
+            embed_fn,
+            current_time,
+        )
 
 
 def bfs_expand(

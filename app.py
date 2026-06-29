@@ -49,6 +49,7 @@ try:
         retrieve_facts,
         format_context,
         create_episode,
+        ensure_indexes,
     )
 except ImportError:
     from graph_memory import (  # type: ignore
@@ -57,6 +58,7 @@ except ImportError:
         retrieve_facts,
         format_context,
         create_episode,
+        ensure_indexes,
     )
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
@@ -628,6 +630,8 @@ except Exception:
     REDIS_CLIENT = None  # will be lazy-initialized on first use
 try:
     NEO4J_DRIVER = get_neo4j_driver()
+    if NEO4J_DRIVER and DATABASE:
+        ensure_indexes(NEO4J_DRIVER, DATABASE)
 except Exception:
     NEO4J_DRIVER = None  # will be lazy-initialized on first use
 
