@@ -447,6 +447,14 @@ function copy() {{
 </html>"""
 
 
+_GREETING = re.compile(
+    r"^(hi|hello|hey|howdy|sup|yo|good\s*(morning|afternoon|evening)|"
+    r"what's\s*up|greetings|hola|hiya|hey\s+there|"
+    r"nice\s+to\s+meet|pleased?\s+to\s+meet)"
+    r"\b.*$",
+    re.I,
+)
+
 def needs_retrieval(message: str) -> bool:
     """Cheap heuristic: does this message plausibly need personal context?
 
@@ -739,6 +747,10 @@ def _build_chat_system_prompt(
         "- If they say something new, accept it. If it contradicts stored facts, trust what they say now.",
         "- Only bring up a stored fact when it genuinely helps answer this message.",
         "- Don't speculate about their motives or mental state. You're working from chat input, not a clinical read.",
+        "",
+        "Domain knowledge:",
+        "- This app is called Identiti — a personal memory layer that builds a knowledge graph from conversation.",
+        "- If they mention MCP or Model Context Protocol, they mean the open standard for connecting LLMs to tools and data (not conversational context). Know it and engage on it.",
     ]
 
     if user_summary:
