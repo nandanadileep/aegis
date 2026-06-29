@@ -1414,6 +1414,8 @@ def run_graph_pipeline(
             person_id,
             embed_fn=embed_fn,
             llm_fn=llm_fn,
+            episode_id=episode_id,
+            touched_entity_uuids=[e.uuid for e in merged_entities],
         )
     except Exception:
         # Community detection should not break the pipeline.
@@ -2587,101 +2589,67 @@ def _community_centroid_embedding(
     return [sum(v[i] for v in vectors) / len(vectors) for i in range(dim)]
 
 
-def detect_communities(
-    driver,
-    database: str,
-    person_id: str,
-    embed_fn: Optional[Callable] = None,
-    llm_fn: Optional[Callable] = None,
+def _cluster_entity_sets(
+    entity_uuids: Set[str],
+    entities: List[Dict[str, Any]],
+    facts: List[Dict[str, Any]],
+    embeddings: Dict[str, List[float]],
     max_community_size: int = 8,
-) -> List[Dict[str, Any]]:
-    """Detect semantic communities in the ERF graph and summarize them.
+) -> List[Set[str]]:
+    """Cluster a subset of entities via connected components + semantic split."""
+    scoped_entities = [e for e in entities if e["uuid"] in entity_uuids]
+    scoped_facts = [
+        f for f in facts
+        if f.get("source_uuid") in entity_uuids and f.get("target_uuid") in entity_uuids
+    ]
+    components = _connected_components(scoped_entities, scoped_facts)
 
-    Steps:
-    1. Fetch all non-expired, currently valid entities and facts.
-    2. Compute connected components over the entity graph.
-    3. Split very large components by embedding similarity.
-    4. For each community, generate an extractive and abstractive summary.
-    5. Persist Community nodes and BELONGS_TO links.
-
-    Returns the list of persisted communities with metadata.
-    """
-    if llm_fn is None:
-        llm_fn = _default_llm_fn
-    if embed_fn is None:
-        embed_fn = _default_embed_fn
-
-    now = _iso(datetime.now(timezone.utc))
-
-    # 1. Fetch entities.
-    entity_query = """
-    MATCH (e:Entity {person_id: $person_id})
-    RETURN e.uuid AS uuid,
-           e.name AS name_enc,
-           e.type AS type_enc,
-           e.summary AS summary_enc,
-           e.embedding AS embedding
-    """
-    with driver.session(database=database) as session:
-        entity_rows = session.run(entity_query, person_id=person_id).data()
-
-    entities = []
-    embeddings: Dict[str, List[float]] = {}
-    for row in entity_rows:
-        row["name"] = dec(row.get("name_enc") or "", person_id)
-        row["entity_type"] = dec(row.get("type_enc") or "", person_id)
-        row["summary"] = dec(row.get("summary_enc") or "", person_id)
-        entities.append(row)
-        if row.get("embedding"):
-            embeddings[row["uuid"]] = row["embedding"]
-
-    # 2. Fetch facts.
-    fact_query = """
-    MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
-    WHERE f.expired_at IS NULL
-      AND (f.valid_from IS NULL OR f.valid_from <= $now)
-      AND (f.valid_to IS NULL OR f.valid_to >= $now)
-    RETURN a.uuid AS source_uuid,
-           b.uuid AS target_uuid,
-           a.name AS source_name_enc,
-           b.name AS target_name_enc,
-           f.uuid AS uuid,
-           f.fact AS fact_enc,
-           f.relation_type AS relation_type,
-           f.valid_from AS valid_from,
-           f.valid_to AS valid_to,
-           f.created_at AS created_at
-    """
-    with driver.session(database=database) as session:
-        fact_rows = session.run(fact_query, person_id=person_id, now=now).data()
-
-    facts = []
-    for row in fact_rows:
-        row["fact"] = dec(row.get("fact_enc") or "", person_id)
-        row["source_name"] = dec(row.get("source_name_enc") or "", person_id)
-        row["target_name"] = dec(row.get("target_name_enc") or "", person_id)
-        facts.append(row)
-
-    # 3. Connected components.
-    components = _connected_components(entities, facts)
-
-    # 4. Split large components semantically.
     communities: List[Set[str]] = []
     for component in components:
         if len(component) <= max_community_size:
             communities.append(component)
         else:
-            communities.extend(_split_large_component(component, embeddings, max_size=max_community_size))
+            communities.extend(
+                _split_large_component(component, embeddings, max_size=max_community_size)
+            )
+    return communities
 
-    # 5. Build community objects.
-    entity_lookup = {e["uuid"]: e for e in entities}
-    community_objects = []
-    for member_uuids in communities:
-        member_entities = [entity_lookup[uuid] for uuid in member_uuids if uuid in entity_lookup]
-        member_facts = _community_facts(member_uuids, facts)
+
+def _collect_incremental_affected_scope(
+    seed_entity_uuids: Set[str],
+    neighbor_entity_uuids: Set[str],
+    entity_to_communities: Dict[str, Set[str]],
+    community_members: Dict[str, Set[str]],
+) -> Tuple[Set[str], Set[str]]:
+    """Return entity and community UUIDs touched by an incremental update."""
+    frontier = set(seed_entity_uuids) | set(neighbor_entity_uuids)
+    affected_community_uuids: Set[str] = set()
+    for entity_uuid in frontier:
+        affected_community_uuids.update(entity_to_communities.get(entity_uuid, set()))
+
+    affected_entity_uuids = set(frontier)
+    for community_uuid in affected_community_uuids:
+        affected_entity_uuids.update(community_members.get(community_uuid, set()))
+
+    return affected_entity_uuids, affected_community_uuids
+
+
+def _build_community_objects(
+    clusters: List[Set[str]],
+    entity_lookup: Dict[str, Dict[str, Any]],
+    facts: List[Dict[str, Any]],
+    embeddings: Dict[str, List[float]],
+    person_id: str,
+) -> List[Dict[str, Any]]:
+    """Build unsummarized community dicts from entity clusters."""
+    community_objects: List[Dict[str, Any]] = []
+    for member_uuids in clusters:
+        member_entities = [
+            entity_lookup[uuid] for uuid in member_uuids if uuid in entity_lookup
+        ]
         if not member_entities:
             continue
-        centroid = _community_centroid_embedding(member_uuids, embeddings)
+        member_facts = _community_facts(member_uuids, facts)
         community_objects.append({
             "uuid": str(__import__("uuid").uuid4()),
             "person_id": person_id,
@@ -2692,17 +2660,26 @@ def detect_communities(
             "extractive_summary": _extractive_summary(member_facts),
             "entity_uuids": list(member_uuids),
             "fact_uuids": [f["uuid"] for f in member_facts],
-            "embedding": centroid,
+            "embedding": _community_centroid_embedding(member_uuids, embeddings),
         })
+    return community_objects
 
-    # 6. Batch-summarize all communities in one LLM call.
+
+def _summarize_and_embed_communities(
+    community_objects: List[Dict[str, Any]],
+    embed_fn: Callable,
+    llm_fn: Callable,
+) -> None:
+    """Attach LLM summaries and optional summary embeddings in place."""
+    if not community_objects:
+        return
+
     summaries = _summarize_communities(community_objects, llm_fn=llm_fn)
     for community, (name, summary) in zip(community_objects, summaries):
         community["name"] = name
         community["summary"] = summary
 
-    # Prefer summary embeddings for community retrieval when available.
-    if _embedding_model() and community_objects:
+    if _embedding_model():
         summary_texts = [
             f"{c['name']} {c['summary']}".strip() for c in community_objects
         ]
@@ -2711,26 +2688,216 @@ def detect_communities(
             if emb:
                 community["embedding"] = emb
 
-    # 7. Persist.
-    _persist_communities(driver, database, person_id, community_objects)
-    return community_objects
+
+def _fetch_episode_entity_uuids(
+    driver,
+    database: str,
+    person_id: str,
+    episode_id: str,
+) -> List[str]:
+    """Entity UUIDs mentioned in or extracted from an episode."""
+    query = """
+    MATCH (ep:Episode {id: $episode_id, person_id: $person_id})
+    OPTIONAL MATCH (e:Entity {person_id: $person_id})-[:MENTIONED_IN]->(ep)
+    WITH collect(DISTINCT e.uuid) AS mentioned
+    MATCH (ep:Episode {id: $episode_id, person_id: $person_id})
+    OPTIONAL MATCH (ep)-[:EXTRACTED]->(x:Entity {person_id: $person_id})
+    WITH mentioned, collect(DISTINCT x.uuid) AS extracted
+    RETURN [u IN mentioned + extracted WHERE u IS NOT NULL] AS uuids
+    """
+    with driver.session(database=database) as session:
+        row = session.run(
+            query,
+            person_id=person_id,
+            episode_id=episode_id,
+        ).single()
+    if not row:
+        return []
+    return [uuid for uuid in (row.get("uuids") or []) if uuid]
 
 
-def _persist_communities(
+def _fetch_entity_neighbor_uuids(
+    driver,
+    database: str,
+    person_id: str,
+    seed_entity_uuids: List[str],
+    current_time: Optional[datetime] = None,
+) -> List[str]:
+    """One-hop entity neighbors over currently valid FACT edges."""
+    if not seed_entity_uuids:
+        return []
+
+    now = _iso(current_time or datetime.now(timezone.utc))
+    query = f"""
+    MATCH (seed:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]-(neighbor:Entity {{person_id: $person_id}})
+    WHERE seed.uuid IN $seed_entity_uuids
+      AND {_fact_validity_pred("f")}
+    RETURN DISTINCT neighbor.uuid AS uuid
+    """
+    with driver.session(database=database) as session:
+        rows = session.run(
+            query,
+            person_id=person_id,
+            seed_entity_uuids=seed_entity_uuids,
+            now=now,
+        ).data()
+    return [row["uuid"] for row in rows if row.get("uuid")]
+
+
+def _fetch_community_membership_maps(
+    driver,
+    database: str,
+    person_id: str,
+) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
+    """Return entity->communities and community->entities membership maps."""
+    query = """
+    MATCH (c:Community {person_id: $person_id})<-[:BELONGS_TO]-(e:Entity {person_id: $person_id})
+    RETURN c.uuid AS community_uuid, collect(DISTINCT e.uuid) AS entity_uuids
+    """
+    with driver.session(database=database) as session:
+        rows = session.run(query, person_id=person_id).data()
+
+    community_members: Dict[str, Set[str]] = {}
+    entity_to_communities: Dict[str, Set[str]] = {}
+    for row in rows:
+        community_uuid = row["community_uuid"]
+        members = set(row.get("entity_uuids") or [])
+        community_members[community_uuid] = members
+        for entity_uuid in members:
+            entity_to_communities.setdefault(entity_uuid, set()).add(community_uuid)
+    return entity_to_communities, community_members
+
+
+def _load_entities_and_facts(
+    driver,
+    database: str,
+    person_id: str,
+    entity_uuids: Optional[Set[str]] = None,
+    current_time: Optional[datetime] = None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, List[float]]]:
+    """Load entities, scoped facts, and embedding map for community detection."""
+    now = _iso(current_time or datetime.now(timezone.utc))
+
+    if entity_uuids is None:
+        entity_query = """
+        MATCH (e:Entity {person_id: $person_id})
+        RETURN e.uuid AS uuid,
+               e.name AS name_enc,
+               e.type AS type_enc,
+               e.summary AS summary_enc,
+               e.embedding AS embedding
+        """
+        entity_params: Dict[str, Any] = {"person_id": person_id}
+    else:
+        entity_query = """
+        MATCH (e:Entity {person_id: $person_id})
+        WHERE e.uuid IN $entity_uuids
+        RETURN e.uuid AS uuid,
+               e.name AS name_enc,
+               e.type AS type_enc,
+               e.summary AS summary_enc,
+               e.embedding AS embedding
+        """
+        entity_params = {"person_id": person_id, "entity_uuids": list(entity_uuids)}
+
+    with driver.session(database=database) as session:
+        entity_rows = session.run(entity_query, **entity_params).data()
+
+    entities: List[Dict[str, Any]] = []
+    embeddings: Dict[str, List[float]] = {}
+    loaded_uuids: Set[str] = set()
+    for row in entity_rows:
+        row["name"] = dec(row.get("name_enc") or "", person_id)
+        row["entity_type"] = dec(row.get("type_enc") or "", person_id)
+        row["summary"] = dec(row.get("summary_enc") or "", person_id)
+        entities.append(row)
+        loaded_uuids.add(row["uuid"])
+        if row.get("embedding"):
+            embeddings[row["uuid"]] = row["embedding"]
+
+    if entity_uuids is None:
+        fact_query = f"""
+        MATCH (a:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]->(b:Entity {{person_id: $person_id}})
+        WHERE {_fact_validity_pred("f")}
+        RETURN a.uuid AS source_uuid,
+               b.uuid AS target_uuid,
+               a.name AS source_name_enc,
+               b.name AS target_name_enc,
+               f.uuid AS uuid,
+               f.fact AS fact_enc,
+               f.relation_type AS relation_type,
+               f.valid_from AS valid_from,
+               f.valid_to AS valid_to,
+               f.created_at AS created_at
+        """
+        fact_params: Dict[str, Any] = {"person_id": person_id, "now": now}
+    else:
+        fact_query = f"""
+        MATCH (a:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]->(b:Entity {{person_id: $person_id}})
+        WHERE a.uuid IN $entity_uuids
+          AND b.uuid IN $entity_uuids
+          AND {_fact_validity_pred("f")}
+        RETURN a.uuid AS source_uuid,
+               b.uuid AS target_uuid,
+               a.name AS source_name_enc,
+               b.name AS target_name_enc,
+               f.uuid AS uuid,
+               f.fact AS fact_enc,
+               f.relation_type AS relation_type,
+               f.valid_from AS valid_from,
+               f.valid_to AS valid_to,
+               f.created_at AS created_at
+        """
+        fact_params = {
+            "person_id": person_id,
+            "entity_uuids": list(entity_uuids),
+            "now": now,
+        }
+
+    with driver.session(database=database) as session:
+        fact_rows = session.run(fact_query, **fact_params).data()
+
+    facts: List[Dict[str, Any]] = []
+    for row in fact_rows:
+        row["fact"] = dec(row.get("fact_enc") or "", person_id)
+        row["source_name"] = dec(row.get("source_name_enc") or "", person_id)
+        row["target_name"] = dec(row.get("target_name_enc") or "", person_id)
+        facts.append(row)
+
+    return entities, facts, embeddings
+
+
+def _delete_communities(
+    driver,
+    database: str,
+    person_id: str,
+    community_uuids: List[str],
+) -> None:
+    """Delete specific Community nodes for a person."""
+    if not community_uuids:
+        return
+    query = """
+    MATCH (c:Community {person_id: $person_id})
+    WHERE c.uuid IN $community_uuids
+    DETACH DELETE c
+    """
+    with driver.session(database=database) as session:
+        session.run(
+            query,
+            person_id=person_id,
+            community_uuids=community_uuids,
+        )
+
+
+def _upsert_communities(
     driver,
     database: str,
     person_id: str,
     communities: List[Dict[str, Any]],
 ) -> None:
-    """Write Community nodes and BELONGS_TO relationships to Neo4j."""
-    # Clear old communities for this person.
-    clear_query = """
-    MATCH (p:Person {id: $person_id})
-    OPTIONAL MATCH (p)-[:HAS_COMMUNITY]->(c:Community {person_id: $person_id})
-    DETACH DELETE c
-    """
-    with driver.session(database=database) as session:
-        session.run(clear_query, person_id=person_id)
+    """Create or update Community nodes without clearing unrelated communities."""
+    if not communities:
+        return
 
     now = _now_iso()
     create_query = """
@@ -2743,6 +2910,9 @@ def _persist_communities(
         c.embedding = $embedding,
         c.updated_at = $now
     MERGE (p)-[:HAS_COMMUNITY]->(c)
+    WITH c
+    OPTIONAL MATCH (e:Entity {person_id: $person_id})-[old:BELONGS_TO]->(c)
+    DELETE old
     WITH c
     UNWIND $entity_uuids AS entity_uuid
     MATCH (e:Entity {uuid: entity_uuid, person_id: $person_id})
@@ -2765,6 +2935,161 @@ def _persist_communities(
                 entity_uuids=community["entity_uuids"],
                 now=now,
             )
+
+
+def _detect_communities_full(
+    driver,
+    database: str,
+    person_id: str,
+    embed_fn: Callable,
+    llm_fn: Callable,
+    max_community_size: int = 8,
+    current_time: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Rebuild all communities from scratch."""
+    entities, facts, embeddings = _load_entities_and_facts(
+        driver, database, person_id, current_time=current_time
+    )
+    clusters = _cluster_entity_sets(
+        {e["uuid"] for e in entities},
+        entities,
+        facts,
+        embeddings,
+        max_community_size=max_community_size,
+    )
+    entity_lookup = {e["uuid"]: e for e in entities}
+    community_objects = _build_community_objects(
+        clusters, entity_lookup, facts, embeddings, person_id
+    )
+    _summarize_and_embed_communities(community_objects, embed_fn, llm_fn)
+    _persist_communities(driver, database, person_id, community_objects)
+    return community_objects
+
+
+def _detect_communities_incremental(
+    driver,
+    database: str,
+    person_id: str,
+    seed_entity_uuids: List[str],
+    embed_fn: Callable,
+    llm_fn: Callable,
+    max_community_size: int = 8,
+    current_time: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Re-cluster only communities touched by the latest episode entities."""
+    seeds = {uuid for uuid in seed_entity_uuids if uuid}
+    if not seeds:
+        return []
+
+    neighbors = set(_fetch_entity_neighbor_uuids(
+        driver, database, person_id, list(seeds), current_time=current_time
+    ))
+    entity_to_communities, community_members = _fetch_community_membership_maps(
+        driver, database, person_id
+    )
+    affected_entity_uuids, affected_community_uuids = _collect_incremental_affected_scope(
+        seeds,
+        neighbors,
+        entity_to_communities,
+        community_members,
+    )
+    if not affected_entity_uuids:
+        return []
+
+    entities, facts, embeddings = _load_entities_and_facts(
+        driver,
+        database,
+        person_id,
+        entity_uuids=affected_entity_uuids,
+        current_time=current_time,
+    )
+    clusters = _cluster_entity_sets(
+        affected_entity_uuids,
+        entities,
+        facts,
+        embeddings,
+        max_community_size=max_community_size,
+    )
+    entity_lookup = {e["uuid"]: e for e in entities}
+    community_objects = _build_community_objects(
+        clusters, entity_lookup, facts, embeddings, person_id
+    )
+    _summarize_and_embed_communities(community_objects, embed_fn, llm_fn)
+
+    _delete_communities(driver, database, person_id, list(affected_community_uuids))
+    _upsert_communities(driver, database, person_id, community_objects)
+    return community_objects
+
+
+def detect_communities(
+    driver,
+    database: str,
+    person_id: str,
+    embed_fn: Optional[Callable] = None,
+    llm_fn: Optional[Callable] = None,
+    max_community_size: int = 8,
+    episode_id: Optional[str] = None,
+    touched_entity_uuids: Optional[List[str]] = None,
+    current_time: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Detect semantic communities in the ERF graph and summarize them.
+
+    When episode/touched-entity hints are provided and communities already
+    exist, only re-clusters the affected region. Otherwise performs a full
+    rebuild.
+    """
+    if llm_fn is None:
+        llm_fn = _default_llm_fn
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+
+    seed_uuids: Set[str] = set(touched_entity_uuids or [])
+    if episode_id:
+        seed_uuids.update(_fetch_episode_entity_uuids(
+            driver, database, person_id, episode_id
+        ))
+
+    _, community_members = _fetch_community_membership_maps(driver, database, person_id)
+    if community_members and seed_uuids:
+        return _detect_communities_incremental(
+            driver,
+            database,
+            person_id,
+            seed_entity_uuids=list(seed_uuids),
+            embed_fn=embed_fn,
+            llm_fn=llm_fn,
+            max_community_size=max_community_size,
+            current_time=current_time,
+        )
+
+    return _detect_communities_full(
+        driver,
+        database,
+        person_id,
+        embed_fn=embed_fn,
+        llm_fn=llm_fn,
+        max_community_size=max_community_size,
+        current_time=current_time,
+    )
+
+
+def _persist_communities(
+    driver,
+    database: str,
+    person_id: str,
+    communities: List[Dict[str, Any]],
+) -> None:
+    """Replace all Community nodes for a person."""
+    clear_query = """
+    MATCH (p:Person {id: $person_id})
+    OPTIONAL MATCH (p)-[:HAS_COMMUNITY]->(c:Community {person_id: $person_id})
+    RETURN collect(c.uuid) AS uuids
+    """
+    with driver.session(database=database) as session:
+        row = session.run(clear_query, person_id=person_id).single()
+    existing = [uuid for uuid in (row.get("uuids") if row else []) or [] if uuid]
+    _delete_communities(driver, database, person_id, existing)
+    _upsert_communities(driver, database, person_id, communities)
 
 
 def fetch_communities(
