@@ -1328,6 +1328,24 @@ def resolve_facts(
 # High-level pipeline
 # -----------------------------------------------------------------------------
 
+def format_episodic_context(
+    history: List[Dict[str, str]],
+    max_turns: int = 6,
+) -> str:
+    """Format prior chat turns for entity/fact extraction prompts."""
+    if not history:
+        return ""
+    limit = max(max_turns, 1) * 2
+    recent = history[-limit:] if len(history) > limit else history
+    lines = []
+    for msg in recent:
+        role = str(msg.get("role", "assistant")).capitalize()
+        content = str(msg.get("content", "")).strip()
+        if content:
+            lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
 def run_graph_pipeline(
     conversation: str,
     person_id: str,
@@ -1335,18 +1353,20 @@ def run_graph_pipeline(
     database: str,
     ref_time: Optional[datetime] = None,
     episode_id: Optional[str] = None,
+    previous_messages: str = "",
     llm_fn: Optional[Callable] = None,
     embed_fn: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """Run the full Zep-style ERF extraction pipeline.
 
     Args:
-        conversation: the message text to process.
+        conversation: the current message text to process.
         person_id: the user's stable id.
         driver: Neo4j driver.
         database: Neo4j database name.
         ref_time: optional reference time for temporal extraction.
         episode_id: optional existing episode to link entities/facts to.
+        previous_messages: optional prior turns for episodic extraction context.
         llm_fn: optional LLM caller.
         embed_fn: optional embedding caller (texts -> list of vectors).
 
@@ -1359,7 +1379,11 @@ def run_graph_pipeline(
         embed_fn = _default_embed_fn
 
     # 1. Extract entities.
-    entities = extract_entities(conversation, llm_fn=llm_fn)
+    entities = extract_entities(
+        conversation,
+        previous_messages=previous_messages,
+        llm_fn=llm_fn,
+    )
     if not entities:
         return {"entities": [], "facts": [], "episode_id": episode_id}
 
@@ -1375,7 +1399,12 @@ def run_graph_pipeline(
             e.embedding = emb
 
     # 4. Extract facts.
-    facts = extract_facts(merged_entities, conversation, llm_fn=llm_fn)
+    facts = extract_facts(
+        merged_entities,
+        conversation,
+        previous_messages=previous_messages,
+        llm_fn=llm_fn,
+    )
 
     # 5. Extract temporal bounds for facts.
     ref_time = ref_time or datetime.now(timezone.utc)

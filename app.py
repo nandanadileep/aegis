@@ -50,6 +50,7 @@ try:
         format_context,
         create_episode,
         ensure_indexes,
+        format_episodic_context,
     )
 except ImportError:
     from graph_memory import (  # type: ignore
@@ -59,11 +60,13 @@ except ImportError:
         format_context,
         create_episode,
         ensure_indexes,
+        format_episodic_context,
     )
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
 LLM_FAST = os.getenv("LLM_FAST", "groq/qwen3-32b")
 DAILY_MSG_LIMIT = int(os.getenv("DAILY_MSG_LIMIT", "30"))
+EPISODIC_CONTEXT_TURNS = int(os.getenv("EPISODIC_CONTEXT_TURNS", "6"))
 
 # Canonical label → relationship type used by all write paths
 LABEL_TO_REL: Dict[str, str] = {
@@ -715,16 +718,7 @@ def _erf_facts_to_summary_records(facts: List[Dict[str, Any]]) -> List[Dict[str,
 
 def _format_recent_conversation(history: List[Dict[str, str]], max_turns: int = 4) -> str:
     """Format the most recent conversation turns as a Zep-style episode block."""
-    recent = history[-max_turns * 2:] if len(history) > max_turns * 2 else history
-    if not recent:
-        return ""
-    lines = []
-    for msg in recent:
-        role = msg.get("role", "assistant").capitalize()
-        content = msg.get("content", "").strip()
-        if content:
-            lines.append(f"{role}: {content}")
-    return "\n".join(lines)
+    return format_episodic_context(history, max_turns=max_turns)
 
 
 def _build_chat_system_prompt(
@@ -894,6 +888,10 @@ def chat():
         try:
             driver = get_neo4j_driver()
             transcript = f"User: {user_message}\nAssistant: {reply}"
+            previous_messages = format_episodic_context(
+                conversation_history,
+                max_turns=EPISODIC_CONTEXT_TURNS,
+            )
             episode_id = create_episode(driver, DATABASE, person_id, body=transcript)
             run_graph_pipeline(
                 conversation=transcript,
@@ -901,6 +899,7 @@ def chat():
                 driver=driver,
                 database=DATABASE,
                 episode_id=episode_id,
+                previous_messages=previous_messages,
                 llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
             )
             # Memory changed; invalidate cached user summary so next chat gets
@@ -982,13 +981,15 @@ def proxy_completions():
     def _extract_proxy_memory():
         try:
             driver = get_neo4j_driver()
-            transcript_bits = []
-            for m in non_system:
-                role = m.get("role", "").capitalize()
-                content = str(m.get("content", "")).strip()
-                if content:
-                    transcript_bits.append(f"{role}: {content}")
-            transcript = "\n".join(transcript_bits)
+            try:
+                prior_history = load_conversation_history(person_id)
+            except Exception:
+                prior_history = []
+            previous_messages = format_episodic_context(
+                prior_history,
+                max_turns=EPISODIC_CONTEXT_TURNS,
+            )
+            transcript = f"User: {user_messages[-1]}\nAssistant: {reply}" if user_messages else reply
             if transcript:
                 episode_id = create_episode(driver, DATABASE, person_id, body=transcript)
                 run_graph_pipeline(
@@ -997,6 +998,7 @@ def proxy_completions():
                     driver=driver,
                     database=DATABASE,
                     episode_id=episode_id,
+                    previous_messages=previous_messages,
                     llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
                 )
                 invalidate_user_summary(REDIS_CLIENT, person_id)
