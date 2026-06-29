@@ -5,7 +5,7 @@ import base64
 import uuid
 import random
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse, urlunparse, quote
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -1373,14 +1373,19 @@ def get_graph():
     """
     edges_query = """
     MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
-    WHERE f.expired_at IS NULL
+    WHERE (f.ingested_at IS NULL OR f.ingested_at <= $now)
+      AND (f.created_at IS NULL OR f.created_at <= $now)
+      AND (f.expired_at IS NULL OR f.expired_at > $now)
+      AND (f.valid_from IS NULL OR f.valid_from <= $now)
+      AND (f.valid_to IS NULL OR f.valid_to >= $now)
     RETURN f.uuid AS id, a.uuid AS from_id, b.uuid AS to_id, f.relation_type AS label
     """
 
     try:
+        now = datetime.now(timezone.utc).isoformat()
         with get_neo4j_driver().session(database=DATABASE) as session:
             nodes_result = session.run(nodes_query, person_id=person_id).data()
-            edges_result = session.run(edges_query, person_id=person_id).data()
+            edges_result = session.run(edges_query, person_id=person_id, now=now).data()
 
         nodes = []
         for record in nodes_result:

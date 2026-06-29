@@ -5,7 +5,7 @@ This module builds a dynamic, temporally-aware knowledge graph:
 
     (Person)-[:HAS_EPISODE]->(Episode)
     (Episode)-[:EXTRACTED]->(Fact)
-    (Entity)-[:FACT {valid_from, valid_to, expired_at}]->(Entity)
+    (Entity)-[:FACT {valid_from, valid_to, expired_at, created_at, ingested_at, source_episode_id}]->(Entity)
     (Entity)-[:MENTIONED_IN]->(Episode)
 
 Design choices:
@@ -569,12 +569,45 @@ def _build_community_search_text(name: str, summary: str) -> str:
 
 
 def _fact_validity_pred(alias: str = "f") -> str:
-    """Cypher predicate for currently valid, non-expired facts."""
+    """Bi-temporal Cypher predicate: fact was recorded and valid at $now."""
     return f"""
-      {alias}.expired_at IS NULL
+      ({alias}.ingested_at IS NULL OR {alias}.ingested_at <= $now)
+      AND ({alias}.created_at IS NULL OR {alias}.created_at <= $now)
+      AND ({alias}.expired_at IS NULL OR {alias}.expired_at > $now)
       AND ({alias}.valid_from IS NULL OR {alias}.valid_from <= $now)
       AND ({alias}.valid_to IS NULL OR {alias}.valid_to >= $now)
     """
+
+
+def _fact_as_of_pred_inline(alias: str = "f") -> str:
+    """Single-line bi-temporal predicate for index query WHERE clauses."""
+    a = alias
+    return (
+        f"({a}.ingested_at IS NULL OR {a}.ingested_at <= $now) "
+        f"AND ({a}.created_at IS NULL OR {a}.created_at <= $now) "
+        f"AND ({a}.expired_at IS NULL OR {a}.expired_at > $now) "
+        f"AND ({a}.valid_from IS NULL OR {a}.valid_from <= $now) "
+        f"AND ({a}.valid_to IS NULL OR {a}.valid_to >= $now)"
+    )
+
+
+def _resolve_as_of(
+    current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
+) -> datetime:
+    """Resolve the as-of datetime used for bi-temporal fact filtering."""
+    if as_of is not None:
+        return as_of
+    if current_time is not None:
+        return current_time
+    return datetime.now(timezone.utc)
+
+
+def _fact_provenance_return(alias: str = "f") -> str:
+    """Standard RETURN fragment for fact provenance fields."""
+    return f"""
+           {alias}.ingested_at AS ingested_at,
+           {alias}.source_episode_id AS source_episode_id,"""
 
 
 def _hydrate_fact_rows(rows: List[Dict[str, Any]], person_id: str) -> List[Dict[str, Any]]:
@@ -832,20 +865,22 @@ def fetch_facts_between(
     source_uuid: str,
     target_uuid: str,
     current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch currently valid, non-expired facts between two entity UUIDs."""
-    now = _iso(current_time or datetime.now(timezone.utc))
+    """Fetch facts between two entity UUIDs that are valid at the as-of time."""
+    now = _iso(_resolve_as_of(current_time, as_of))
     query = """
     MATCH (a:Entity {uuid: $source_uuid, person_id: $person_id})-
           [f:FACT {person_id: $person_id}]->(b:Entity {uuid: $target_uuid, person_id: $person_id})
-    WHERE f.expired_at IS NULL
-      AND (f.valid_from IS NULL OR f.valid_from <= $now)
-      AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    WHERE {_fact_validity_pred("f")}
     RETURN f.uuid AS uuid,
            f.fact AS fact_enc,
            f.relation_type AS relation_type,
            f.valid_from AS valid_from,
-           f.valid_to AS valid_to
+           f.valid_to AS valid_to,
+           f.created_at AS created_at,
+           f.ingested_at AS ingested_at,
+           f.source_episode_id AS source_episode_id
     """
     with driver.session(database=database) as session:
         rows = session.run(
@@ -869,6 +904,7 @@ def ensure_indexes(driver, database: str) -> None:
         "CREATE INDEX entity_person_id IF NOT EXISTS FOR (e:Entity) ON (e.person_id)",
         "CREATE INDEX fact_uuid IF NOT EXISTS FOR ()-[f:FACT]-() ON (f.uuid)",
         "CREATE INDEX fact_person_id IF NOT EXISTS FOR ()-[f:FACT]-() ON (f.person_id)",
+        "CREATE INDEX fact_source_episode IF NOT EXISTS FOR ()-[f:FACT]-() ON (f.source_episode_id)",
         "CREATE INDEX entity_mention_episode IF NOT EXISTS FOR ()-[m:MENTIONED_IN]-() ON (m.person_id)",
         f"""
         CREATE FULLTEXT INDEX {FACT_FTS_INDEX} IF NOT EXISTS
@@ -914,6 +950,41 @@ def ensure_indexes(driver, database: str) -> None:
         backfill_community_search_fields(driver, database)
     except Exception as e:
         print(f"[ensure_indexes] backfill_community_search_fields failed: {e}")
+    try:
+        backfill_fact_provenance(driver, database)
+    except Exception as e:
+        print(f"[ensure_indexes] backfill_fact_provenance failed: {e}")
+
+
+def backfill_fact_provenance(
+    driver,
+    database: str,
+    person_id: Optional[str] = None,
+    batch_size: int = 500,
+) -> int:
+    """Backfill ingested_at from created_at on legacy FACT relationships."""
+    query = """
+    MATCH ()-[f:FACT]->()
+    WHERE f.ingested_at IS NULL
+      AND f.created_at IS NOT NULL
+      AND ($person_id IS NULL OR f.person_id = $person_id)
+    WITH f LIMIT $batch_size
+    SET f.ingested_at = f.created_at
+    RETURN count(f) AS updated
+    """
+    total = 0
+    with driver.session(database=database) as session:
+        while True:
+            row = session.run(
+                query,
+                person_id=person_id,
+                batch_size=batch_size,
+            ).single()
+            updated = int(row.get("updated") or 0) if row else 0
+            if updated == 0:
+                break
+            total += updated
+    return total
 
 
 def backfill_community_search_fields(
@@ -1080,19 +1151,20 @@ def create_fact(
         valid_from: $valid_from,
         valid_to: $valid_to,
         created_at: $created_at,
+        ingested_at: $ingested_at,
+        source_episode_id: $source_episode_id,
         embedding: $embedding
     }]->(b)
     """
     if episode_id:
         query += """
-    WITH f
+    WITH f, a, b
     MATCH (ep:Episode {id: $episode_id, person_id: $person_id})
-    SET f.source_episode_id = $episode_id
     MERGE (ep)-[:EXTRACTED]->(a)
     MERGE (ep)-[:EXTRACTED]->(b)
     """
-    # Untimed facts are valid from the moment they are recorded.
-    created_at = fact.created_at or _now_iso()
+    ingested_at = _now_iso()
+    created_at = fact.created_at or ingested_at
     valid_from = fact.valid_from or created_at
     search_text = _build_fact_search_text(
         fact.source.name,
@@ -1113,6 +1185,8 @@ def create_fact(
             valid_from=valid_from,
             valid_to=fact.valid_to,
             created_at=created_at,
+            ingested_at=ingested_at,
+            source_episode_id=episode_id,
             embedding=_embedding_property(fact.embedding),
             episode_id=episode_id,
         )
@@ -1471,26 +1545,24 @@ def run_graph_pipeline(
 # Retrieval
 # -----------------------------------------------------------------------------
 
-_HYBRID_SEARCH_CYPHER = """
-CALL {
+_AS_OF_PRED = _fact_as_of_pred_inline("f")
+
+_HYBRID_SEARCH_CYPHER = f"""
+CALL {{
   CALL db.index.fulltext.queryRelationships($fts_index, $fts_query)
   YIELD relationship AS f, score AS fts_raw
   WHERE f.person_id = $person_id
-    AND f.expired_at IS NULL
-    AND (f.valid_from IS NULL OR f.valid_from <= $now)
-    AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    AND {_AS_OF_PRED}
   RETURN f, fts_raw, 0.0 AS vec_raw
   UNION ALL
   CALL db.index.vector.queryRelationships($vec_index, $candidate_k, $query_embedding)
   YIELD relationship AS f, score AS vec_raw
   WHERE f.person_id = $person_id
-    AND f.expired_at IS NULL
-    AND (f.valid_from IS NULL OR f.valid_from <= $now)
-    AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    AND {_AS_OF_PRED}
   RETURN f, 0.0 AS fts_raw, vec_raw
-}
+}}
 WITH f, max(fts_raw) AS fts_raw, max(vec_raw) AS vec_raw
-MATCH (a:Entity {person_id: $person_id})-[f]->(b:Entity {person_id: $person_id})
+MATCH (a:Entity {{person_id: $person_id}})-[f]->(b:Entity {{person_id: $person_id}})
 WITH f, a, b, fts_raw, vec_raw,
      CASE WHEN fts_raw > 0 THEN fts_raw / (fts_raw + 1.0) ELSE 0.0 END AS fts_norm,
      coalesce(vec_raw, 0.0) AS vec_norm
@@ -1512,20 +1584,20 @@ RETURN a.uuid AS source_uuid,
        f.valid_from AS valid_from,
        f.valid_to AS valid_to,
        f.created_at AS created_at,
+       f.ingested_at AS ingested_at,
+       f.source_episode_id AS source_episode_id,
        f.embedding AS embedding,
        score
 ORDER BY score DESC, f.created_at DESC
 LIMIT $top_k
 """
 
-_FTS_SEARCH_CYPHER = """
+_FTS_SEARCH_CYPHER = f"""
 CALL db.index.fulltext.queryRelationships($fts_index, $fts_query)
 YIELD relationship AS f, score AS fts_raw
 WHERE f.person_id = $person_id
-  AND f.expired_at IS NULL
-  AND (f.valid_from IS NULL OR f.valid_from <= $now)
-  AND (f.valid_to IS NULL OR f.valid_to >= $now)
-MATCH (a:Entity {person_id: $person_id})-[f]->(b:Entity {person_id: $person_id})
+  AND {_AS_OF_PRED}
+MATCH (a:Entity {{person_id: $person_id}})-[f]->(b:Entity {{person_id: $person_id}})
 WITH f, a, b, fts_raw / (fts_raw + 1.0) AS score
 WHERE score > $min_score
 RETURN a.uuid AS source_uuid,
@@ -1538,20 +1610,20 @@ RETURN a.uuid AS source_uuid,
        f.valid_from AS valid_from,
        f.valid_to AS valid_to,
        f.created_at AS created_at,
+       f.ingested_at AS ingested_at,
+       f.source_episode_id AS source_episode_id,
        f.embedding AS embedding,
        score
 ORDER BY score DESC, f.created_at DESC
 LIMIT $top_k
 """
 
-_VECTOR_SEARCH_CYPHER = """
+_VECTOR_SEARCH_CYPHER = f"""
 CALL db.index.vector.queryRelationships($vec_index, $candidate_k, $query_embedding)
 YIELD relationship AS f, score
 WHERE f.person_id = $person_id
-  AND f.expired_at IS NULL
-  AND (f.valid_from IS NULL OR f.valid_from <= $now)
-  AND (f.valid_to IS NULL OR f.valid_to >= $now)
-MATCH (a:Entity {person_id: $person_id})-[f]->(b:Entity {person_id: $person_id})
+  AND {_AS_OF_PRED}
+MATCH (a:Entity {{person_id: $person_id}})-[f]->(b:Entity {{person_id: $person_id}})
 WITH f, a, b, score
 WHERE score > $min_score
 RETURN a.uuid AS source_uuid,
@@ -1564,6 +1636,8 @@ RETURN a.uuid AS source_uuid,
        f.valid_from AS valid_from,
        f.valid_to AS valid_to,
        f.created_at AS created_at,
+       f.ingested_at AS ingested_at,
+       f.source_episode_id AS source_episode_id,
        f.embedding AS embedding,
        score
 ORDER BY score DESC, f.created_at DESC
@@ -1578,11 +1652,12 @@ def _search_facts_fallback(
     query_text: str,
     top_k: int,
     embed_fn: Callable,
-    current_time: Optional[datetime],
+    current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
     scan_limit: int = 500,
 ) -> List[Dict[str, Any]]:
     """Limited Python-side scoring when Neo4j semantic indexes are unavailable."""
-    now = _iso(current_time or datetime.now(timezone.utc))
+    now = _iso(_resolve_as_of(current_time, as_of))
     query_embedding: Optional[List[float]] = None
     if _embedding_model():
         embs = embed_fn([query_text])
@@ -1601,6 +1676,8 @@ def _search_facts_fallback(
            f.valid_from AS valid_from,
            f.valid_to AS valid_to,
            f.created_at AS created_at,
+           f.ingested_at AS ingested_at,
+           f.source_episode_id AS source_episode_id,
            f.embedding AS embedding,
            f.search_text AS search_text
     ORDER BY f.created_at DESC
@@ -1661,17 +1738,22 @@ def search_facts(
     top_k: int = 10,
     embed_fn: Optional[Callable] = None,
     current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """Hybrid fact retrieval via Neo4j full-text + vector indexes.
 
     Uses db.index.fulltext.queryRelationships and
     db.index.vector.queryRelationships, merging scores in Cypher.
     Falls back to a capped Python-side scan if indexes are unavailable.
+
+    Args:
+        as_of: Bi-temporal cut-off; facts must be recorded and valid at this time.
+            Takes precedence over ``current_time`` when both are set.
     """
     if embed_fn is None:
         embed_fn = _default_embed_fn
 
-    now = _iso(current_time or datetime.now(timezone.utc))
+    now = _iso(_resolve_as_of(current_time, as_of))
     fts_query = _sanitize_fts_query(query_text)
     query_embedding: Optional[List[float]] = None
     if _embedding_model():
@@ -1717,6 +1799,7 @@ def search_facts(
             top_k,
             embed_fn,
             current_time,
+            as_of=as_of,
         )
 
 
@@ -1901,12 +1984,13 @@ def fetch_facts_for_entities(
     entity_uuids: List[str],
     top_k: int = 30,
     current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """Fetch valid facts touching any of the given entity UUIDs."""
     if not entity_uuids:
         return []
 
-    now = _iso(current_time or datetime.now(timezone.utc))
+    now = _iso(_resolve_as_of(current_time, as_of))
     query = f"""
     MATCH (a:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]->(b:Entity {{person_id: $person_id}})
     WHERE (a.uuid IN $entity_uuids OR b.uuid IN $entity_uuids)
@@ -1921,6 +2005,8 @@ def fetch_facts_for_entities(
            f.valid_from AS valid_from,
            f.valid_to AS valid_to,
            f.created_at AS created_at,
+           f.ingested_at AS ingested_at,
+           f.source_episode_id AS source_episode_id,
            f.embedding AS embedding
     ORDER BY f.created_at DESC
     LIMIT $top_k
@@ -1966,12 +2052,13 @@ def bfs_expand(
     depth: int = 2,
     top_k: int = 20,
     current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """Breadth-first expansion from seed entities to find related facts.
 
-    Only returns currently valid facts.
+    Only returns facts valid at the as-of time.
     """
-    now = _iso(current_time or datetime.now(timezone.utc))
+    now = _iso(_resolve_as_of(current_time, as_of))
     # Neo4j does not accept parameters for variable-length path bounds, so we
     # interpolate the integer depth safely into the query string.
     query = f"""
@@ -1979,9 +2066,7 @@ def bfs_expand(
     WHERE seed.uuid IN $seed_uuids
     UNWIND relationships(path) AS f
     MATCH (a)-[f]->(b)
-    WHERE f.expired_at IS NULL
-      AND (f.valid_from IS NULL OR f.valid_from <= $now)
-      AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    WHERE {_fact_validity_pred("f")}
     RETURN DISTINCT a.uuid AS source_uuid,
            b.uuid AS target_uuid,
            a.name AS source_name_enc,
@@ -1991,6 +2076,9 @@ def bfs_expand(
            f.relation_type AS relation_type,
            f.valid_from AS valid_from,
            f.valid_to AS valid_to,
+           f.created_at AS created_at,
+           f.ingested_at AS ingested_at,
+           f.source_episode_id AS source_episode_id,
            length(path) AS hop
     ORDER BY hop
     LIMIT $top_k
@@ -2017,14 +2105,13 @@ def fetch_all_facts(
     person_id: str,
     limit: int = 10000,
     current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch all non-expired, currently valid facts for a person, ordered by recency."""
-    now = _iso(current_time or datetime.now(timezone.utc))
-    query = """
-    MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
-    WHERE f.expired_at IS NULL
-      AND (f.valid_from IS NULL OR f.valid_from <= $now)
-      AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    """Fetch all facts for a person that are valid at the as-of time."""
+    now = _iso(_resolve_as_of(current_time, as_of))
+    query = f"""
+    MATCH (a:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]->(b:Entity {{person_id: $person_id}})
+    WHERE {_fact_validity_pred("f")}
     RETURN a.uuid AS source_uuid,
            b.uuid AS target_uuid,
            a.name AS source_name_enc,
@@ -2034,7 +2121,9 @@ def fetch_all_facts(
            f.relation_type AS relation_type,
            f.valid_from AS valid_from,
            f.valid_to AS valid_to,
-           f.created_at AS created_at
+           f.created_at AS created_at,
+           f.ingested_at AS ingested_at,
+           f.source_episode_id AS source_episode_id
     ORDER BY f.created_at DESC
     LIMIT $limit
     """
@@ -2054,14 +2143,13 @@ def _fetch_recent_facts(
     person_id: str,
     limit: int = 100,
     current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
-    """Fetch the most recent non-expired, currently valid facts for a person."""
-    now = _iso(current_time or datetime.now(timezone.utc))
-    query = """
-    MATCH (a:Entity {person_id: $person_id})-[f:FACT {person_id: $person_id}]->(b:Entity {person_id: $person_id})
-    WHERE f.expired_at IS NULL
-      AND (f.valid_from IS NULL OR f.valid_from <= $now)
-      AND (f.valid_to IS NULL OR f.valid_to >= $now)
+    """Fetch the most recent facts for a person that are valid at the as-of time."""
+    now = _iso(_resolve_as_of(current_time, as_of))
+    query = f"""
+    MATCH (a:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]->(b:Entity {{person_id: $person_id}})
+    WHERE {_fact_validity_pred("f")}
     RETURN a.uuid AS source_uuid,
            b.uuid AS target_uuid,
            a.name AS source_name_enc,
@@ -2071,7 +2159,9 @@ def _fetch_recent_facts(
            f.relation_type AS relation_type,
            f.valid_from AS valid_from,
            f.valid_to AS valid_to,
-           f.created_at AS created_at
+           f.created_at AS created_at,
+           f.ingested_at AS ingested_at,
+           f.source_episode_id AS source_episode_id
     ORDER BY f.created_at DESC
     LIMIT $limit
     """
@@ -2097,6 +2187,7 @@ def retrieve_facts(
     community_fact_top_k: int = 30,
     embed_fn: Optional[Callable] = None,
     current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
     rerank_method: str = "rrf",
 ) -> List[Dict[str, Any]]:
     """Hybrid fact retrieval: communities + direct search + BFS + rerank.
@@ -2111,10 +2202,15 @@ def retrieve_facts(
     If query_text is empty, returns the most recent facts instead.
 
     Args:
+        as_of: Bi-temporal cut-off; facts must be recorded and valid at this time.
+            Takes precedence over ``current_time`` when both are set.
         rerank_method: one of "rrf" (default), "mmr", or "cross_encoder".
     """
+    effective_time = _resolve_as_of(current_time, as_of)
     if not query_text or not query_text.strip():
-        return _fetch_recent_facts(driver, database, person_id, limit=top_k, current_time=current_time)
+        return _fetch_recent_facts(
+            driver, database, person_id, limit=top_k, as_of=effective_time,
+        )
 
     if embed_fn is None:
         embed_fn = _default_embed_fn
@@ -2140,7 +2236,7 @@ def retrieve_facts(
             person_id,
             entity_uuids=list(community_entity_uuids),
             top_k=community_fact_top_k,
-            current_time=current_time,
+            as_of=effective_time,
         )
         community_facts = _score_facts_from_communities(raw_community_facts, communities)
 
@@ -2152,7 +2248,7 @@ def retrieve_facts(
         query_text,
         top_k=top_k,
         embed_fn=embed_fn,
-        current_time=current_time,
+        as_of=effective_time,
     )
 
     if not direct and not community_facts:
@@ -2171,7 +2267,7 @@ def retrieve_facts(
         seed_entity_uuids=list(seed_uuids),
         depth=bfs_depth,
         top_k=bfs_top_k,
-        current_time=current_time,
+        as_of=effective_time,
     ) if seed_uuids else []
 
     # 4. Rerank merged direct, community-expanded, and BFS facts.
