@@ -2515,8 +2515,16 @@ def rerank_facts(
     )
 
 
-def format_context(facts: List[Dict[str, Any]]) -> str:
-    """Format retrieved facts into a Zep-style context block."""
+def format_context(
+    facts: List[Dict[str, Any]],
+    include_episode_lineage: bool = False,
+) -> str:
+    """Format retrieved facts into a Zep-style context block.
+
+    Args:
+        include_episode_lineage: When True, append source episode and
+            provenance timestamps for debugging and trust.
+    """
     if not facts:
         return "No relevant facts."
     lines = []
@@ -2524,7 +2532,21 @@ def format_context(facts: List[Dict[str, Any]]) -> str:
         valid = ""
         if f.get("valid_from") or f.get("valid_to"):
             valid = f" (Date range: {f.get('valid_from') or 'unknown'} to {f.get('valid_to') or 'present'})"
-        lines.append(f"- {f['source_name']} {f['relation_type']} {f['target_name']}: {f['fact']}{valid}")
+        lineage = ""
+        if include_episode_lineage:
+            parts = []
+            if f.get("source_episode_id"):
+                parts.append(f"episode: {f['source_episode_id']}")
+            if f.get("ingested_at"):
+                parts.append(f"ingested: {f['ingested_at']}")
+            if f.get("created_at"):
+                parts.append(f"recorded: {f['created_at']}")
+            if parts:
+                lineage = f" [{', '.join(parts)}]"
+        lines.append(
+            f"- {f['source_name']} {f['relation_type']} {f['target_name']}: "
+            f"{f['fact']}{valid}{lineage}"
+        )
     return "\n".join(lines)
 
 

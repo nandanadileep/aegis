@@ -67,6 +67,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
 LLM_FAST = os.getenv("LLM_FAST", "groq/qwen3-32b")
 DAILY_MSG_LIMIT = int(os.getenv("DAILY_MSG_LIMIT", "30"))
 EPISODIC_CONTEXT_TURNS = int(os.getenv("EPISODIC_CONTEXT_TURNS", "6"))
+FORMAT_EPISODE_LINEAGE = os.getenv("FORMAT_EPISODE_LINEAGE", "").lower() in ("1", "true", "yes")
 
 # Canonical label → relationship type used by all write paths
 LABEL_TO_REL: Dict[str, str] = {
@@ -676,7 +677,7 @@ def context():
     try:
         driver = get_neo4j_driver()
         facts = retrieve_facts(driver, DATABASE, person_id, query_text="", top_k=200)
-        summary = format_context(facts)
+        summary = format_context(facts, include_episode_lineage=FORMAT_EPISODE_LINEAGE)
     except Exception:
         summary = "No stored memory yet."
     return jsonify({"context": summary})
@@ -830,7 +831,7 @@ def chat():
         try:
             driver = get_neo4j_driver()
             relevant_facts = retrieve_facts(driver, DATABASE, person_id, user_message, top_k=12)
-            memory_context = format_context(relevant_facts)
+            memory_context = format_context(relevant_facts, include_episode_lineage=FORMAT_EPISODE_LINEAGE)
             all_records = _erf_facts_to_summary_records(
                 retrieve_facts(driver, DATABASE, person_id, user_message, top_k=50)
             )
@@ -938,7 +939,7 @@ def proxy_completions():
     try:
         driver = get_neo4j_driver()
         records = retrieve_facts(driver, DATABASE, person_id, last_user_message, top_k=12) if last_user_message else []
-        memory_context = format_context(records)
+        memory_context = format_context(records, include_episode_lineage=FORMAT_EPISODE_LINEAGE)
         all_records = _erf_facts_to_summary_records(
             retrieve_facts(driver, DATABASE, person_id, last_user_message, top_k=50)
         )
