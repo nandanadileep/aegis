@@ -47,20 +47,26 @@ try:
         run_graph_pipeline,
         search_facts,
         retrieve_facts,
+        retrieve_memory,
         format_context,
+        format_zep_context,
         create_episode,
         ensure_indexes,
         format_episodic_context,
+        ingest_structured_memory,
     )
 except ImportError:
     from graph_memory import (  # type: ignore
         run_graph_pipeline,
         search_facts,
         retrieve_facts,
+        retrieve_memory,
         format_context,
+        format_zep_context,
         create_episode,
         ensure_indexes,
         format_episodic_context,
+        ingest_structured_memory,
     )
 
 LLM_MODEL = os.getenv("LLM_MODEL", "groq/llama-3.3-70b-versatile")
@@ -830,8 +836,15 @@ def chat():
     if needs_retrieval(user_message):
         try:
             driver = get_neo4j_driver()
-            relevant_facts = retrieve_facts(driver, DATABASE, person_id, user_message, top_k=12)
-            memory_context = format_context(relevant_facts, include_episode_lineage=FORMAT_EPISODE_LINEAGE)
+            memory = retrieve_memory(
+                driver, DATABASE, person_id, user_message, fact_top_k=12, entity_top_k=12,
+            )
+            if FORMAT_EPISODE_LINEAGE:
+                memory_context = format_context(
+                    memory["facts"], include_episode_lineage=True,
+                )
+            else:
+                memory_context = format_zep_context(memory["facts"], memory["entities"])
             all_records = _erf_facts_to_summary_records(
                 retrieve_facts(driver, DATABASE, person_id, user_message, top_k=50)
             )
@@ -938,8 +951,17 @@ def proxy_completions():
 
     try:
         driver = get_neo4j_driver()
-        records = retrieve_facts(driver, DATABASE, person_id, last_user_message, top_k=12) if last_user_message else []
-        memory_context = format_context(records, include_episode_lineage=FORMAT_EPISODE_LINEAGE)
+        records = []
+        memory_context = ""
+        if last_user_message:
+            memory = retrieve_memory(
+                driver, DATABASE, person_id, last_user_message, fact_top_k=12, entity_top_k=12,
+            )
+            records = memory["facts"]
+            if FORMAT_EPISODE_LINEAGE:
+                memory_context = format_context(records, include_episode_lineage=True)
+            else:
+                memory_context = format_zep_context(records, memory["entities"])
         all_records = _erf_facts_to_summary_records(
             retrieve_facts(driver, DATABASE, person_id, last_user_message, top_k=50)
         )
@@ -1074,6 +1096,85 @@ def save():
     if storage_warning:
         response["warning"] = storage_warning
     return jsonify(response)
+
+
+@app.route("/api/memory/add", methods=["POST"])
+@require_auth
+def memory_add():
+    """Add memory from structured JSON entities/facts or a transcript."""
+    body = parse_body_json()
+    person_id = resolve_person_id(body)
+
+    entities_data = body.get("entities")
+    facts_data = body.get("facts")
+    text = (
+        body.get("text")
+        or body.get("transcript")
+        or body.get("message")
+        or ""
+    )
+    if isinstance(text, str):
+        text = text.strip()
+    else:
+        text = ""
+
+    has_structured = (
+        isinstance(entities_data, list) and len(entities_data) > 0
+    ) or (
+        isinstance(facts_data, list) and len(facts_data) > 0
+    )
+    if not has_structured and not text:
+        return jsonify({
+            "error": "invalid payload",
+            "detail": "Provide entities/facts JSON or a text/transcript field.",
+        }), 400
+
+    try:
+        driver = get_neo4j_driver()
+        episode_body = text or json.dumps({
+            "entities": entities_data or [],
+            "facts": facts_data or [],
+        }, ensure_ascii=False)
+        episode_id = create_episode(
+            driver,
+            DATABASE,
+            person_id,
+            body=episode_body,
+            source=str(body.get("source") or "api"),
+            episode_id=body.get("episode_id"),
+        )
+
+        if has_structured:
+            result = ingest_structured_memory(
+                driver,
+                DATABASE,
+                person_id,
+                entities_data=entities_data if isinstance(entities_data, list) else [],
+                facts_data=facts_data if isinstance(facts_data, list) else [],
+                episode_id=episode_id,
+                llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+                resolve_entities_flag=bool(body.get("resolve_entities", True)),
+                resolve_facts_flag=bool(body.get("resolve_facts", True)),
+                detect_communities_flag=bool(body.get("detect_communities", True)),
+            )
+        else:
+            result = run_graph_pipeline(
+                conversation=text,
+                person_id=person_id,
+                driver=driver,
+                database=DATABASE,
+                episode_id=episode_id,
+                previous_messages=format_episodic_context(
+                    load_conversation_history(person_id),
+                    max_turns=EPISODIC_CONTEXT_TURNS,
+                ),
+                llm_fn=lambda **kw: llm_complete_with_fallback(LLM_FAST, **kw),
+            )
+
+        invalidate_user_summary(REDIS_CLIENT, person_id)
+        return jsonify({"status": "ok", **result})
+    except Exception as e:
+        return jsonify({"error": "memory write failed", "detail": str(e)}), 500
 
 
 @app.route("/chat")
