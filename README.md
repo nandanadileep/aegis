@@ -1,6 +1,8 @@
-# Identiti
+# Identiti / Aegis
 
 Your memory lives here. Chat with an AI that knows who you are — and builds your knowledge graph as you talk.
+
+**Docs:** [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) (architecture) · [benchmarks/EVAL_REPORT.md](benchmarks/EVAL_REPORT.md) (eval numbers) · [benchmarks/README.md](benchmarks/README.md) (reproduce)
 
 ## Architecture
 
@@ -76,4 +78,15 @@ NEO4J_DATABASE
 SUPABASE_URL
 SUPABASE_JWT_SECRET
 REDIS_URL           # optional
+```
+
+## Benchmarks
+
+LongMemEval-S harness in `benchmarks/`. Dev slice (n=10): **Aegis QA accuracy 80% vs flat BM25 RAG 70%** at recall@10 parity — see [EVAL_REPORT](benchmarks/EVAL_REPORT.md).
+
+```bash
+pip install -r requirements-benchmark.txt
+python3 benchmarks/download_data.py
+python3 benchmarks/run_retrieval.py --backend flat_rag --limit 5   # smoke test
+python3 benchmarks/verify_reference.py --run-id dev                # vs committed reference
 ```
