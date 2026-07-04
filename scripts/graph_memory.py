@@ -13,6 +13,8 @@ Design choices:
   encrypted separately so we don't need dynamic labels.
 - Facts are stored as relationships (edges), not intermediate nodes. This keeps
   the graph compact and makes temporal invalidation natural.
+- Multi-entity (hyper-edge) facts share one UUID across pairwise FACT rels
+  between all participant entities (e.g. co-founder relationships).
 - All plaintext is encrypted per-user via scripts/crypto.py.
 - Embeddings are optional. If EMBEDDING_MODEL is set, litellm.embedding is used.
 """
@@ -23,7 +25,8 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Callable, Tuple
+from itertools import combinations
+from typing import Any, Dict, List, Optional, Callable, Tuple, Set
 
 import litellm
 import parsedatetime as pdt
@@ -80,6 +83,8 @@ def _embedding_dimensions() -> int:
 
 FACT_FTS_INDEX = "factSearchText"
 FACT_VECTOR_INDEX = "factEmbedding"
+ENTITY_FTS_INDEX = "entitySearchText"
+ENTITY_VECTOR_INDEX = "entityEmbedding"
 COMMUNITY_FTS_INDEX = "communitySearchText"
 COMMUNITY_VECTOR_INDEX = "communityEmbedding"
 
@@ -99,15 +104,16 @@ def _default_llm_fn(messages: List[Dict[str, str]], temperature: float = 0.0, ma
 
 
 def _default_embed_fn(texts: List[str]) -> List[List[float]]:
-    """Default embedding caller using litellm. Returns list of vectors."""
+    """Default embedding caller: local BGE or litellm API."""
     model = _embedding_model()
     if not model:
         return []
     try:
-        resp = litellm.embedding(model=model, input=texts)
-        # litellm returns data sorted by index; be defensive.
-        items = sorted(resp.data, key=lambda x: x.get("index", 0))
-        return [item["embedding"] for item in items]
+        from scripts.embeddings import local_embed_fn, litellm_embed_fn
+
+        provider = os.getenv("EMBEDDING_PROVIDER", "local").lower()
+        fn = local_embed_fn(model) if provider == "local" else litellm_embed_fn(model)
+        return fn(texts)
     except Exception as e:
         print(f"[graph_memory] embedding failed: {e}")
         return []
@@ -139,19 +145,18 @@ class Entity:
 class Fact:
     def __init__(
         self,
-        source: "Entity",
-        target: "Entity",
-        relation_type: str,
-        fact: str,
+        source: Optional["Entity"] = None,
+        target: Optional["Entity"] = None,
+        relation_type: str = "RELATED_TO",
+        fact: str = "",
         fact_uuid: Optional[str] = None,
         valid_from: Optional[str] = None,
         valid_to: Optional[str] = None,
         created_at: Optional[str] = None,
         embedding: Optional[List[float]] = None,
+        participants: Optional[List["Entity"]] = None,
     ):
         self.uuid = fact_uuid or str(__import__("uuid").uuid4())
-        self.source = source
-        self.target = target
         self.relation_type = relation_type.strip().upper().replace(" ", "_")
         self.fact = fact.strip()
         self.valid_from = valid_from
@@ -159,7 +164,37 @@ class Fact:
         self.created_at = created_at or _now_iso()
         self.embedding = embedding
 
+        if participants and len(participants) >= 2:
+            self.participants = participants
+            self.source = source or participants[0]
+            self.target = target or participants[1]
+        elif source is not None and target is not None:
+            self.participants = None
+            self.source = source
+            self.target = target
+        else:
+            raise ValueError("Fact requires source/target or at least two participants")
+
+    @property
+    def is_hyperedge(self) -> bool:
+        return self.participants is not None and len(self.participants) > 2
+
+    def participant_entities(self) -> List["Entity"]:
+        if self.participants:
+            return list(self.participants)
+        return [self.source, self.target]
+
+    def entity_pairs(self) -> List[Tuple["Entity", "Entity"]]:
+        """Unordered entity pairs materialized as FACT relationships."""
+        entities = self.participant_entities()
+        if len(entities) == 2:
+            return [(entities[0], entities[1])]
+        return list(combinations(entities, 2))
+
     def __repr__(self) -> str:
+        if self.is_hyperedge:
+            names = ", ".join(e.name for e in self.participants or [])
+            return f"Fact([{names}] {self.relation_type})"
         return f"Fact({self.source.name} -[{self.relation_type}]-> {self.target.name})"
 
 
@@ -231,8 +266,12 @@ Rules:
 Return ONLY a JSON list:
 [
   {"source": "<entity name>", "target": "<entity name>", "relation_type": "...", "fact": "...", "temporal": "optional temporal phrase"},
+  {"participants": ["<entity>", "<entity>", "..."], "relation_type": "...", "fact": "..."},
   ...
 ]
+
+Use `participants` (3+ entities) for multi-entity facts like co-founder or group
+membership. Use `source`/`target` for binary facts.
 
 If no facts relate the entities, return [].
 """
@@ -375,7 +414,10 @@ def extract_entities(
         temperature=0.0,
     )
     raw = resp.choices[0].message.content or "[]"
-    data = _extract_json(raw)
+    try:
+        data = _extract_json(raw)
+    except (json.JSONDecodeError, ValueError):
+        return []
     if not isinstance(data, list):
         return []
 
@@ -421,23 +463,49 @@ def extract_facts(
         temperature=0.0,
     )
     raw = resp.choices[0].message.content or "[]"
-    data = _extract_json(raw)
+    try:
+        data = _extract_json(raw)
+    except (json.JSONDecodeError, ValueError):
+        return []
     if not isinstance(data, list):
         return []
 
     entity_by_name = {e.name: e for e in entities}
+    entity_by_name.update({e.name.lower(): e for e in entities})
     facts: List[Fact] = []
     for item in data:
         if not isinstance(item, dict):
             continue
-        source_name = item.get("source", "").strip()
-        target_name = item.get("target", "").strip()
         relation_type = item.get("relation_type", "RELATED_TO").strip()
         fact_text = item.get("fact", "").strip()
-        if not source_name or not target_name or not fact_text:
+        if not fact_text:
             continue
-        source = entity_by_name.get(source_name)
-        target = entity_by_name.get(target_name)
+
+        participant_names = item.get("participants")
+        if isinstance(participant_names, list) and len(participant_names) >= 2:
+            participants = []
+            for name in participant_names:
+                if not isinstance(name, str):
+                    continue
+                entity = entity_by_name.get(name.strip()) or entity_by_name.get(name.strip().lower())
+                if entity is not None:
+                    participants.append(entity)
+            if len(participants) >= 2:
+                facts.append(Fact(
+                    participants=participants,
+                    relation_type=relation_type,
+                    fact=fact_text,
+                    valid_from=None,
+                    valid_to=None,
+                ))
+            continue
+
+        source_name = item.get("source", "").strip()
+        target_name = item.get("target", "").strip()
+        if not source_name or not target_name:
+            continue
+        source = entity_by_name.get(source_name) or entity_by_name.get(source_name.lower())
+        target = entity_by_name.get(target_name) or entity_by_name.get(target_name.lower())
         if source is None or target is None:
             continue
         facts.append(Fact(
@@ -492,6 +560,8 @@ def resolve_entities(
         try:
             decision = _extract_json(raw)
         except Exception:
+            decision = {"is_duplicate": False}
+        if not isinstance(decision, dict):
             decision = {"is_duplicate": False}
 
         if decision.get("is_duplicate"):
@@ -557,15 +627,26 @@ def _build_fact_search_text(
     target_name: str,
     relation_type: str,
     fact_text: str,
+    participant_names: Optional[List[str]] = None,
 ) -> str:
     """Plaintext, token-friendly text stored on FACT for Neo4j full-text search."""
-    parts = [source_name, target_name, relation_type.replace("_", " "), fact_text]
+    if participant_names and len(participant_names) > 2:
+        parts = participant_names + [relation_type.replace("_", " "), fact_text]
+    else:
+        parts = [source_name, target_name, relation_type.replace("_", " "), fact_text]
     return " ".join(p.strip() for p in parts if p and p.strip()).lower()
 
 
 def _build_community_search_text(name: str, summary: str) -> str:
     """Plaintext search field for Community full-text indexes."""
     return " ".join(p.strip() for p in (name, summary) if p and p.strip()).lower()
+
+
+def _build_entity_search_text(name: str, summary: str, entity_type: str = "") -> str:
+    """Plaintext search field for Entity full-text indexes (Zep ϕ_bm25 / ϕ_cos)."""
+    return " ".join(
+        p.strip() for p in (name, entity_type, summary) if p and p.strip()
+    ).lower()
 
 
 def _fact_validity_pred(alias: str = "f") -> str:
@@ -620,7 +701,54 @@ def _hydrate_fact_rows(rows: List[Dict[str, Any]], person_id: str) -> List[Dict[
             "source_name": dec(row.get("source_name_enc") or "", person_id),
             "target_name": dec(row.get("target_name_enc") or "", person_id),
         })
-    return hydrated
+    return _dedupe_hyperedge_facts(hydrated)
+
+
+def _dedupe_hyperedge_facts(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge pairwise FACT rows that share a hyper-edge UUID."""
+    by_uuid: Dict[str, Dict[str, Any]] = {}
+    participant_uuids: Dict[str, Set[str]] = {}
+    participant_names: Dict[str, Set[str]] = {}
+
+    for row in facts:
+        fact_uuid = row.get("uuid")
+        if not fact_uuid:
+            continue
+
+        if fact_uuid not in by_uuid:
+            by_uuid[fact_uuid] = dict(row)
+            participant_uuids[fact_uuid] = set()
+            participant_names[fact_uuid] = set()
+        else:
+            existing = by_uuid[fact_uuid]
+            if float(row.get("score") or 0.0) > float(existing.get("score") or 0.0):
+                existing["score"] = row.get("score")
+
+        for key, dest in (
+            ("source_uuid", participant_uuids[fact_uuid]),
+            ("target_uuid", participant_uuids[fact_uuid]),
+        ):
+            value = row.get(key)
+            if value:
+                dest.add(value)
+        for key, dest in (
+            ("source_name", participant_names[fact_uuid]),
+            ("target_name", participant_names[fact_uuid]),
+        ):
+            value = row.get(key)
+            if value:
+                dest.add(value)
+
+    merged: List[Dict[str, Any]] = []
+    for fact_uuid, row in by_uuid.items():
+        puuids = sorted(participant_uuids.get(fact_uuid, set()))
+        pnames = sorted(participant_names.get(fact_uuid, set()))
+        row["is_hyperedge"] = len(puuids) > 2
+        if row["is_hyperedge"]:
+            row["participant_uuids"] = puuids
+            row["participant_names"] = pnames
+        merged.append(row)
+    return merged
 
 
 def _cosine_similarity(a: List[float], b: List[float]) -> float:
@@ -818,6 +946,8 @@ def extract_temporal(
         data = _extract_json(raw)
     except Exception:
         data = {}
+    if not isinstance(data, dict):
+        data = {}
     valid_from = data.get("valid_from") or None
     valid_to = data.get("valid_to") or None
     return valid_from, valid_to
@@ -869,9 +999,9 @@ def fetch_facts_between(
 ) -> List[Dict[str, Any]]:
     """Fetch facts between two entity UUIDs that are valid at the as-of time."""
     now = _iso(_resolve_as_of(current_time, as_of))
-    query = """
-    MATCH (a:Entity {uuid: $source_uuid, person_id: $person_id})-
-          [f:FACT {person_id: $person_id}]->(b:Entity {uuid: $target_uuid, person_id: $person_id})
+    query = f"""
+    MATCH (a:Entity {{uuid: $source_uuid, person_id: $person_id}})-
+          [f:FACT {{person_id: $person_id}}]->(b:Entity {{uuid: $target_uuid, person_id: $person_id}})
     WHERE {_fact_validity_pred("f")}
     RETURN f.uuid AS uuid,
            f.fact AS fact_enc,
@@ -935,8 +1065,32 @@ def ensure_indexes(driver, database: str) -> None:
           }}
         }}
         """,
+        f"""
+        CREATE FULLTEXT INDEX {ENTITY_FTS_INDEX} IF NOT EXISTS
+        FOR (e:Entity) ON EACH [e.search_text]
+        """,
+        f"""
+        CREATE VECTOR INDEX {ENTITY_VECTOR_INDEX} IF NOT EXISTS
+        FOR (e:Entity) ON (e.embedding)
+        OPTIONS {{
+          indexConfig: {{
+            `vector.dimensions`: {dim},
+            `vector.similarity_function`: 'cosine'
+          }}
+        }}
+        """,
     ]
     with driver.session(database=database) as session:
+        if os.getenv("RECREATE_VECTOR_INDEXES", "").lower() in ("1", "true", "yes"):
+            for index_name in (
+                FACT_VECTOR_INDEX,
+                COMMUNITY_VECTOR_INDEX,
+                ENTITY_VECTOR_INDEX,
+            ):
+                try:
+                    session.run(f"DROP INDEX {index_name} IF EXISTS")
+                except Exception as e:
+                    print(f"[ensure_indexes] drop {index_name} failed: {e}")
         for stmt in statements:
             try:
                 session.run(stmt)
@@ -951,9 +1105,133 @@ def ensure_indexes(driver, database: str) -> None:
     except Exception as e:
         print(f"[ensure_indexes] backfill_community_search_fields failed: {e}")
     try:
+        backfill_entity_search_fields(driver, database)
+    except Exception as e:
+        print(f"[ensure_indexes] backfill_entity_search_fields failed: {e}")
+    try:
         backfill_fact_provenance(driver, database)
     except Exception as e:
         print(f"[ensure_indexes] backfill_fact_provenance failed: {e}")
+
+
+def backfill_embeddings(
+    driver,
+    database: str,
+    person_id: str,
+    embed_fn: Optional[Callable] = None,
+    batch_size: int = 32,
+) -> Dict[str, int]:
+    """Compute missing embeddings on entities, facts, and communities."""
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+    if not _embedding_model():
+        return {"entities": 0, "facts": 0, "communities": 0}
+
+    counts = {"entities": 0, "facts": 0, "communities": 0}
+
+    with driver.session(database=database) as session:
+        entity_rows = session.run(
+            """
+            MATCH (e:Entity {person_id: $person_id})
+            WHERE e.embedding IS NULL
+            RETURN e.uuid AS uuid, e.name AS name_enc, e.type AS type_enc,
+                   e.summary AS summary_enc
+            """,
+            person_id=person_id,
+        ).data()
+        for i in range(0, len(entity_rows), batch_size):
+            batch = entity_rows[i:i + batch_size]
+            texts = [
+                _build_entity_search_text(
+                    dec(r.get("name_enc") or "", person_id),
+                    dec(r.get("summary_enc") or "", person_id),
+                    dec(r.get("type_enc") or "", person_id),
+                )
+                for r in batch
+            ]
+            embs = embed_fn(texts)
+            for row, emb in zip(batch, embs):
+                session.run(
+                    "MATCH (e:Entity {uuid: $uuid, person_id: $person_id}) "
+                    "SET e.embedding = $embedding",
+                    uuid=row["uuid"],
+                    person_id=person_id,
+                    embedding=emb,
+                )
+                counts["entities"] += 1
+
+        fact_rows = session.run(
+            f"""
+            MATCH (a:Entity {{person_id: $person_id}})-[f:FACT {{person_id: $person_id}}]->(b)
+            WHERE f.embedding IS NULL
+            RETURN f.uuid AS uuid, f.search_text AS search_text,
+                   f.fact AS fact_enc, f.relation_type AS relation_type,
+                   a.name AS source_name_enc, b.name AS target_name_enc
+            """,
+            person_id=person_id,
+        ).data()
+        seen_fact_uuids: Set[str] = set()
+        unique_facts = []
+        for row in fact_rows:
+            uid = row["uuid"]
+            if uid in seen_fact_uuids:
+                continue
+            seen_fact_uuids.add(uid)
+            unique_facts.append(row)
+
+        for i in range(0, len(unique_facts), batch_size):
+            batch = unique_facts[i:i + batch_size]
+            texts = []
+            for row in batch:
+                text = row.get("search_text") or ""
+                if not text:
+                    text = _build_fact_search_text(
+                        dec(row.get("source_name_enc") or "", person_id),
+                        dec(row.get("target_name_enc") or "", person_id),
+                        row.get("relation_type") or "RELATED_TO",
+                        dec(row.get("fact_enc") or "", person_id),
+                    )
+                texts.append(text)
+            embs = embed_fn(texts)
+            for row, emb in zip(batch, embs):
+                session.run(
+                    "MATCH ()-[f:FACT {uuid: $uuid, person_id: $person_id}]->() "
+                    "SET f.embedding = $embedding",
+                    uuid=row["uuid"],
+                    person_id=person_id,
+                    embedding=emb,
+                )
+                counts["facts"] += 1
+
+        community_rows = session.run(
+            """
+            MATCH (c:Community {person_id: $person_id})
+            WHERE c.embedding IS NULL
+            RETURN c.uuid AS uuid, c.name AS name, c.summary AS summary_enc
+            """,
+            person_id=person_id,
+        ).data()
+        for i in range(0, len(community_rows), batch_size):
+            batch = community_rows[i:i + batch_size]
+            texts = [
+                _build_community_search_text(
+                    r.get("name") or "",
+                    dec(r.get("summary_enc") or "", person_id),
+                )
+                for r in batch
+            ]
+            embs = embed_fn(texts)
+            for row, emb in zip(batch, embs):
+                session.run(
+                    "MATCH (c:Community {uuid: $uuid, person_id: $person_id}) "
+                    "SET c.embedding = $embedding",
+                    uuid=row["uuid"],
+                    person_id=person_id,
+                    embedding=emb,
+                )
+                counts["communities"] += 1
+
+    return counts
 
 
 def backfill_fact_provenance(
@@ -1022,6 +1300,54 @@ def backfill_community_search_fields(
                 pid = row["person_id"]
                 summary = dec(row.get("summary_enc") or "", pid)
                 search_text = _build_community_search_text(row.get("name") or "", summary)
+                session.run(
+                    update,
+                    uuid=row["uuid"],
+                    person_id=pid,
+                    search_text=search_text,
+                )
+                updated += 1
+    return updated
+
+
+def backfill_entity_search_fields(
+    driver,
+    database: str,
+    person_id: Optional[str] = None,
+    batch_size: int = 200,
+) -> int:
+    """Populate search_text on legacy Entity nodes missing the field."""
+    query = """
+    MATCH (e:Entity)
+    WHERE e.search_text IS NULL
+      AND ($person_id IS NULL OR e.person_id = $person_id)
+    RETURN e.uuid AS uuid,
+           e.person_id AS person_id,
+           e.name AS name_enc,
+           e.type AS type_enc,
+           e.summary AS summary_enc
+    LIMIT $batch_size
+    """
+    update = """
+    MATCH (e:Entity {uuid: $uuid, person_id: $person_id})
+    SET e.search_text = $search_text
+    """
+    updated = 0
+    with driver.session(database=database) as session:
+        while True:
+            rows = session.run(
+                query,
+                person_id=person_id,
+                batch_size=batch_size,
+            ).data()
+            if not rows:
+                break
+            for row in rows:
+                pid = row["person_id"]
+                name = dec(row.get("name_enc") or "", pid)
+                entity_type = dec(row.get("type_enc") or "", pid)
+                summary = dec(row.get("summary_enc") or "", pid)
+                search_text = _build_entity_search_text(name, summary, entity_type)
                 session.run(
                     update,
                     uuid=row["uuid"],
@@ -1107,6 +1433,7 @@ def create_or_update_entity(
         e.summary = $summary_enc,
         e.name_hash = $name_hash,
         e.embedding = $embedding,
+        e.search_text = $search_text,
         e.created_at = coalesce(e.created_at, $now)
     MERGE (p)-[:HAS_ENTITY]->(e)
     """
@@ -1126,6 +1453,9 @@ def create_or_update_entity(
             summary_enc=enc(entity.summary, person_id),
             name_hash=node_hash(entity.name, person_id),
             embedding=_embedding_property(entity.embedding),
+            search_text=_build_entity_search_text(
+                entity.name, entity.summary, entity.entity_type
+            ),
             now=_now_iso(),
             episode_id=episode_id,
         )
@@ -1137,9 +1467,26 @@ def create_fact(
     person_id: str,
     fact: Fact,
     episode_id: Optional[str] = None,
+    recorded_at: Optional[str] = None,
 ) -> None:
-    """Write a FACT relationship between two existing entities."""
-    query = """
+    """Write one or more FACT relationships for a binary or hyper-edge fact."""
+    ingested_at = recorded_at or _now_iso()
+    created_at = fact.created_at or ingested_at
+    valid_from = fact.valid_from or created_at
+    participant_names = [e.name for e in fact.participant_entities()]
+    search_text = _build_fact_search_text(
+        fact.source.name,
+        fact.target.name,
+        fact.relation_type,
+        fact.fact,
+        participant_names=participant_names if fact.is_hyperedge else None,
+    )
+    fact_enc = enc(fact.fact, person_id)
+    embedding = _embedding_property(fact.embedding)
+    is_hyperedge = fact.is_hyperedge
+    hyperedge_size = len(participant_names)
+
+    edge_query = """
     MATCH (a:Entity {uuid: $source_uuid, person_id: $person_id})
     MATCH (b:Entity {uuid: $target_uuid, person_id: $person_id})
     CREATE (a)-[f:FACT {
@@ -1153,43 +1500,58 @@ def create_fact(
         created_at: $created_at,
         ingested_at: $ingested_at,
         source_episode_id: $source_episode_id,
-        embedding: $embedding
+        embedding: $embedding,
+        is_hyperedge: $is_hyperedge,
+        hyperedge_size: $hyperedge_size
     }]->(b)
     """
-    if episode_id:
-        query += """
+    episode_query = """
     WITH f, a, b
     MATCH (ep:Episode {id: $episode_id, person_id: $person_id})
     MERGE (ep)-[:EXTRACTED]->(a)
     MERGE (ep)-[:EXTRACTED]->(b)
     """
-    ingested_at = _now_iso()
-    created_at = fact.created_at or ingested_at
-    valid_from = fact.valid_from or created_at
-    search_text = _build_fact_search_text(
-        fact.source.name,
-        fact.target.name,
-        fact.relation_type,
-        fact.fact,
-    )
+
+    linked_entities: Set[str] = set()
     with driver.session(database=database) as session:
-        session.run(
-            query,
-            person_id=person_id,
-            source_uuid=fact.source.uuid,
-            target_uuid=fact.target.uuid,
-            uuid=fact.uuid,
-            fact_enc=enc(fact.fact, person_id),
-            relation_type=fact.relation_type,
-            search_text=search_text,
-            valid_from=valid_from,
-            valid_to=fact.valid_to,
-            created_at=created_at,
-            ingested_at=ingested_at,
-            source_episode_id=episode_id,
-            embedding=_embedding_property(fact.embedding),
-            episode_id=episode_id,
-        )
+        for source, target in fact.entity_pairs():
+            query = edge_query
+            if episode_id:
+                query += episode_query
+            session.run(
+                query,
+                person_id=person_id,
+                source_uuid=source.uuid,
+                target_uuid=target.uuid,
+                uuid=fact.uuid,
+                fact_enc=fact_enc,
+                relation_type=fact.relation_type,
+                search_text=search_text,
+                valid_from=valid_from,
+                valid_to=fact.valid_to,
+                created_at=created_at,
+                ingested_at=ingested_at,
+                source_episode_id=episode_id,
+                embedding=embedding,
+                is_hyperedge=is_hyperedge,
+                hyperedge_size=hyperedge_size,
+                episode_id=episode_id,
+            )
+            linked_entities.add(source.uuid)
+            linked_entities.add(target.uuid)
+
+        if episode_id and fact.is_hyperedge:
+            for entity_uuid in linked_entities:
+                session.run(
+                    """
+                    MATCH (ep:Episode {id: $episode_id, person_id: $person_id})
+                    MATCH (e:Entity {uuid: $entity_uuid, person_id: $person_id})
+                    MERGE (ep)-[:EXTRACTED]->(e)
+                    """,
+                    episode_id=episode_id,
+                    person_id=person_id,
+                    entity_uuid=entity_uuid,
+                )
 
 
 def expire_fact(
@@ -1305,6 +1667,44 @@ def _is_heuristic_duplicate(new_fact: Fact, old_fact: Dict[str, Any]) -> bool:
     return overlap >= 0.9
 
 
+def _format_fact_for_resolution(fact: Fact) -> str:
+    if fact.is_hyperedge:
+        names = ", ".join(e.name for e in fact.participant_entities())
+        return f"[{names}] {fact.relation_type}: {fact.fact}"
+    return f"{fact.source.name} -[{fact.relation_type}]-> {fact.target.name}: {fact.fact}"
+
+
+def _format_fact_line(
+    fact: Dict[str, Any],
+    include_episode_lineage: bool = False,
+) -> str:
+    valid = ""
+    if fact.get("valid_from") or fact.get("valid_to"):
+        valid = (
+            f" (Date range: {fact.get('valid_from') or 'unknown'} "
+            f"to {fact.get('valid_to') or 'present'})"
+        )
+    lineage = ""
+    if include_episode_lineage:
+        parts = []
+        if fact.get("source_episode_id"):
+            parts.append(f"episode: {fact['source_episode_id']}")
+        if fact.get("ingested_at"):
+            parts.append(f"ingested: {fact['ingested_at']}")
+        if fact.get("created_at"):
+            parts.append(f"recorded: {fact['created_at']}")
+        if parts:
+            lineage = f" [{', '.join(parts)}]"
+
+    if fact.get("is_hyperedge") and fact.get("participant_names"):
+        subjects = ", ".join(fact["participant_names"])
+        return f"- [{subjects}] {fact['relation_type']}: {fact['fact']}{valid}{lineage}"
+    return (
+        f"- {fact['source_name']} {fact['relation_type']} {fact['target_name']}: "
+        f"{fact['fact']}{valid}{lineage}"
+    )
+
+
 def resolve_facts(
     driver,
     database: str,
@@ -1322,12 +1722,20 @@ def resolve_facts(
 
     facts_to_write: List[Fact] = []
     for fact in facts:
-        existing = fetch_facts_between(
-            driver, database, person_id, fact.source.uuid, fact.target.uuid
-        )
-        existing += fetch_facts_between(
-            driver, database, person_id, fact.target.uuid, fact.source.uuid
-        )
+        existing: List[Dict[str, Any]] = []
+        seen_uuids: Set[str] = set()
+        for source, target in fact.entity_pairs():
+            for pair in (
+                (source.uuid, target.uuid),
+                (target.uuid, source.uuid),
+            ):
+                for row in fetch_facts_between(
+                    driver, database, person_id, pair[0], pair[1]
+                ):
+                    row_uuid = row.get("uuid")
+                    if row_uuid and row_uuid not in seen_uuids:
+                        seen_uuids.add(row_uuid)
+                        existing.append(row)
 
         # A fact can only contradict another if their validity windows overlap.
         candidates = [
@@ -1362,7 +1770,7 @@ def resolve_facts(
                 for ex in candidates[:10]
             )
             prompt = _FACT_RESOLUTION_PROMPT.format(
-                new_fact=f"{fact.source.name} -[{fact.relation_type}]-> {fact.target.name}: {fact.fact}",
+                new_fact=_format_fact_for_resolution(fact),
                 new_valid_from=fact.valid_from or "unspecified",
                 new_valid_to=fact.valid_to or "unspecified",
                 existing=existing_block,
@@ -1375,6 +1783,8 @@ def resolve_facts(
                 raw = resp.choices[0].message.content or "{}"
                 decision = _extract_json(raw)
             except Exception:
+                decision = {"decision": "new"}
+            if not isinstance(decision, dict):
                 decision = {"decision": "new"}
 
         decision_type = decision.get("decision", "new") if decision else "new"
@@ -1504,9 +1914,18 @@ def run_graph_pipeline(
     for entity in merged_entities:
         create_or_update_entity(driver, database, person_id, entity, episode_id=episode_id)
 
-    # 9. Write facts.
+    # 9. Write facts (stamp transaction time from ref_time for bi-temporal as_of).
+    recorded_at = _iso(ref_time)
     for fact in facts_to_write:
-        create_fact(driver, database, person_id, fact, episode_id=episode_id)
+        fact.created_at = recorded_at
+        create_fact(
+            driver,
+            database,
+            person_id,
+            fact,
+            episode_id=episode_id,
+            recorded_at=recorded_at,
+        )
 
     # 10. Re-detect semantic communities and summarize them.
     communities = []
@@ -1530,7 +1949,13 @@ def run_graph_pipeline(
             for e in merged_entities
         ],
         "facts": [
-            {"uuid": f.uuid, "fact": f.fact, "relation_type": f.relation_type}
+            {
+                "uuid": f.uuid,
+                "fact": f.fact,
+                "relation_type": f.relation_type,
+                "is_hyperedge": f.is_hyperedge,
+                "participants": [e.name for e in f.participant_entities()],
+            }
             for f in facts_to_write
         ],
         "communities": [
@@ -1788,19 +2213,20 @@ def search_facts(
     try:
         with driver.session(database=database) as session:
             rows = session.run(cypher, **params).data()
-        return _hydrate_fact_rows(rows, person_id)
+        if rows:
+            return _hydrate_fact_rows(rows, person_id)
     except Exception as exc:
         print(f"[search_facts] index search failed, using fallback: {exc}")
-        return _search_facts_fallback(
-            driver,
-            database,
-            person_id,
-            query_text,
-            top_k,
-            embed_fn,
-            current_time,
-            as_of=as_of,
-        )
+    return _search_facts_fallback(
+        driver,
+        database,
+        person_id,
+        query_text,
+        top_k,
+        embed_fn,
+        current_time,
+        as_of=as_of,
+    )
 
 
 _COMMUNITY_HYBRID_SEARCH_CYPHER = """
@@ -1977,6 +2403,190 @@ def search_communities(
     return communities
 
 
+_ENTITY_HYBRID_SEARCH_CYPHER = """
+CALL {
+  CALL db.index.fulltext.queryNodes($fts_index, $fts_query)
+  YIELD node AS e, score AS fts_raw
+  WHERE e.person_id = $person_id
+  RETURN e, fts_raw, 0.0 AS vec_raw
+  UNION ALL
+  CALL db.index.vector.queryNodes($vec_index, $candidate_k, $query_embedding)
+  YIELD node AS e, score AS vec_raw
+  WHERE e.person_id = $person_id
+  RETURN e, 0.0 AS fts_raw, vec_raw
+}
+WITH e, max(fts_raw) AS fts_raw, max(vec_raw) AS vec_raw
+WITH e, fts_raw, vec_raw,
+     CASE WHEN fts_raw > 0 THEN fts_raw / (fts_raw + 1.0) ELSE 0.0 END AS fts_norm,
+     coalesce(vec_raw, 0.0) AS vec_norm
+WITH e,
+     CASE
+       WHEN fts_norm > 0 AND vec_norm > 0 THEN 0.6 * vec_norm + 0.4 * fts_norm
+       WHEN vec_norm > 0 THEN vec_norm
+       WHEN fts_norm > 0 THEN fts_norm
+       ELSE 0.0
+     END AS score
+WHERE score > $min_score
+RETURN e.uuid AS uuid,
+       e.name AS name_enc,
+       e.type AS type_enc,
+       e.summary AS summary_enc,
+       score
+ORDER BY score DESC, e.created_at DESC
+LIMIT $top_k
+"""
+
+_ENTITY_FTS_SEARCH_CYPHER = """
+CALL db.index.fulltext.queryNodes($fts_index, $fts_query)
+YIELD node AS e, score AS fts_raw
+WHERE e.person_id = $person_id
+WITH e, fts_raw / (fts_raw + 1.0) AS score
+WHERE score > $min_score
+RETURN e.uuid AS uuid,
+       e.name AS name_enc,
+       e.type AS type_enc,
+       e.summary AS summary_enc,
+       score
+ORDER BY score DESC, e.created_at DESC
+LIMIT $top_k
+"""
+
+_ENTITY_VECTOR_SEARCH_CYPHER = """
+CALL db.index.vector.queryNodes($vec_index, $candidate_k, $query_embedding)
+YIELD node AS e, score
+WHERE e.person_id = $person_id
+WITH e, score
+WHERE score > $min_score
+RETURN e.uuid AS uuid,
+       e.name AS name_enc,
+       e.type AS type_enc,
+       e.summary AS summary_enc,
+       score
+ORDER BY score DESC, e.created_at DESC
+LIMIT $top_k
+"""
+
+
+def _hydrate_entity_rows(rows: List[Dict[str, Any]], person_id: str) -> List[Dict[str, Any]]:
+    entities = []
+    for row in rows:
+        entities.append({
+            "uuid": row["uuid"],
+            "name": dec(row.get("name_enc") or "", person_id),
+            "entity_type": dec(row.get("type_enc") or "", person_id),
+            "summary": dec(row.get("summary_enc") or "", person_id),
+            "score": row.get("score", 0.0),
+        })
+    return entities
+
+
+def _search_entities_fallback(
+    driver,
+    database: str,
+    person_id: str,
+    query_text: str,
+    top_k: int,
+    embed_fn: Callable,
+    scan_limit: int = 500,
+) -> List[Dict[str, Any]]:
+    """Python-side entity scoring when Neo4j semantic indexes are unavailable."""
+    entities = fetch_existing_entities(driver, database, person_id)
+    if not entities:
+        return []
+
+    query_tokens = set(_tokens(query_text))
+    query_embedding: Optional[List[float]] = None
+    if _embedding_model():
+        embs = embed_fn([query_text])
+        query_embedding = embs[0] if embs else None
+
+    scored = []
+    for entity in entities[:scan_limit]:
+        search_text = _build_entity_search_text(
+            entity.get("name") or "",
+            entity.get("summary") or "",
+            entity.get("type") or "",
+        )
+        entity_tokens = set(_tokens(search_text))
+        overlap = len(query_tokens & entity_tokens) / max(len(query_tokens), 1)
+
+        vec_sim = 0.0
+        if query_embedding and entity.get("embedding"):
+            try:
+                vec_sim = _cosine_similarity(query_embedding, entity["embedding"])
+            except Exception:
+                pass
+
+        score = 0.6 * vec_sim + 0.4 * overlap
+        if score > 0.02:
+            scored.append((score, {
+                "uuid": entity["uuid"],
+                "name": entity.get("name") or "",
+                "entity_type": entity.get("type") or "",
+                "summary": entity.get("summary") or "",
+                "score": score,
+            }))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [item for _, item in scored[:top_k]]
+
+
+def search_entities(
+    driver,
+    database: str,
+    person_id: str,
+    query_text: str,
+    top_k: int = 10,
+    embed_fn: Optional[Callable] = None,
+) -> List[Dict[str, Any]]:
+    """Hybrid entity retrieval via BM25 + cosine (Zep paper Section 3.1, Ns)."""
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+
+    fts_query = _sanitize_fts_query(query_text)
+    query_embedding: Optional[List[float]] = None
+    if _embedding_model():
+        embs = embed_fn([query_text])
+        query_embedding = embs[0] if embs else None
+
+    use_fts = bool(fts_query)
+    use_vector = query_embedding is not None
+    if not use_fts and not use_vector:
+        return _search_entities_fallback(
+            driver, database, person_id, query_text, top_k, embed_fn
+        )
+
+    candidate_k = max(top_k * 10, 30)
+    params: Dict[str, Any] = {
+        "person_id": person_id,
+        "top_k": top_k,
+        "min_score": 0.02,
+        "candidate_k": candidate_k,
+        "fts_index": ENTITY_FTS_INDEX,
+        "vec_index": ENTITY_VECTOR_INDEX,
+        "fts_query": fts_query,
+        "query_embedding": query_embedding,
+    }
+
+    if use_fts and use_vector:
+        cypher = _ENTITY_HYBRID_SEARCH_CYPHER
+    elif use_fts:
+        cypher = _ENTITY_FTS_SEARCH_CYPHER
+    else:
+        cypher = _ENTITY_VECTOR_SEARCH_CYPHER
+
+    try:
+        with driver.session(database=database) as session:
+            rows = session.run(cypher, **params).data()
+        if rows:
+            return _hydrate_entity_rows(rows, person_id)
+    except Exception as exc:
+        print(f"[search_entities] index search failed, using fallback: {exc}")
+    return _search_entities_fallback(
+        driver, database, person_id, query_text, top_k, embed_fn
+    )
+
+
 def fetch_facts_for_entities(
     driver,
     database: str,
@@ -2096,7 +2706,7 @@ def bfs_expand(
         row["fact"] = dec(row.get("fact_enc") or "", person_id)
         row["source_name"] = dec(row.get("source_name_enc") or "", person_id)
         row["target_name"] = dec(row.get("target_name_enc") or "", person_id)
-    return rows
+    return _dedupe_hyperedge_facts(rows)
 
 
 def fetch_all_facts(
@@ -2134,7 +2744,7 @@ def fetch_all_facts(
         row["fact"] = dec(row.get("fact_enc") or "", person_id)
         row["source_name"] = dec(row.get("source_name_enc") or "", person_id)
         row["target_name"] = dec(row.get("target_name_enc") or "", person_id)
-    return rows
+    return _dedupe_hyperedge_facts(rows)
 
 
 def _fetch_recent_facts(
@@ -2172,7 +2782,7 @@ def _fetch_recent_facts(
         row["fact"] = dec(row.get("fact_enc") or "", person_id)
         row["source_name"] = dec(row.get("source_name_enc") or "", person_id)
         row["target_name"] = dec(row.get("target_name_enc") or "", person_id)
-    return rows
+    return _dedupe_hyperedge_facts(rows)
 
 
 def retrieve_facts(
@@ -2259,6 +2869,8 @@ def retrieve_facts(
     for row in direct:
         seed_uuids.add(row.get("source_uuid"))
         seed_uuids.add(row.get("target_uuid"))
+        for entity_uuid in row.get("participant_uuids") or []:
+            seed_uuids.add(entity_uuid)
 
     related = bfs_expand(
         driver,
@@ -2280,6 +2892,59 @@ def retrieve_facts(
         top_k=top_k,
         embed_fn=embed_fn,
     )
+
+
+def retrieve_memory(
+    driver,
+    database: str,
+    person_id: str,
+    query_text: str,
+    fact_top_k: int = 20,
+    entity_top_k: int = 20,
+    embed_fn: Optional[Callable] = None,
+    current_time: Optional[datetime] = None,
+    as_of: Optional[datetime] = None,
+    rerank_method: str = "rrf",
+    bfs_depth: int = 2,
+    bfs_top_k: int = 20,
+    community_top_k: int = 5,
+    community_fact_top_k: int = 30,
+) -> Dict[str, Any]:
+    """Zep paper Section 3 memory retrieval: facts (Es) + entities (Ns).
+
+    Search (ϕ): hybrid BM25 + cosine + BFS over facts and communities; BM25 +
+    cosine over entities. Rerank (ρ) applies to facts via ``retrieve_facts``.
+    Use ``format_zep_context`` for the constructor step χ.
+
+    LongMemEval experiments in the paper retrieve top-20 facts and entity
+    summaries; defaults match that setup.
+    """
+    facts = retrieve_facts(
+        driver,
+        database,
+        person_id,
+        query_text,
+        top_k=fact_top_k,
+        bfs_depth=bfs_depth,
+        bfs_top_k=bfs_top_k,
+        community_top_k=community_top_k,
+        community_fact_top_k=community_fact_top_k,
+        embed_fn=embed_fn,
+        current_time=current_time,
+        as_of=as_of,
+        rerank_method=rerank_method,
+    )
+    entities: List[Dict[str, Any]] = []
+    if query_text and query_text.strip():
+        entities = search_entities(
+            driver,
+            database,
+            person_id,
+            query_text,
+            top_k=entity_top_k,
+            embed_fn=embed_fn,
+        )
+    return {"facts": facts, "entities": entities}
 
 
 def _ranked_uuids(facts: List[Dict[str, Any]]) -> List[str]:
@@ -2515,38 +3180,70 @@ def rerank_facts(
     )
 
 
+def format_zep_context(
+    facts: List[Dict[str, Any]],
+    entities: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    """Format facts and entities using the Zep paper Section 3 context template."""
+    entities = entities or []
+    if not facts and not entities:
+        return "No relevant memory."
+
+    fact_lines = []
+    for fact in facts:
+        valid_from = fact.get("valid_from") or "unknown"
+        valid_to = fact.get("valid_to") or "present"
+        if fact.get("is_hyperedge") and fact.get("participant_names"):
+            subjects = ", ".join(fact["participant_names"])
+            body = f"[{subjects}] {fact['relation_type']}: {fact['fact']}"
+        else:
+            body = (
+                f"{fact['source_name']} {fact['relation_type']} "
+                f"{fact['target_name']}: {fact['fact']}"
+            )
+        fact_lines.append(f"{body} (Date range: {valid_from} - {valid_to})")
+
+    entity_lines = [
+        f"{entity['name']}: {entity.get('summary') or ''}"
+        for entity in entities
+        if entity.get("name")
+    ]
+
+    parts = [
+        "FACTS and ENTITIES represent relevant context to the current conversation.",
+        (
+            "These are the most relevant facts and their valid date ranges. "
+            "If the fact is about an event, the event takes place during this time."
+        ),
+        "format: FACT (Date range: from - to)",
+        "<FACTS>",
+        "\n".join(fact_lines) if fact_lines else "None",
+        "</FACTS>",
+        "These are the most relevant entities",
+        "<ENTITIES>",
+        "\n".join(entity_lines) if entity_lines else "None",
+        "</ENTITIES>",
+    ]
+    return "\n".join(parts)
+
+
 def format_context(
     facts: List[Dict[str, Any]],
     include_episode_lineage: bool = False,
+    entities: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    """Format retrieved facts into a Zep-style context block.
+    """Format retrieved memory for LLM context.
 
-    Args:
-        include_episode_lineage: When True, append source episode and
-            provenance timestamps for debugging and trust.
+    When ``entities`` is provided, uses the Zep paper template (``format_zep_context``).
+    Otherwise returns a compact fact list (legacy format).
     """
+    if entities:
+        return format_zep_context(facts, entities)
     if not facts:
         return "No relevant facts."
     lines = []
     for f in facts:
-        valid = ""
-        if f.get("valid_from") or f.get("valid_to"):
-            valid = f" (Date range: {f.get('valid_from') or 'unknown'} to {f.get('valid_to') or 'present'})"
-        lineage = ""
-        if include_episode_lineage:
-            parts = []
-            if f.get("source_episode_id"):
-                parts.append(f"episode: {f['source_episode_id']}")
-            if f.get("ingested_at"):
-                parts.append(f"ingested: {f['ingested_at']}")
-            if f.get("created_at"):
-                parts.append(f"recorded: {f['created_at']}")
-            if parts:
-                lineage = f" [{', '.join(parts)}]"
-        lines.append(
-            f"- {f['source_name']} {f['relation_type']} {f['target_name']}: "
-            f"{f['fact']}{valid}{lineage}"
-        )
+        lines.append(_format_fact_line(f, include_episode_lineage=include_episode_lineage))
     return "\n".join(lines)
 
 
@@ -3274,6 +3971,185 @@ def fetch_communities(
             "entity_uuids": row.get("entity_uuids") or [],
         })
     return communities
+
+
+# -----------------------------------------------------------------------------
+# Structured ingestion
+# -----------------------------------------------------------------------------
+
+def _entity_lookup_map(entities: List[Entity]) -> Dict[str, Entity]:
+    """Case-insensitive entity lookup by name."""
+    lookup: Dict[str, Entity] = {}
+    for entity in entities:
+        lookup[entity.name] = entity
+        lookup[entity.name.lower()] = entity
+    return lookup
+
+
+def _parse_structured_entities(items: List[Dict[str, Any]]) -> List[Entity]:
+    entities: List[Entity] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        entities.append(Entity(
+            name=name,
+            entity_type=str(item.get("type") or item.get("entity_type") or "Other"),
+            summary=str(item.get("summary") or ""),
+            entity_uuid=item.get("uuid"),
+        ))
+    return entities
+
+
+def _parse_structured_facts(
+    items: List[Dict[str, Any]],
+    entity_lookup: Dict[str, Entity],
+) -> List[Fact]:
+    facts: List[Fact] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        relation_type = str(item.get("relation_type") or "RELATED_TO").strip()
+        fact_text = str(item.get("fact") or "").strip()
+        if not fact_text:
+            continue
+
+        participant_names = item.get("participants")
+        if isinstance(participant_names, list) and len(participant_names) >= 2:
+            participants: List[Entity] = []
+            for name in participant_names:
+                if not isinstance(name, str):
+                    continue
+                entity = entity_lookup.get(name.strip()) or entity_lookup.get(name.strip().lower())
+                if entity is not None:
+                    participants.append(entity)
+            if len(participants) >= 2:
+                facts.append(Fact(
+                    participants=participants,
+                    relation_type=relation_type,
+                    fact=fact_text,
+                    valid_from=item.get("valid_from"),
+                    valid_to=item.get("valid_to"),
+                    fact_uuid=item.get("uuid"),
+                ))
+            continue
+
+        source_name = str(item.get("source") or "").strip()
+        target_name = str(item.get("target") or "").strip()
+        if not source_name or not target_name:
+            continue
+        source = entity_lookup.get(source_name) or entity_lookup.get(source_name.lower())
+        target = entity_lookup.get(target_name) or entity_lookup.get(target_name.lower())
+        if source is None or target is None:
+            continue
+        facts.append(Fact(
+            source=source,
+            target=target,
+            relation_type=relation_type,
+            fact=fact_text,
+            valid_from=item.get("valid_from"),
+            valid_to=item.get("valid_to"),
+            fact_uuid=item.get("uuid"),
+        ))
+    return facts
+
+
+def ingest_structured_memory(
+    driver,
+    database: str,
+    person_id: str,
+    entities_data: Optional[List[Dict[str, Any]]] = None,
+    facts_data: Optional[List[Dict[str, Any]]] = None,
+    episode_id: Optional[str] = None,
+    llm_fn: Optional[Callable] = None,
+    embed_fn: Optional[Callable] = None,
+    resolve_entities_flag: bool = True,
+    resolve_facts_flag: bool = True,
+    detect_communities_flag: bool = True,
+) -> Dict[str, Any]:
+    """Write structured entities and facts without LLM extraction.
+
+    Supports binary facts via ``source``/``target`` and multi-entity hyper-edges
+    via ``participants`` (3+ entity names). Entity names in facts must match
+    entries in ``entities_data`` (or already-resolved entities).
+    """
+    if llm_fn is None:
+        llm_fn = _default_llm_fn
+    if embed_fn is None:
+        embed_fn = _default_embed_fn
+
+    entities_data = entities_data or []
+    facts_data = facts_data or []
+    entities = _parse_structured_entities(entities_data)
+
+    if resolve_entities_flag and entities:
+        existing_entities = fetch_existing_entities(driver, database, person_id)
+        entities, _ = resolve_entities(entities, existing_entities, llm_fn=llm_fn)
+
+    if _embedding_model() and entities:
+        entity_texts = [f"{e.name} {e.entity_type} {e.summary}" for e in entities]
+        entity_embs = embed_fn(entity_texts)
+        for entity, emb in zip(entities, entity_embs):
+            entity.embedding = emb
+
+    entity_lookup = _entity_lookup_map(entities)
+    facts = _parse_structured_facts(facts_data, entity_lookup)
+
+    if _embedding_model() and facts:
+        fact_texts = [f.fact for f in facts]
+        fact_embs = embed_fn(fact_texts)
+        for fact, emb in zip(facts, fact_embs):
+            fact.embedding = emb
+
+    facts_to_write = (
+        resolve_facts(driver, database, person_id, facts, llm_fn=llm_fn)
+        if resolve_facts_flag else facts
+    )
+
+    for entity in entities:
+        create_or_update_entity(driver, database, person_id, entity, episode_id=episode_id)
+
+    for fact in facts_to_write:
+        create_fact(driver, database, person_id, fact, episode_id=episode_id)
+
+    communities: List[Dict[str, Any]] = []
+    if detect_communities_flag:
+        try:
+            communities = detect_communities(
+                driver,
+                database,
+                person_id,
+                embed_fn=embed_fn,
+                llm_fn=llm_fn,
+                episode_id=episode_id,
+                touched_entity_uuids=[e.uuid for e in entities],
+            )
+        except Exception:
+            pass
+
+    return {
+        "entities": [
+            {"uuid": e.uuid, "name": e.name, "type": e.entity_type}
+            for e in entities
+        ],
+        "facts": [
+            {
+                "uuid": f.uuid,
+                "fact": f.fact,
+                "relation_type": f.relation_type,
+                "is_hyperedge": f.is_hyperedge,
+                "participants": [e.name for e in f.participant_entities()],
+            }
+            for f in facts_to_write
+        ],
+        "communities": [
+            {"uuid": c["uuid"], "name": c["name"], "summary": c["summary"]}
+            for c in communities
+        ],
+        "episode_id": episode_id,
+    }
 
 
 # -----------------------------------------------------------------------------
