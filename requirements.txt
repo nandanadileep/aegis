@@ -10,3 +10,6 @@ gunicorn
 cryptography
 zappa==0.62.1
 parsedatetime==2.6
+
+# Optional: benchmark harness (LongMemEval-S)
+# pip install -r requirements-benchmark.txt

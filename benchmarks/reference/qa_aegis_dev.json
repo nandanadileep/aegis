@@ -1,0 +1,104 @@
+{
+  "summary": {
+    "count": 10.0,
+    "recall@10": 1.0,
+    "ndcg@10": 0.0,
+    "qa_accuracy": 0.8,
+    "backend": "aegis",
+    "reader_model": "anthropic/claude-haiku-4-5",
+    "judge_model": "anthropic/claude-haiku-4-5",
+    "run_id": "dev"
+  },
+  "questions": [
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant notes from memory:**\nAccording to the ENTITIES section, the User holds a degree in Business Administration.\n\n**Final answer:**\nYou graduated with a degree in Business Administration.",
+      "gold": "Business Administration",
+      "latency_ms": 10211.483667
+    },
+    {
+      "question_id": "118b2229",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "# Relevant Memory Extract\n\nFrom the memory context, I found this information about your commute:\n\n**User PRACTICES Audiobook listening:** \"The user regularly listens to audiobooks during daily commutes and has noticed they retain more information from audiobooks than e-books.\"\n\n**Entity description:** \"Individual who listens to audiobooks during a 45-minute daily commute...\"\n\n# Final Answer\n\nYour daily commute is **45 minutes long**. You use this time to listen to audiobooks.",
+      "gold": "45 minutes each way",
+      "latency_ms": 361.3682080000018
+    },
+    {
+      "question_id": "51a45a95",
+      "question_type": "single-session-user",
+      "qa_correct": 0.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant Memory:**\nUser PURCHASED Coffee creamer: User redeemed a $5 coupon on coffee creamer last Sunday through email. (Date range: 2023-05-29T13:28:00Z - present)\n\n**Final Answer:**\nYou redeemed the $5 coupon on coffee creamer through email last Sunday.",
+      "gold": "Target",
+      "latency_ms": 236.78383400000058
+    },
+    {
+      "question_id": "58bf7951",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant notes from memory:**\n- User ATTENDED The Glass Menagerie: User recently attended a production of The Glass Menagerie at the local community theater and was impressed by the lead actress's performance. (Date range: 2023-05-26T07:31:00Z - present)\n\n**Final Answer:**\nYou attended a production of **The Glass Menagerie** at the local community theater. You were impressed by the lead actress's performance.",
+      "gold": "The Glass Menagerie",
+      "latency_ms": 227.87916599999747
+    },
+    {
+      "question_id": "1e043500",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant notes from memory:**\nThe user created a Spotify playlist called \"Summer Vibes\" featuring chill tracks for relaxing and working out (Date range: 2023-05-21T13:13:00Z - present).\n\n**Final answer:**\nThe name of the playlist you created on Spotify is **Summer Vibes**. It features chill tracks for relaxing and working out.",
+      "gold": "Summer Vibes",
+      "latency_ms": 193.1709159999997
+    },
+    {
+      "question_id": "c5e8278d",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "# Relevant Memory Extract\n\nFrom the facts in memory:\n- User NEEDS_TO_UPDATE Health Insurance Provider: User needs to update address and name information with health insurance provider after changing last name from Johnson to Winters.\n- User NEEDS_TO_UPDATE Credit Card Company: User needs to update credit card account information with new last name Winters.\n- User entity description: Recently changed last name from Johnson to Winters\n\n# Answer\n\nYour last name before you changed it was **Johnson**. You changed it to Winters.",
+      "gold": "Johnson",
+      "latency_ms": 199.1831669999975
+    },
+    {
+      "question_id": "6ade9755",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "# Relevant Notes from Memory\n\nBased on the memory context, you take yoga classes in two locations:\n\n1. **Serenity Yoga studio** - You practice in-person yoga classes there when available\n2. **At home** - You use the Down Dog app to practice vinyasa flow yoga\n\n# Final Answer\n\nYou take yoga classes at **Serenity Yoga studio** for in-person classes when available, and you also practice at home using the **Down Dog app** for vinyasa flow yoga.",
+      "gold": "Serenity Yoga",
+      "latency_ms": 141.113292
+    },
+    {
+      "question_id": "6f9b354f",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant Memory:**\nUser REDECORATED Bedroom: User recently repainted their bedroom walls a lighter shade of gray, making the room feel brighter and more inviting. (Date range: 2023-05-27T19:51:00Z - present)\n\n**Final Answer:**\nYou repainted your bedroom walls a lighter shade of gray.",
+      "gold": "a lighter shade of gray",
+      "latency_ms": 174.80295900000442
+    },
+    {
+      "question_id": "58ef2f1c",
+      "question_type": "single-session-user",
+      "qa_correct": 0.0,
+      "recall@10": 1.0,
+      "hypothesis": "Based on the memory context provided, I do not have information about you volunteering at a local animal shelter's fundraising dinner.\n\nHowever, I do have a record that you **volunteered at the \"Love is in the Air\" fundraising dinner in February** and enjoyed it for its social networking opportunities. This event is not specifically identified as an animal shelter fundraising dinner in the available memory.\n\nIf you're asking about a different event, that information is not currently in my memory.",
+      "gold": "February 14th",
+      "latency_ms": 154.4497920000012
+    },
+    {
+      "question_id": "f8c5f88b",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant Memory:**\nFrom the facts and entities provided:\n- \"User OWNS Tennis Racket: User recently purchased a new tennis racket from a downtown sports store that has improved their game performance.\"\n- \"Tennis Racket: A new sports equipment recently purchased by the user from a downtown sports store that has improved their game performance.\"\n\n**Final Answer:**\nYou bought your new tennis racket from a downtown sports store.",
+      "gold": "the sports store downtown",
+      "latency_ms": 170.22974999999718
+    }
+  ]
+}

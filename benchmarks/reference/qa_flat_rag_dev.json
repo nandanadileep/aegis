@@ -1,0 +1,104 @@
+{
+  "summary": {
+    "count": 10.0,
+    "recall@10": 1.0,
+    "ndcg@10": 0.0,
+    "qa_accuracy": 0.7,
+    "backend": "flat_rag",
+    "reader_model": "anthropic/claude-haiku-4-5",
+    "judge_model": "anthropic/claude-haiku-4-5",
+    "run_id": "dev"
+  },
+  "questions": [
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "Based on the memory context provided, I can answer your question:\n\n**Relevant note from memory:**\n\"user: I graduated with a degree in Business Administration, which has definitely helped me in my new role.\"\n\n**Final Answer:**\nYou graduated with a degree in Business Administration.",
+      "gold": "Business Administration",
+      "latency_ms": 38.24029199999934
+    },
+    {
+      "question_id": "118b2229",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "# Relevant Notes from Memory\n\nFrom the memory context, I found the following information about your commute:\n- \"I've been listening to audiobooks during my daily commute, which takes 45 minutes each way.\"\n- \"I'm looking for some new fiction audiobook recommendations. I've been enjoying audiobooks a lot lately, especially during my daily commute.\"\n- An assistant response mentions \"an hour each way\" in reference to commute time.\n\n# Final Answer\n\nYour daily commute is **45 minutes each way** (90 minutes total round trip). You've mentioned using this time to listen to audiobooks, which you've been enjoying lately.",
+      "gold": "45 minutes each way",
+      "latency_ms": 39.76720899999897
+    },
+    {
+      "question_id": "51a45a95",
+      "question_type": "single-session-user",
+      "qa_correct": 0.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant notes from memory:**\n- The user redeemed a $5 coupon on coffee creamer last Sunday\n- They found it in their email inbox as a surprise\n\n**Final answer:**\nAccording to the memory, you redeemed the $5 coupon on coffee creamer last Sunday. However, the memory does not specify *where* you redeemed it (which store). It only mentions that you found the coupon in your email inbox.",
+      "gold": "Target",
+      "latency_ms": 42.915750000000585
+    },
+    {
+      "question_id": "58bf7951",
+      "question_type": "single-session-user",
+      "qa_correct": 0.0,
+      "recall@10": 1.0,
+      "hypothesis": "Based on the memory context provided, I do not have information about which specific play you attended at the local community theater.\n\nThe memory only mentions that you \"recently went to a play at the local community theater and was impressed by the lead actress's performance,\" but the name of the play is not specified in the retrieved memory.\n\nTo answer your question accurately, I would need additional information about which play you attended.",
+      "gold": "The Glass Menagerie",
+      "latency_ms": 41.90245799999914
+    },
+    {
+      "question_id": "1e043500",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "Based on the memory context provided, the name of the playlist you created on Spotify is **Summer Vibes**. According to the conversation, it contains chill tracks that are perfect for relaxing or working out.",
+      "gold": "Summer Vibes",
+      "latency_ms": 38.152541000002316
+    },
+    {
+      "question_id": "c5e8278d",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant notes from memory:**\n\nFrom the first message in the memory context, the user stated: \"By the way, my old name was Johnson, but now it's Winters.\"\n\n**Final answer:**\n\nYour last name before you changed it was Johnson.",
+      "gold": "Johnson",
+      "latency_ms": 35.087582999999256
+    },
+    {
+      "question_id": "6ade9755",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "Based on the memory context provided, I can see that you take yoga classes at **Serenity Yoga** studio. The memory mentions that you have a connection to Serenity Yoga and that you supplement your studio practice there with home practice using the Down Dog app.\n\nAdditionally, you've started a **Sunday morning yoga and brunch routine with your best friend Sarah**, which suggests you may also practice together, though the specific location for those sessions isn't mentioned in the memory.",
+      "gold": "Serenity Yoga",
+      "latency_ms": 37.31912500000334
+    },
+    {
+      "question_id": "6f9b354f",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "**Relevant notes from memory:**\nFrom the first exchange in the memory context, the user stated: \"By the way, I've been doing some redecorating and recently repainted my bedroom walls a lighter shade of gray - it's made the room feel so much brighter!\"\n\n**Final answer:**\nYou repainted your bedroom walls a lighter shade of gray.",
+      "gold": "a lighter shade of gray",
+      "latency_ms": 46.42004200000116
+    },
+    {
+      "question_id": "58ef2f1c",
+      "question_type": "single-session-user",
+      "qa_correct": 0.0,
+      "recall@10": 1.0,
+      "hypothesis": "I don't have information in my memory about you volunteering at a local animal shelter's fundraising dinner.\n\nHowever, I do have a record that you volunteered at the \"Love is in the Air\" fundraising dinner back in February. Based on our conversation, you mentioned this was a great way to meet new people and you enjoyed the experience with the silent auction and raffles.\n\nIf you're asking about a different event at an animal shelter specifically, I don't have that information in my memory.",
+      "gold": "February 14th",
+      "latency_ms": 40.99008299999696
+    },
+    {
+      "question_id": "f8c5f88b",
+      "question_type": "single-session-user",
+      "qa_correct": 1.0,
+      "recall@10": 1.0,
+      "hypothesis": "Based on the memory context provided, I can answer your question.\n\n**Relevant note from memory:**\n\"I'm really happy with my new tennis racket, which I got from a sports store downtown.\"\n\n**Final answer:**\nYou bought your new tennis racket from a sports store downtown.",
+      "gold": "the sports store downtown",
+      "latency_ms": 39.48812499999832
+    }
+  ]
+}

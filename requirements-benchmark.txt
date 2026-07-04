@@ -1,0 +1,4 @@
+# Benchmark harness dependencies (install on top of requirements.txt)
+requests>=2.32.0
+# Local embeddings (free, no API quota). Downloads ~130MB model on first run.
+sentence-transformers>=3.0.0

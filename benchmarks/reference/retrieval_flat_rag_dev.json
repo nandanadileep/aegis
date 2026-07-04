@@ -1,0 +1,322 @@
+{
+  "summary": {
+    "count": 10.0,
+    "recall@5": 1.0,
+    "ndcg@5": 0.9630929753571458,
+    "recall@10": 1.0,
+    "ndcg@10": 0.9630929753571458,
+    "recall@20": 1.0,
+    "ndcg@20": 0.9630929753571458,
+    "backend": "flat_rag",
+    "run_id": "dev",
+    "elapsed_s": 0.33133829199999987
+  },
+  "questions": [
+    {
+      "question_id": "e47becba",
+      "question_type": "single-session-user",
+      "latency_ms": 27.853834000000077,
+      "retrieved_session_ids": [
+        "ultrachat_214101",
+        "answer_280352e9",
+        "02bd2b90_3",
+        "5dac7cc2_1",
+        "7045db85_1",
+        "f6859b48_2",
+        "2ae4f277_2",
+        "ec6ca9ef",
+        "e27891d3_2",
+        "d94b721b",
+        "4fd76316",
+        "978c0e70",
+        "ultrachat_215809",
+        "ultrachat_45576",
+        "41abc171_4",
+        "ultrachat_336116"
+      ],
+      "gold_session_ids": [
+        "answer_280352e9"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 0.6309297535714575,
+      "recall@10": 1.0,
+      "ndcg@10": 0.6309297535714575,
+      "recall@20": 1.0,
+      "ndcg@20": 0.6309297535714575
+    },
+    {
+      "question_id": "118b2229",
+      "question_type": "single-session-user",
+      "latency_ms": 27.192292000000506,
+      "retrieved_session_ids": [
+        "answer_40a90d51",
+        "db73b7e4_4",
+        "ultrachat_392094",
+        "5209e813_2",
+        "afe04238_1",
+        "ultrachat_498215",
+        "5dce60dd",
+        "628c958c_7",
+        "sharegpt_i1iuP70_0",
+        "db50c0f6",
+        "sharegpt_M3x4mZx_0",
+        "ultrachat_20736",
+        "febc8622",
+        "ultrachat_311002",
+        "7d8b5834_1",
+        "b5f561f5_2"
+      ],
+      "gold_session_ids": [
+        "answer_40a90d51"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    },
+    {
+      "question_id": "51a45a95",
+      "question_type": "single-session-user",
+      "latency_ms": 30.35458299999938,
+      "retrieved_session_ids": [
+        "answer_d61669c7",
+        "98c198fb",
+        "sharegpt_3vxz2Zr_0",
+        "8fa64936_1",
+        "ultrachat_282235",
+        "217debf7",
+        "07ba9acd_2",
+        "5c44d9fe_1",
+        "sharegpt_CyJ3dal_0",
+        "dfe646a7_1",
+        "55e0c6db_2",
+        "b35610f4_3",
+        "c133623d",
+        "3fe98db6_1"
+      ],
+      "gold_session_ids": [
+        "answer_d61669c7"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    },
+    {
+      "question_id": "58bf7951",
+      "question_type": "single-session-user",
+      "latency_ms": 28.491791999999627,
+      "retrieved_session_ids": [
+        "answer_355c48bb",
+        "ultrachat_221066",
+        "ultrachat_268434",
+        "sharegpt_M84blrA_53",
+        "e2efa128",
+        "07b7a667_1",
+        "ultrachat_155546",
+        "ultrachat_71618",
+        "sharegpt_gmLF3PE_17",
+        "sharegpt_DGiqvVv_270",
+        "1587bd78_1",
+        "7e17ae56_5"
+      ],
+      "gold_session_ids": [
+        "answer_355c48bb"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    },
+    {
+      "question_id": "1e043500",
+      "question_type": "single-session-user",
+      "latency_ms": 28.288292000000048,
+      "retrieved_session_ids": [
+        "answer_3e012175",
+        "01bd9def",
+        "4d0d7984",
+        "7b1d1f43_1",
+        "ultrachat_271928",
+        "b28990c8_1",
+        "sharegpt_Clr6oyu_0",
+        "0363e91f",
+        "sharegpt_bph7DTk_7",
+        "ultrachat_266656"
+      ],
+      "gold_session_ids": [
+        "answer_3e012175"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    },
+    {
+      "question_id": "c5e8278d",
+      "question_type": "single-session-user",
+      "latency_ms": 27.93645800000011,
+      "retrieved_session_ids": [
+        "answer_f6168136",
+        "193c23bd_2",
+        "64767b7f",
+        "dc832f73",
+        "d777e7da_1",
+        "aaf71ce2_2",
+        "42e69993_2",
+        "0fe848c5_3",
+        "sharegpt_WPGrlAK_0",
+        "89b1028d_1",
+        "bdf735de_2"
+      ],
+      "gold_session_ids": [
+        "answer_f6168136"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    },
+    {
+      "question_id": "6ade9755",
+      "question_type": "single-session-user",
+      "latency_ms": 27.25124999999995,
+      "retrieved_session_ids": [
+        "answer_9398da02",
+        "ultrachat_393203",
+        "ultrachat_270925",
+        "ultrachat_556745",
+        "28621d6a_2",
+        "ec8fa65d_2",
+        "sharegpt_mJ7MnQS_31",
+        "ultrachat_329610"
+      ],
+      "gold_session_ids": [
+        "answer_9398da02"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    },
+    {
+      "question_id": "6f9b354f",
+      "question_type": "single-session-user",
+      "latency_ms": 27.903916999999723,
+      "retrieved_session_ids": [
+        "answer_feb5200f",
+        "sharegpt_VAELSB3_0",
+        "sharegpt_kRjBUsA_79",
+        "ultrachat_549317",
+        "0e3d8491_1",
+        "ultrachat_224845",
+        "a79f1a04_1",
+        "36828c66_2",
+        "40643340_2",
+        "de877349",
+        "68d4de04_2"
+      ],
+      "gold_session_ids": [
+        "answer_feb5200f"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    },
+    {
+      "question_id": "58ef2f1c",
+      "question_type": "single-session-user",
+      "latency_ms": 28.85854099999996,
+      "retrieved_session_ids": [
+        "answer_59547700",
+        "13f3da23_3",
+        "e6ab6a7b_2",
+        "ultrachat_5212",
+        "e82ce7cd_1",
+        "ultrachat_246324",
+        "b17c7f18",
+        "403ee298_1",
+        "ultrachat_477344",
+        "sharegpt_RFw4j0W_0"
+      ],
+      "gold_session_ids": [
+        "answer_59547700"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    },
+    {
+      "question_id": "f8c5f88b",
+      "question_type": "single-session-user",
+      "latency_ms": 28.044165999999926,
+      "retrieved_session_ids": [
+        "answer_c3567066",
+        "sharegpt_TKj3yO8_0",
+        "68ace657_1",
+        "15232887_1",
+        "e5bb44ef",
+        "84a93262",
+        "91880423",
+        "ultrachat_308482"
+      ],
+      "gold_session_ids": [
+        "answer_c3567066"
+      ],
+      "metadata": {
+        "turn_hits": 20
+      },
+      "recall@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "ndcg@10": 1.0,
+      "recall@20": 1.0,
+      "ndcg@20": 1.0
+    }
+  ]
+}

@@ -6,3 +6,5 @@ venv/
 static/
 .vercel
 .env*
+benchmarks/data/
+benchmarks/results/
