@@ -12,6 +12,10 @@ on:
       - '.github/workflows/deploy-lambda.yml'
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -33,9 +37,12 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
+          role-to-assume: arn:aws:iam::277707124741:role/GitHubActionsDeployRole
+          role-session-name: github-actions
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
 
       - name: Deploy with Zappa
         run: |
@@ -44,23 +51,22 @@ jobs:
 
       - name: Configure Lambda secrets
         env:
-          NEO4J_DATABASE: ${{ secrets.NEO4J_DATABASE }}
-          NEO4J_URI: ${{ secrets.NEO4J_URI }}
-          NEO4J_USER: ${{ secrets.NEO4J_USER }}
-          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          ENCRYPTION_SECRET: ${{ secrets.ENCRYPTION_SECRET }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
+          NEO4J_DATABASE: \${{ secrets.NEO4J_DATABASE }}
+          NEO4J_URI: \${{ secrets.NEO4J_URI }}
+          NEO4J_USER: \${{ secrets.NEO4J_USER }}
+          NEO4J_PASSWORD: \${{ secrets.NEO4J_PASSWORD }}
+          SUPABASE_URL: \${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: \${{ secrets.SUPABASE_ANON_KEY }}
+          ENCRYPTION_SECRET: \${{ secrets.ENCRYPTION_SECRET }}
+          GROQ_API_KEY: \${{ secrets.GROQ_API_KEY }}
+          REDIS_URL: \${{ secrets.REDIS_URL }}
         run: |
           if [ -z "$NEO4J_URI" ]; then
-            echo "::warning::NEO4J_URI GitHub secret not set — add secrets or configure Lambda env in AWS console"
+            echo "::warning::NEO4J_URI GitHub secret not set \u2014 add secrets or configure Lambda env in AWS console"
             exit 0
           fi
-          python <<'PY'
+          python << 'PY'
           import json, os, subprocess
-
           base = {
               "PERSON_ID": "nandana_dileep",
               "LLM_MODEL": "groq/llama-3.3-70b-versatile",
@@ -77,7 +83,6 @@ jobs:
               val = os.getenv(key, "")
               if val:
                   base[key] = val
-
           payload = json.dumps({"Variables": base})
           subprocess.run(
               ["aws", "lambda", "update-function-configuration",
