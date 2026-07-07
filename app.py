@@ -254,6 +254,8 @@ def require_auth(f):
             g.user_id = verify_supabase_token(auth_header[7:])
         except ValueError as e:
             return jsonify({"error": "unauthorized", "detail": str(e)}), 401
+        except Exception as e:
+            return jsonify({"error": "unauthorized", "detail": f"token verification failed: {e}"}), 401
         return f(*args, **kwargs)
     return decorated
 

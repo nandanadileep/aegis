@@ -302,6 +302,12 @@ Guidelines:
 - "I know Python" and "I am fluent in Python" are duplicates.
 - "I work at Google" and "I work at Microsoft" are contradictions if both are
   claimed to be currently true.
+- An UPDATED quantity, count, total, or status supersedes the older value and
+  is a contradiction (not new information). The newer statement replaces the
+  old one. Examples: "I've bought five tops" supersedes "I've bought three
+  tops"; "my team has 6 members" supersedes "my team has 5 members"; "I've
+  read 20 books this year" supersedes "I've read 12 books this year". Mark the
+  OLDER fact as the contradiction so it is expired.
 - Return ONLY the JSON object, no explanation.
 """
 
@@ -1625,6 +1631,70 @@ _NEGATION_WORDS = {
     "ceasing", "gave up", "gives up", "giving up",
 }
 
+_NUMBER_WORDS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+    "seventy": 70, "eighty": 80, "ninety": 90, "hundred": 100,
+}
+
+
+def _extract_quantities(text: str) -> Set[float]:
+    """Return the set of quantities mentioned in a fact.
+
+    Handles digit forms ("5", "$60", "12,000") and small number words
+    ("five"). Year-like 4-digit numbers (1900-2100) are ignored so that
+    dates embedded in fact text don't look like quantities.
+    """
+    text = text.lower()
+    values: Set[float] = set()
+    for match in re.findall(r"\d[\d,]*(?:\.\d+)?", text):
+        try:
+            num = float(match.replace(",", ""))
+        except ValueError:
+            continue
+        if 1900 <= num <= 2100 and num.is_integer():
+            continue  # looks like a year
+        values.add(num)
+    for word, num in _NUMBER_WORDS.items():
+        if re.search(rf"\b{word}\b", text):
+            values.add(float(num))
+    return values
+
+
+def _fact_is_newer(new_fact: Fact, old_fact: Dict[str, Any]) -> bool:
+    """True if `new_fact` is at least as recent as `old_fact`.
+
+    Prefers validity start time, falling back to record creation time. Missing
+    timestamps are treated as "now" so a freshly extracted fact supersedes an
+    older stored one by default (streaming ingest is chronological).
+    """
+    new_t = _parse_iso_or_none(new_fact.valid_from) or _parse_iso_or_none(new_fact.created_at)
+    old_t = _parse_iso_or_none(old_fact.get("valid_from")) or _parse_iso_or_none(old_fact.get("created_at"))
+    if new_t is None or old_t is None:
+        return True
+    return new_t >= old_t
+
+
+def _is_quantity_supersession(new_fact: Fact, old_fact: Dict[str, Any]) -> bool:
+    """True when the new fact updates the quantity/count of an existing fact.
+
+    Only fires for facts sharing the same relation between the same entity
+    pair (guaranteed by the resolve_facts candidate set) where both mention a
+    quantity and the quantities differ — e.g. "purchased three tops" followed
+    by "purchased five tops". The newer statement supersedes the older, so the
+    old fact should be expired rather than kept and double-counted.
+    """
+    if new_fact.relation_type.upper() != (old_fact.get("relation_type") or "").upper():
+        return False
+    new_q = _extract_quantities(new_fact.fact)
+    old_q = _extract_quantities(str(old_fact.get("fact") or ""))
+    if not new_q or not old_q:
+        return False
+    return new_q != old_q
+
 
 def _is_heuristic_contradiction(new_fact: Fact, old_fact: Dict[str, Any]) -> bool:
     """Fast, rule-based contradiction detection before calling the LLM."""
@@ -1757,6 +1827,11 @@ def resolve_facts(
                 decision = {"decision": "duplicate", "uuid": ex["uuid"]}
                 break
             if _is_heuristic_contradiction(fact, ex):
+                decision = {"decision": "contradiction", "uuid": ex["uuid"]}
+                break
+            # A newer statement of the same relation with a different quantity
+            # supersedes the old count (e.g. "five tops" replaces "three tops").
+            if _is_quantity_supersession(fact, ex) and _fact_is_newer(fact, ex):
                 decision = {"decision": "contradiction", "uuid": ex["uuid"]}
                 break
 
@@ -3114,7 +3189,7 @@ def _rerank_cross_encoder(
         )
 
     pairs = [
-        (query_text, f"{row['source_name']} {row['relation_type']} {row['target_name']}: {row['fact']}")
+        (query_text, f"{row.get('source_name', '')} {row.get('relation_type', '')} {row.get('target_name', '')}: {row.get('fact', '')}")
         for row in candidates.values()
     ]
     try:

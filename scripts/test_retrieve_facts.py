@@ -172,8 +172,8 @@ def test_rerank_mmr_fallback_without_embeddings() -> None:
 
 
 def test_rerank_cross_encoder_fallback_without_deps() -> None:
-    direct = [{"uuid": "d1", "score": 0.9, "created_at": "2026-06-01T00:00:00Z"}]
-    related = [{"uuid": "r1", "score": 0.5, "created_at": "2026-06-01T00:00:00Z"}]
+    direct = [{"uuid": "d1", "source_name": "Alice", "relation_type": "KNOWS", "target_name": "Bob", "fact": "Alice knows Bob", "score": 0.9, "created_at": "2026-06-01T00:00:00Z"}]
+    related = [{"uuid": "r1", "source_name": "Alice", "relation_type": "WORKS_AT", "target_name": "Google", "fact": "Alice works at Google", "score": 0.5, "created_at": "2026-06-01T00:00:00Z"}]
     results = gm.rerank_facts("python", direct, related, method="cross_encoder", top_k=10)
     uuids = [r["uuid"] for r in results]
     assert set(uuids) == {"d1", "r1"}
