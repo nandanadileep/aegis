@@ -8,19 +8,13 @@
     },
     {
       "source": "/chat",
+      "has": [{ "type": "method", "value": "POST" }],
       "destination": "https://identity-0ved.onrender.com/chat"
     },
     {
       "source": "/clear-history",
+      "has": [{ "type": "method", "value": "POST" }],
       "destination": "https://identity-0ved.onrender.com/clear-history"
-    },
-    {
-      "source": "/save",
-      "destination": "https://identity-0ved.onrender.com/save"
-    },
-    {
-      "source": "/context",
-      "destination": "https://identity-0ved.onrender.com/context"
     },
     {
       "source": "/(.*)",
