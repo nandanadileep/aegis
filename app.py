@@ -802,6 +802,7 @@ def _build_chat_system_prompt(
     return "\n".join(parts)
 
 
+@app.route("/api/chat", methods=["POST"])
 @app.route("/chat", methods=["POST"])
 @require_auth
 def chat():
@@ -1035,6 +1036,7 @@ def proxy_completions():
     return jsonify(completion.model_dump())
 
 
+@app.route("/api/clear-history", methods=["POST"])
 @app.route("/clear-history", methods=["POST"])
 @require_auth
 def clear_history():
