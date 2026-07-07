@@ -73,7 +73,7 @@ export default function Chat() {
     setMessages(m => [...m, userMsg, { role: 'thinking' }])
 
     try {
-      const res = await fetch(`${API}/chat`, { method: 'POST', headers: authHeaders(session), body: JSON.stringify({ message: text }) })
+      const res = await fetch(`${API}/api/chat`, { method: 'POST', headers: authHeaders(session), body: JSON.stringify({ message: text }) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Server error')
       setMessages(m => [...m.filter(x => x.role !== 'thinking'), {
@@ -91,7 +91,7 @@ export default function Chat() {
 
   async function newChat() {
     try {
-      await fetch(`${API}/clear-history`, { method: 'POST', headers: authHeaders(session) })
+      await fetch(`${API}/api/clear-history`, { method: 'POST', headers: authHeaders(session) })
     } catch {}
     setMessages([])
     inputRef.current?.focus()
